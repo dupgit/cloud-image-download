@@ -1,0 +1,25 @@
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+/// This program downloads cloud image files
+/// from configured sites
+#[command(author, version, about, long_about = None)]
+#[command(propagate_version = true)]
+pub struct Cli {
+    /// Uses an alternative configuration file
+    #[arg(long, default_value = "/etc/cloud-image-download.toml", global = true)]
+    pub config: String,
+
+    // Verbosity level managed through clap_verbosity_flag crate
+    #[command(flatten)]
+    pub verbose: clap_verbosity_flag::Verbosity,
+}
+
+impl Cli {
+    /// Parsing the Cli and returning the structure filled accordingly
+    /// to the command line options
+    #[must_use]
+    pub fn analyze() -> Self {
+        Cli::parse()
+    }
+}

@@ -1,0 +1,25 @@
+[[sites]]
+site.name = "Centos"
+site.web_site_type = "VersionList"
+site.version_list.list = ["9-stream", "10-stream"]
+site.base_url = "http://cloud.centos.org/centos"
+site.after_version_url = "x86_64/images"
+site.base_image_name = "CentOS-Stream-GenericCloud" 
+destination = "/dev/shm/centos"
+
+[[sites]]
+site.name = "Ubuntu"
+site.web_site_type = "VersionListWithDate"
+site.version_list.list = ["focal", "jammy", "noble"]
+site.base_url = "https://cloud-images.ubuntu.com"
+site.base_image_name = "server-cloudimg-amd64.img"
+destination = "/dev/shm/ubuntu"
+
+[[sites]]
+site.name = "Fedora"
+site.web_site_type = "VersionList"
+site.version_list.list = ["40", "41"]
+site.base_url = "https://mirrors.ircam.fr/pub/fedora/linux/releases"
+site.after_version_url  = "Cloud/x86_64/images"
+site.base_image_name = "Fedora-Cloud-Base-Generic"
+destination = "/dev/shm/fedora"

@@ -1,0 +1,42 @@
+[package]
+name = "cloud-image-download"
+version = "0.1.0"
+edition = "2021"
+authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
+description = "Downloads cloud images to a directory"
+repository = "https://github.com/dupgit/cloud-image-download"
+license = "MIT OR Apache-2.0"
+keywords = ["cloud", "image", "download", "qcow2", "ubuntu", "fedora"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+clap = { version = "4.5.26", features = ["color", "cargo", "derive"] }
+clap-verbosity-flag = "3.0.2"
+colored = "3.0.0"
+config = "0.15.5"
+env_logger = "0.11.6"
+futures-util = "0.3.31"
+indicatif = "0.17.9"
+log = "0.4.22"
+reqwest = { version = "0.12.9", features = ["stream"] }
+scraper = "0.22.0"
+serde = { version = "1.0.217", features = ["derive"] }
+shellexpand = { version = "3.1.0", features = ["full"] }
+tokio = { version = "1.42.0", features = ["full"] }
+
+[lints.clippy]
+single_match = "warn"
+single_match_else = "warn"
+needless_match = "warn"
+needless_late_init = "warn"
+redundant_pattern_matching = "warn"
+redundant_pattern = "warn"
+redundant_guards = "warn"
+collapsible_match = "warn"
+match_single_binding = "warn"
+match_same_arms = "warn"
+match_ref_pats = "warn"
+match_bool = "warn"
+needless_bool = "deny"
+unwrap_used = "warn"
+expect_used = "warn"

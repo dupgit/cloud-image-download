@@ -1,0 +1,9 @@
+use_small_heuristics = "Off"
+max_width = 200
+#single_line_if_else_max_width = 200
+#struct_lit_width = 200
+#struct_variant_width = 200
+
+# As of 2021 those are unstable features
+# struct_field_align_threshold = 15
+# where_single_line = true
