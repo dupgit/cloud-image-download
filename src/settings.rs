@@ -1,5 +1,6 @@
 /* Configuration management */
 use crate::cli::Cli;
+use crate::proxy::Proxies;
 use crate::website::WebSite;
 use config::Config;
 use serde::Deserialize;
@@ -14,10 +15,14 @@ pub struct WebSiteConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
+    pub proxy: Option<Proxies>,
+    pub db_path: Option<String>,
     pub sites: Vec<WebSiteConfig>,
 }
 
 impl Settings {
+    /// Deserializes (if possible) the whole configuration file that
+    /// may have been specified in the command line
     pub fn from_config(cli: &Cli) -> Self {
         let config_filename = match shellexpand::full(&cli.config) {
             Ok(conf) => conf,
@@ -35,25 +40,55 @@ impl Settings {
             }
         };
 
-        match config.try_deserialize::<Settings>() {
+        let mut settings = match config.try_deserialize::<Settings>() {
             Ok(settings) => settings,
             Err(e) => {
                 eprintln!("Error deserializing: {e}");
                 exit(1);
             }
+        };
+
+        // to give the command line option the latest word
+        if let Some(db_path) = &cli.db_path {
+            settings.db_path = Some(db_path.to_string());
         }
+
+        settings
     }
 }
 
 #[test]
-fn test_settings_get() {
+fn test_settings_from_config() {
     use clap_verbosity_flag::Verbosity;
+
     let cli = Cli {
+        db_path: None,
         config: "test_data/cloud-image-download.toml".to_string(),
         verbose: Verbosity::new(0, 0),
     };
-    let settings = Settings::get(&cli);
+
+    let settings = Settings::from_config(&cli);
+
+    // We know that we have a proxy section with a http proxy set in
+    // the configuration file above so using unwrap() here should be Ok.
+    let proxies = settings.proxy.unwrap();
 
     assert_eq!(settings.sites.len(), 3);
-    println!("{settings:?}");
+    assert_eq!(proxies.https, None);
+    assert_eq!(proxies.http, Some("http://localhost:3128".to_string()));
+    assert_eq!(settings.db_path, Some("~/.cache/cid".to_string()));
+}
+
+#[test]
+fn test_db_path_settings_from_config() {
+    use clap_verbosity_flag::Verbosity;
+
+    let cli = Cli {
+        db_path: Some("/var/lib/cid".to_string()),
+        config: "test_data/cloud-image-download.toml".to_string(),
+        verbose: Verbosity::new(0, 0),
+    };
+
+    let settings = Settings::from_config(&cli);
+    assert_eq!(settings.db_path, Some("/var/lib/cid".to_string()));
 }

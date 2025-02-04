@@ -63,7 +63,6 @@ the program's behavior:
 
 - verbosity level,
 - configuration file,
-- proxy settings,
 - Database path,
 
 
@@ -93,11 +92,12 @@ command line, variable environment. These settings may be:
 Keeps names of successfully downloaded images in a database:
 
 - The database should be created if it does not exist already,
-- This module provides a filter in order to tell if an image
+- This module provides a filter in order to tell if an image,
   is or isn't already in the database. To be able to build a
-  list of images to be downloaded
+  list of images to be downloaded from a list of potential images,
 - When a downloaded image has been successfully verified (with its
-  checksum) the image name and its date is saved into the database
+  checksum) the image name and its date is saved into the database.
+  The checksum verification is left to the checksum verifier module
 
 #### Website qualifier
 
@@ -127,6 +127,12 @@ Downloads the checksum files into a temporary destination.
 
 Calculates the checksum of a downloaded file and checks it against
 the one from the downloaded checksum file.
+
+#### Proxy settings
+
+Get proxy settings from environment variables. Uses serde and
+Deserialize derive functionality to retrieve parameters from
+the configuration file
 
 
 ### Dependencies
