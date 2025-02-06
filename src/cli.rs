@@ -21,7 +21,6 @@ pub struct Cli {
 impl Cli {
     /// Parsing the Cli and returning the structure filled accordingly
     /// to the command line options
-    #[must_use]
     pub fn analyze() -> Self {
         Cli::parse()
     }
