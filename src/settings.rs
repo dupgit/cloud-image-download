@@ -5,7 +5,6 @@ use crate::website::WebSite;
 use config::Config;
 use log::error;
 use serde::Deserialize;
-use std::path::PathBuf;
 use std::process::exit;
 
 #[derive(Debug, Deserialize)]

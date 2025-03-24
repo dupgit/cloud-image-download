@@ -9,6 +9,7 @@ version_list = ["9-stream", "10-stream"]
 base_url = "http://cloud.centos.org/centos"
 after_version_url = ["x86_64/images"]
 image_name_filter = "CentOS-Stream-GenericCloud"
+image_name_cleanse = ["latest", "-x86_64"]
 destination = "/dev/shm/centos"
 
 [[sites]]

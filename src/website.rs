@@ -31,6 +31,7 @@ pub struct WebSite {
     base_url: String,
     after_version_url: Option<Vec<String>>,
     image_name_filter: String,
+    image_name_cleanse: Option<Vec<String>>,
     pub destination: PathBuf,
 }
 
@@ -294,15 +295,35 @@ impl WebSite {
     /// error when building it. The matching image also needs
     /// not to be a checksum file.
     fn filter_element(&self, inner: &String) -> bool {
-        let is_filtered = match Regex::new(&self.image_name_filter) {
+        let mut is_filtered = match Regex::new(&self.image_name_filter) {
             Ok(re) => re.is_match(inner) && !is_a_checksum_file(inner),
             Err(e) => {
                 error!("Error in regular expression ({}): {e}", self.image_name_filter);
                 exit(1);
             }
         };
+
         if is_filtered {
-            debug!("{} {inner}", "🗸".green());
+            let mut cleaned = false;
+            if let Some(cleanse_filters) = &self.image_name_cleanse {
+                for clean_filter in cleanse_filters {
+                    let is_cleaned = match Regex::new(&clean_filter) {
+                        Ok(re) => re.is_match(inner),
+                        Err(e) => {
+                            error!("Error in regular expression ({}): {e}", clean_filter);
+                            exit(1);
+                        }
+                    };
+                    debug!("cleaning {inner} with {clean_filter} led to {is_cleaned}");
+                    cleaned = cleaned || is_cleaned;
+                }
+            }
+            if cleaned {
+                is_filtered = false;
+                debug!("{} {inner}", "𐄂".red());
+            } else {
+                debug!("{} {inner}", "🗸".green());
+            }
         } else {
             // This is really verbose so we want to print this only in trace level.
             trace!("{} {inner}", "𐄂".red());
