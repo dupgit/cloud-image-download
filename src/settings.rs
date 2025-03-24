@@ -3,21 +3,16 @@ use crate::cli::Cli;
 use crate::proxy::Proxies;
 use crate::website::WebSite;
 use config::Config;
+use log::error;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::exit;
 
 #[derive(Debug, Deserialize)]
-pub struct WebSiteConfig {
-    pub site: WebSite,
-    pub destination: PathBuf,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct Settings {
     pub proxy: Option<Proxies>,
     pub db_path: Option<String>,
-    pub sites: Vec<WebSiteConfig>,
+    pub sites: Vec<WebSite>,
 }
 
 impl Settings {
@@ -27,15 +22,19 @@ impl Settings {
         let config_filename = match shellexpand::full(&cli.config) {
             Ok(conf) => conf,
             Err(e) => {
-                eprintln!("Error expanding {}: {e}", cli.config);
+                error!("Error expanding {}: {e}", cli.config);
                 exit(1);
             }
         };
 
-        let config = match Config::builder().add_source(config::File::with_name(&config_filename).required(false)).add_source(config::Environment::with_prefix("CID")).build() {
+        let config = match Config::builder()
+            .add_source(config::File::with_name(&config_filename).required(false))
+            .add_source(config::Environment::with_prefix("CID"))
+            .build()
+        {
             Ok(conf) => conf,
             Err(e) => {
-                eprintln!("Error: {e}");
+                error!("Error: {e}");
                 exit(1);
             }
         };
@@ -43,7 +42,7 @@ impl Settings {
         let mut settings = match config.try_deserialize::<Settings>() {
             Ok(settings) => settings,
             Err(e) => {
-                eprintln!("Error deserializing: {e}");
+                error!("Error deserializing: {e}");
                 exit(1);
             }
         };

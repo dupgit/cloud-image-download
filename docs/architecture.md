@@ -35,6 +35,8 @@ available.
 - **Settings reader and aggregator**: Reads configuration file and gives a
   structure that aggregates all settings from command line, configuration
   file, environment variable. Uses config crate.
+- **Image list**: manages images (name, date and checksum) and list of
+  images.
 - **Image history**: manages a structure with the history of all
   files that were previously successfully downloaded. Loads and saves
   image history from an sqlite DB. Uses crate rusqlite.
@@ -52,7 +54,7 @@ available.
   Downloads the checskum files and verifies it. Uses crate sha2.
 
 
-## Component overwiew
+## Component overview
 
 ### Modules
 
@@ -64,7 +66,6 @@ the program's behavior:
 - verbosity level,
 - configuration file,
 - Database path,
-
 
 The command line will not collect parameters to download images from a
 specific web site.
@@ -80,12 +81,12 @@ command line, variable environment. These settings may be:
 - Web sites list
   - Name of the web site
   - Base url where to find the images
-  - List of versions (of the images to dowload)
+  - List of versions (of the images to download)
   - Web site type (Normal, WithDate)
   - List of complementary url (one may want more than one architecture
     for instance)
   - Image name (regular expression to be able to find it's name)
-  - Destination path (where a dowloaded image will be saved)
+  - Destination path (where a downloaded image will be saved)
 
 #### Image history
 
@@ -96,8 +97,9 @@ Keeps names of successfully downloaded images in a database:
   is or isn't already in the database. To be able to build a
   list of images to be downloaded from a list of potential images,
 - When a downloaded image has been successfully verified (with its
-  checksum) the image name and its date is saved into the database.
-  The checksum verification is left to the checksum verifier module
+  checksum) the image name with its date and checksum is saved into
+  the database. The checksum verification is left to the checksum
+  verifier module.
 
 #### Website qualifier
 
@@ -153,6 +155,11 @@ the configuration file
 - **shellexpand**: expands paths filenames with `~` or variables such as
   `${USER}` or `${HOME}`.
 - **trauma**: Downloads files and seems more maintained than downloader crate.
+
+## Error management
+
+The idea here when something goes bad is to fail early as soon as possible.
+
 
 ## References
 

@@ -1,12 +1,17 @@
-use cloud_image_download::website::get_web_site;
+use cloud_image_download::CONCURRENT_REQUESTS;
+use cloud_image_download::checksums::CheckSums;
 use cloud_image_download::cli::Cli;
-use cloud_image_download::settings::Settings;
 use cloud_image_download::image_history::DbImageHistory;
-use env_logger::{Env, WriteStyle};
-use std::env::var;
+//use cloud_image_download::image_list::ImageList;
+use cloud_image_download::settings::Settings;
+use cloud_image_download::website::WSImageList;
 use directories::BaseDirs;
-use log::error;
+use env_logger::{Env, WriteStyle};
+use futures::{StreamExt, stream};
+use log::{debug, error};
+use std::env::var;
 use std::process::exit;
+use std::sync::Arc;
 
 ///  `NO_COLOR` compliance: See [no color web site](https://no-color.org/)
 fn get_no_color_compliance_writestyle() -> WriteStyle {
@@ -27,14 +32,13 @@ fn init_log_environment(cli: &Cli) {
     env_logger::Builder::from_env(Env::default().default_filter_or(cli_debug_level)).write_style(color).init();
 }
 
-
 #[tokio::main]
 async fn main() {
     let cli = Cli::analyze();
     init_log_environment(&cli);
 
     let settings = Settings::from_config(&cli);
-    println!("Settings: {settings:?}");
+    debug!("Settings: {settings:?}");
 
     let base_dirs = match BaseDirs::new() {
         Some(b) => b,
@@ -44,9 +48,24 @@ async fn main() {
         }
     };
 
-
     let db = DbImageHistory::open(base_dirs.cache_dir().join("cid.sqlite"));
     db.create_db_image_history();
 
-//    get_web_site(&settings).await;
+    let ws_image_list = stream::iter(settings.sites)
+        .map(|website| async move { WSImageList::get_images_url_list(Arc::new(website)).await })
+        .buffered(CONCURRENT_REQUESTS);
+
+    let all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
+
+    for ws_image in all_ws_image_lists {
+        println!("List of images for {}:", ws_image.website.name);
+        for cloud_image in ws_image.images_list.list {
+            match cloud_image.checksum {
+                CheckSums::None => println!("\t-> {}", cloud_image.name),
+                CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
+                    println!("\t-> {} with checksum {}", cloud_image.name, checksum)
+                }
+            }
+        }
+    }
 }

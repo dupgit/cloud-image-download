@@ -1,187 +1,351 @@
-use crate::settings::Settings;
-use log::debug;
-use reqwest::get;
-use scraper::{Html, Selector};
-use std::process::exit;
+use crate::CONCURRENT_REQUESTS;
+use crate::checksums::CheckSums;
+use crate::image_list::{CloudImage, ImageList};
 use colored::Colorize;
+use const_format::formatcp;
+use futures::{StreamExt, stream};
+use log::{debug, error, info, trace, warn};
+use regex::Regex;
+use reqwest::header::{ACCEPT, USER_AGENT};
+use scraper::{Html, Selector};
 use serde::Deserialize;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
 
-#[derive(Debug, Deserialize)]
-enum WebSiteType {
-    VersionListWithDate,
-    VersionList,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VersionList {
-    list: Vec<String>,
-}
-
-impl VersionList {
-    fn default() -> Self {
-        VersionList {
-            list: Vec::default(),
-        }
-    }
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn push(&mut self, version: &str) -> &mut Self {
-        self.list.push(version.to_string());
-        self
-    }
-}
+const CID_USER_AGENT: &str = formatcp!("cid/{}", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Deserialize)]
 enum CheckSumType {
-    OneFile,
+    OneFile {
+        filename: String,
+    },
     EveryFile,
     Unknown,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct WebSite {
-    name: String,
-    web_site_type: WebSiteType,
-    version_list: VersionList,
+    pub name: String,
+    version_list: Vec<String>,
     base_url: String,
-    after_version_url: Option<String>,
-    base_image_name: String,
+    after_version_url: Option<Vec<String>>,
+    image_name_filter: String,
+    pub destination: PathBuf,
+}
+
+// image_list: Option<ImageList>, // @todo determine how to correctly associated the image_list with the website, tuple ?
+pub struct WSImageList {
+    pub images_list: ImageList,
+    pub website: Arc<WebSite>,
+}
+
+/// Tells whether inner String contains a date
+/// formats in the wild are YYYYMMDD and YYYYMMDD-VVVV
+/// where VVVV is a version number.
+fn filter_dates(inner: &String) -> bool {
+    let re = Regex::new(r"\d{8}(?:-\d{4})?/$").unwrap();
+    re.is_match(inner)
+}
+
+/// Builds a Selector for all links (html <a> tag)
+/// This should never fail so we exit the program
+/// if it happens
+fn build_all_link_selector() -> Selector {
+    // Selects all links
+    match Selector::parse("a") {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Error: {e}");
+            exit(1);
+        }
+    }
+}
+
+/// Gets a list of all possible dates from one url
+/// that may contain directories named with dates
+/// in YYYYMMDD format. This uses an async get request
+/// (from reqwest) to get the page at the url
+async fn get_list_of_dates(url: &str) -> Vec<String> {
+    let mut dates_list = vec![];
+    match reqwest::get(url).await {
+        Ok(response) => {
+            match response.text().await {
+                Ok(body) => {
+                    let document = Html::parse_document(&body);
+                    let selector = build_all_link_selector();
+                    // selecting all <a> html tag then mapping it's inner element
+                    // then filtering these elements with filter_dates() function
+                    let dates_slash_list = document
+                        .select(&selector)
+                        .map(|element| element.inner_html())
+                        .filter(|inner| filter_dates(inner))
+                        .collect::<Vec<String>>();
+
+                    for date_slash in dates_slash_list {
+                        dates_list.push(date_slash.replace("/", ""))
+                    }
+                }
+                Err(e) => warn!("Error: not body in response: {e}"),
+            };
+        }
+        Err(e) => warn!("Error while fetching url {url}: {e}"),
+    };
+    dates_list
+}
+
+/// Tells if inner String indicates that we are
+/// in presence of a checksum files that contains
+/// all checksums for all downloadable images
+fn are_all_checksums_in_one_file(inner: &String) -> bool {
+    // -CHECKSUM is used in Fedora sites
+    // CHECKSUM is used in Centos sites
+    // SHA256SUMS is used in Ubuntu sites
+    inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
+}
+
+/// Tells whether inner String may be a checksum file.
+/// It can be a single checksum file or a multiple
+/// checksum file
+fn is_a_checksum_file(inner: &String) -> bool {
+    let re = Regex::new(r"\.(SHA1|MD5|SHA256)SUM$").unwrap();
+    are_all_checksums_in_one_file(inner) || re.is_match(inner)
+}
+
+/// Retrieves the body of a get request to the specified
+/// url and returns Some(body) if everything went fine
+/// and None in case of an Error
+async fn get_body_from_url(url: &str, client: &reqwest::Client) -> Option<String> {
+    match client.get(url).header(ACCEPT, "*/*").header(USER_AGENT, CID_USER_AGENT).send().await {
+        Ok(response) => match response.status() {
+            reqwest::StatusCode::OK => match response.text().await {
+                Ok(body) => Some(body),
+                Err(e) => {
+                    warn!("Error: no body in response: {e}");
+                    None
+                }
+            },
+            _ => {
+                warn!("Error while retrieving url {url} content {}", response.status());
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Error while fetching url {url}: {e}");
+            None
+        }
+    }
 }
 
 impl WebSite {
-    fn new(
-        name: &str,
-        web_site_type: WebSiteType,
-        version_list: VersionList,
-        base_url: &str,
-        after_version_url: Option<String>,
-        base_image_name: &str,
-    ) -> Self {
-        WebSite {
-            name: name.to_string(),
-            web_site_type,
-            version_list,
-            base_url: base_url.to_string(),
-            after_version_url,
-            base_image_name: base_image_name.to_string(),
+    /// Generates all url to be checked for images for
+    /// this particular website. Checks whether the site
+    /// has dates directories and in that case adds them
+    /// to the list. The returned list may be empty.
+    async fn generate_url_list(&self) -> Vec<String> {
+        let mut url_list = vec![];
+        for version in &self.version_list {
+            let version_list = match &self.after_version_url {
+                Some(after) => {
+                    let mut vl = vec![];
+                    for after_version in after {
+                        let url = format!("{}/{}/{}", self.base_url, version, after_version);
+                        info!("Adding url '{url}' to list of url for {}", self.name);
+                        vl.push(url);
+                    }
+                    vl
+                }
+                None => {
+                    let url = format!("{}/{}", self.base_url, version);
+                    info!("Adding url '{url}' to list of url for {}", self.name);
+                    vec![url]
+                }
+            };
+            url_list.extend(version_list);
         }
+
+        let mut final_url_list = vec![];
+
+        for url in url_list {
+            let list_of_dates = get_list_of_dates(&url).await;
+            if list_of_dates.is_empty() {
+                final_url_list.push(format!("{url}"));
+            } else {
+                for date in list_of_dates {
+                    final_url_list.push(format!("{url}/{date}"));
+                }
+            }
+        }
+
+        final_url_list
     }
 
-    fn baseurl_upon_version(&self, version: &str) -> String {
-        let baseurl = match &self.after_version_url {
-            Some(after) => format!("{}/{}/{}/", self.base_url, version, after),
-            None => format!("{}/{}/", self.base_url, version),
+    /// Adds all images that can be gathered from this
+    /// `url` through `client` connection to a list and
+    /// returns that list (which may be empty)
+    async fn add_images_from_url_to_images_list(&self, url: &String, client: &reqwest::Client) -> ImageList {
+        let mut images_url_list = ImageList::default();
+
+        match get_body_from_url(url, &client).await {
+            Some(body) => {
+                trace!("{body}");
+                let document = Html::parse_document(&body);
+                let selector = build_all_link_selector();
+
+                // selecting all <a> html tag then mapping it's inner element
+                // then filtering these elements with filter_element() function
+                let image_list = document
+                    .select(&selector)
+                    .map(|element| element.inner_html())
+                    .filter(|inner| self.filter_element(inner))
+                    .collect::<Vec<_>>();
+
+                match self.guess_checksum_type(&document, &selector, &url) {
+                    CheckSumType::OneFile {
+                        filename,
+                    } => {
+                        // Download the CheckSum file with filename (url/filename)
+                        // for each image_name in url_list build a list of
+                        // image_name associated with it's Some(checksum) from
+                        // list of checksums
+                        let checksums = get_body_from_url(&format!("{url}/{filename}"), &client).await;
+                        trace!("checksums: {checksums:?}");
+                        for image_name in image_list {
+                            // Finds the image_name in the checksum list and get it's checksum if any
+                            let checksum =
+                                CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksums, &filename);
+                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
+                            images_url_list.push(cloud_image);
+                        }
+                    }
+                    CheckSumType::EveryFile => {
+                        // for each image_name in url_list download it's
+                        // checksum file that ends with .SHA256SUM and associate
+                        // the Some(checksum) with the image_name
+                        for image_name in image_list {
+                            let filename = format!("{url}/{image_name}");
+                            let checksum_filename = format!("{filename}.SHA256SUM");
+                            let checksum_body = get_body_from_url(&checksum_filename, &client).await;
+                            let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
+                                &image_name,
+                                &checksum_body,
+                                &filename,
+                            );
+                            let cloud_image = CloudImage::new(filename, checksum);
+                            images_url_list.push(cloud_image);
+                        }
+                    }
+                    CheckSumType::Unknown => {
+                        // build the image_list and associate each image_name with None
+                        for image_name in image_list {
+                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
+                            images_url_list.push(cloud_image);
+                        }
+                    }
+                };
+            }
+            None => (),
         };
-        debug!("baseurl: {baseurl}");
-        baseurl
+        images_url_list
     }
 
-    fn guess_checksum_type(&self, document: Html, selector: Selector) -> CheckSumType {
+    /// Guesses from the HTML document and the chosen selector (<a>)
+    /// what type of checksum files we are dealing with. If anychoice
+    /// can be made we choose the unique file (has it will minimise
+    /// http get requests).
+    /// url is only here for info!() logging
+    fn guess_checksum_type(&self, document: &Html, selector: &Selector, url: &String) -> CheckSumType {
         let mut everyfile: u16 = 0;
         let mut onefile: u16 = 0;
+        let mut filename = String::new();
 
         for element in document.select(&selector) {
             let inner = element.inner_html();
-            debug!("Checksum guess: inner: {inner}");
-            if inner.contains("SHA256SUM") {
+            trace!("Checksum guess: inner: {inner}");
+            if inner.contains(".SHA256SUM") {
                 everyfile += 1;
             }
-            if inner.contains("CHECKSUM") || inner.contains("SHA256SUMS") {
+            if are_all_checksums_in_one_file(&inner) {
+                filename = inner;
                 onefile += 1;
             }
         }
         debug!("Checksum guess: everyfile: {everyfile}, onefile: {onefile}");
-        if everyfile > 1 {
+        // We choose to download only one file if possible: we test onefile
+        // at first for this
+        if onefile == 1 {
+            info!("Guessed checksum type for {url}: OneFile ({filename})");
+            CheckSumType::OneFile {
+                filename,
+            }
+        } else if everyfile >= 1 {
+            info!("Guessed checksum type for {url}: EveryFile");
             CheckSumType::EveryFile
-        } else if onefile == 1 {
-            CheckSumType::OneFile
         } else {
+            info!("Guessed checksum type for {url}: Unknown");
             CheckSumType::Unknown
         }
     }
 
-    /// Returns true on inner element that we want to keep.
-    /// every inner element that contains:
-    ///  - base image name
-    ///  - x86_64 only once
-    ///  - qcow2
-    /// but not the ones that contains:
-    ///  - latest
-    ///  - MD5SUM
-    ///  - SHA1SUM
-    ///  - SHA256SUM
+    /// Returns true on inner element that we want to keep:
+    /// every inner element that matches the regular expression
+    /// found in image_name_filter. As this regular expression
+    /// comes from a user input we fail and exit in case of an
+    /// error when building it. The matching image also needs
+    /// not to be a checksum file.
     fn filter_element(&self, inner: &String) -> bool {
-        if inner.contains(&self.base_image_name)
-            && inner.match_indices("x86_64").collect::<Vec<_>>().len() == 1
-            && inner.contains("qcow2")
-            && !inner.contains("latest")
-            && !inner.contains("MD5SUM")
-            && !inner.contains("SHA1SUM")
-            && !inner.contains("SHA256SUM")
-        {
-            debug!("{} {inner}", "🗸".green());
-            true
-        } else {
-            debug!("{} {inner}", "𐄂".red());
-            false
-        }
-    }
-
-    async fn get_images_names(&self) -> Vec<String> {
-        let mut list = Vec::new();
-
-        match self.web_site_type {
-            WebSiteType::VersionListWithDate => {}
-            WebSiteType::VersionList => {
-                for version in &self.version_list.list {
-                    let baseurl = self.baseurl_upon_version(version);
-                    if let Ok(response) = get(baseurl).await {
-                        if let Ok(body) = response.text().await {
-                            let document = Html::parse_document(&body);
-                            // Selects all links
-                            let selector = match Selector::parse("a") {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    println!("Error: {e}");
-                                    exit(1);
-                                }
-                            };
-                            // selecting all <a> html tag then mapping it's inner element
-                            // then filtering these elements with filter_element() function
-                            list.extend(
-                                document
-                                    .select(&selector)
-                                    .map(|element| element.inner_html())
-                                    .filter(|inner| self.filter_element(inner))
-                                    .collect::<Vec<_>>(),
-                            );
-
-                            println!(
-                                "{} ({}): {:?}",
-                                self.name,
-                                version,
-                                self.guess_checksum_type(document, selector)
-                            );
-                        }
-                    }
-                }
+        let is_filtered = match Regex::new(&self.image_name_filter) {
+            Ok(re) => re.is_match(inner) && !is_a_checksum_file(inner),
+            Err(e) => {
+                error!("Error in regular expression ({}): {e}", self.image_name_filter);
+                exit(1);
             }
+        };
+        if is_filtered {
+            debug!("{} {inner}", "🗸".green());
+        } else {
+            // This is really verbose so we want to print this only in trace level.
+            trace!("{} {inner}", "𐄂".red());
         }
-        list
+        is_filtered
     }
 }
 
-fn print_images(list: Vec<String>) {
-    for name in list {
-        println!("{name}");
-    }
-}
+impl WSImageList {
+    /// Retrieves for this website all downloadable images and
+    /// makes  an ImageList (image url and associated checksum)
+    /// in an async way
+    /// Returns a tuple formed with the website itself and the
+    /// generated image list.
+    pub async fn get_images_url_list(website: Arc<WebSite>) -> Self {
+        let mut images_url_list = ImageList::default();
+        // Creates a reqwest client to fetch url with.
+        let client = reqwest::Client::new();
 
-pub async fn get_web_site(settings: &Settings) {
-    for websiteconfig in &settings.sites {
-        let images = websiteconfig.site.get_images_names();
-        print_images(images.await);
+        // Generate a list of all url to be checked upon the
+        // configuration and how is organized the website
+        // itself (ie with or without dates directories)
+        let url_list = website.generate_url_list().await;
+
+        // Doing I/O get reqwest has much as possible in
+        // a parallel way
+        let lists = stream::iter(url_list)
+            .map(|url| {
+                let client = &client;
+                let website = website.clone();
+                async move { website.add_images_from_url_to_images_list(&url, client).await }
+            })
+            .buffered(CONCURRENT_REQUESTS);
+
+        let all_lists = lists.collect::<Vec<ImageList>>().await;
+
+        for image_list in all_lists {
+            images_url_list.extend(image_list);
+        }
+
+        WSImageList {
+            website,
+            images_list: images_url_list,
+        }
     }
 }
