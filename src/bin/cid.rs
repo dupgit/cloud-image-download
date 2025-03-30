@@ -1,6 +1,7 @@
 use cloud_image_download::CONCURRENT_REQUESTS;
 use cloud_image_download::checksums::CheckSums;
 use cloud_image_download::cli::Cli;
+use cloud_image_download::download::download_images;
 use cloud_image_download::image_history::DbImageHistory;
 //use cloud_image_download::image_list::ImageList;
 use cloud_image_download::settings::Settings;
@@ -57,15 +58,5 @@ async fn main() {
 
     let all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
 
-    for ws_image in all_ws_image_lists {
-        println!("List of images for {}:", ws_image.website.name);
-        for cloud_image in ws_image.images_list.list {
-            match cloud_image.checksum {
-                CheckSums::None => println!("\t-> {}", cloud_image.name),
-                CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
-                    println!("\t-> {} with checksum {}", cloud_image.name, checksum)
-                }
-            }
-        }
-    }
+    download_images(all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
 }

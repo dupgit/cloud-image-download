@@ -1,3 +1,4 @@
+use crate::CONCURRENT_REQUESTS;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -12,6 +13,10 @@ pub struct Cli {
 
     /// path to the database
     pub db_path: Option<String>,
+
+    /// Maximum simultaneous downloads
+    #[arg(long, default_value_t = CONCURRENT_REQUESTS)]
+    pub concurrent_downloads: usize,
 
     // Verbosity level managed through clap_verbosity_flag crate
     #[command(flatten)]

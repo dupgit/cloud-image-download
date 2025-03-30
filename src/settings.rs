@@ -63,6 +63,7 @@ fn test_settings_from_config() {
         db_path: None,
         config: "test_data/cloud-image-download.toml".to_string(),
         verbose: Verbosity::new(0, 0),
+        concurrent_downloads: 2,
     };
 
     let settings = Settings::from_config(&cli);
@@ -85,6 +86,7 @@ fn test_db_path_settings_from_config() {
         db_path: Some("/var/lib/cid".to_string()),
         config: "test_data/cloud-image-download.toml".to_string(),
         verbose: Verbosity::new(0, 0),
+        concurrent_downloads: 2,
     };
 
     let settings = Settings::from_config(&cli);

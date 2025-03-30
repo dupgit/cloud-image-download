@@ -32,4 +32,4 @@ name = "Debian"
 version_list = ["bookworm"]
 base_url = "https://cloud.debian.org/images/cloud/"
 image_name_filter = "debian-12-genericcloud-amd64.*.qcow2"
-destination = "/dev/shm/fedora"
+destination = "/dev/shm/debian"

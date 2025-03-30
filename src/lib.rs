@@ -1,4 +1,5 @@
 #![doc = include_str!("../docs/architecture.md")]
+use const_format::formatcp;
 
 /// Command line interface definition
 pub mod cli;
@@ -21,7 +22,14 @@ pub mod image_list;
 /// Checksum extraction from downloaded files
 pub mod checksums;
 
+/// Downloading the images to the configured
+/// destination
+pub mod download;
+
 /// Maximum concurrent requests that can be made
 /// for a single website and maximum number of
 /// websites that can be fetched concurrently
 pub const CONCURRENT_REQUESTS: usize = 4;
+
+/// User Agent for the whole program
+pub const CID_USER_AGENT: &str = formatcp!("cid/{}", env!("CARGO_PKG_VERSION"));

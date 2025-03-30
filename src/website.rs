@@ -1,8 +1,7 @@
-use crate::CONCURRENT_REQUESTS;
 use crate::checksums::CheckSums;
-use crate::image_list::{CloudImage, ImageList};
+use crate::image_list::{CloudImage, ImageList, compare_str_by_date};
+use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use colored::Colorize;
-use const_format::formatcp;
 use futures::{StreamExt, stream};
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
@@ -12,8 +11,6 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
-
-const CID_USER_AGENT: &str = formatcp!("cid/{}", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Deserialize)]
 enum CheckSumType {
@@ -92,6 +89,15 @@ async fn get_list_of_dates(url: &str) -> Vec<String> {
         }
         Err(e) => warn!("Error while fetching url {url}: {e}"),
     };
+
+    // If any we only keep the latest date so we need to sort
+    // the list and then keep only the last element
+    dates_list.sort_by(|a, b| compare_str_by_date(a, b));
+    let len = dates_list.len();
+    if len >= 1 {
+        dates_list = vec![dates_list.swap_remove(len - 1)];
+    };
+
     dates_list
 }
 
@@ -247,6 +253,12 @@ impl WebSite {
             }
             None => (),
         };
+
+        // If dates are in the image name than we need to filter them here
+        // otherwise they have already been filtered out in `get_list_of_dates()`
+        images_url_list.sort_by_date();
+        images_url_list.only_keep_last_element();
+
         images_url_list
     }
 
@@ -294,6 +306,7 @@ impl WebSite {
     /// comes from a user input we fail and exit in case of an
     /// error when building it. The matching image also needs
     /// not to be a checksum file.
+    /// @todo: simplify
     fn filter_element(&self, inner: &String) -> bool {
         let mut is_filtered = match Regex::new(&self.image_name_filter) {
             Ok(re) => re.is_match(inner) && !is_a_checksum_file(inner),
@@ -363,6 +376,9 @@ impl WSImageList {
         for image_list in all_lists {
             images_url_list.extend(image_list);
         }
+
+        // @todo: filters out the images that have already been successfully
+        // donloaded and that are in the database.
 
         WSImageList {
             website,
