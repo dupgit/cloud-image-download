@@ -1,7 +1,7 @@
 use cloud_image_download::CONCURRENT_REQUESTS;
 use cloud_image_download::checksums::CheckSums;
 use cloud_image_download::cli::Cli;
-use cloud_image_download::download::download_images;
+use cloud_image_download::download::{display_download_status_summary, download_images, verify_downloaded_file};
 use cloud_image_download::image_history::DbImageHistory;
 //use cloud_image_download::image_list::ImageList;
 use cloud_image_download::settings::Settings;
@@ -52,11 +52,18 @@ async fn main() {
     let db = DbImageHistory::open(base_dirs.cache_dir().join("cid.sqlite"));
     db.create_db_image_history();
 
+    // Getting all images that should downloaded
     let ws_image_list = stream::iter(settings.sites)
         .map(|website| async move { WSImageList::get_images_url_list(Arc::new(website)).await })
         .buffered(CONCURRENT_REQUESTS);
 
     let all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
 
-    download_images(all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
+    // Downloads images
+    let downloaded_summary = download_images(&all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
+
+    // This will only display a summary on info log level
+    display_download_status_summary(downloaded_summary);
+
+    verify_downloaded_file(&all_ws_image_lists);
 }
