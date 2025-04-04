@@ -1,6 +1,7 @@
+use crate::CID_USER_AGENT;
 use crate::checksums::CheckSums;
+use crate::image_history::DbImageHistory;
 use crate::image_list::{CloudImage, ImageList, compare_str_by_date};
-use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use colored::Colorize;
 use futures::{StreamExt, stream};
 use log::{debug, error, info, trace, warn};
@@ -190,7 +191,13 @@ impl WebSite {
     /// Adds all images that can be gathered from this
     /// `url` through `client` connection to a list and
     /// returns that list (which may be empty)
-    async fn add_images_from_url_to_images_list(&self, url: &String, client: &reqwest::Client) -> ImageList {
+    /// @todo: simplify
+    async fn add_images_from_url_to_images_list(
+        &self,
+        url: &String,
+        client: &reqwest::Client,
+        db: &DbImageHistory,
+    ) -> ImageList {
         let mut images_url_list = ImageList::default();
 
         match get_body_from_url(url, &client).await {
@@ -221,8 +228,18 @@ impl WebSite {
                             // Finds the image_name in the checksum list and get it's checksum if any
                             let checksum =
                                 CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksums, &filename);
-                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
-                            images_url_list.push(cloud_image);
+                            match db.is_image_in_db(&image_name, &checksum) {
+                                Ok(in_db) => {
+                                    if !in_db {
+                                        info!("Image {image_name} is not already in database");
+                                        let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
+                                        images_url_list.push(cloud_image);
+                                    } else {
+                                        warn!("Image {image_name} is already in database");
+                                    }
+                                }
+                                Err(e) => warn!("Error while checking db: {e}"),
+                            }
                         }
                     }
                     CheckSumType::EveryFile => {
@@ -238,8 +255,19 @@ impl WebSite {
                                 &checksum_body,
                                 &filename,
                             );
-                            let cloud_image = CloudImage::new(filename, checksum);
-                            images_url_list.push(cloud_image);
+
+                            match db.is_image_in_db(&image_name, &checksum) {
+                                Ok(in_db) => {
+                                    if !in_db {
+                                        info!("Image {image_name} is not already in database");
+                                        let cloud_image = CloudImage::new(filename, checksum);
+                                        images_url_list.push(cloud_image);
+                                    } else {
+                                        warn!("Image {image_name} is already in database");
+                                    }
+                                }
+                                Err(e) => warn!("Error while checking db: {e}"),
+                            }
                         }
                     }
                     CheckSumType::Unknown => {
@@ -351,7 +379,11 @@ impl WSImageList {
     /// in an async way
     /// Returns a tuple formed with the website itself and the
     /// generated image list.
-    pub async fn get_images_url_list(website: Arc<WebSite>) -> Self {
+    pub async fn get_images_url_list(
+        website: Arc<WebSite>,
+        concurrent_downloads: usize,
+        db: Arc<DbImageHistory>,
+    ) -> Self {
         let mut images_url_list = ImageList::default();
         // Creates a reqwest client to fetch url with.
         let client = reqwest::Client::new();
@@ -367,9 +399,10 @@ impl WSImageList {
             .map(|url| {
                 let client = &client;
                 let website = website.clone();
-                async move { website.add_images_from_url_to_images_list(&url, client).await }
+                let db = db.clone();
+                async move { website.add_images_from_url_to_images_list(&url, client, &db).await }
             })
-            .buffered(CONCURRENT_REQUESTS);
+            .buffered(concurrent_downloads);
 
         let all_lists = lists.collect::<Vec<ImageList>>().await;
 

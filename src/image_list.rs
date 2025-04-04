@@ -1,10 +1,15 @@
 /* Image list management */
 use crate::checksums::CheckSums;
+use crate::download::get_filename_destination;
+use colored::Colorize;
+use log::{error, info, warn};
 use regex::Regex;
-use std::cmp::Ordering;
+use sha2::{Digest, Sha256, Sha512};
+use std::error::Error;
 use std::fmt;
-// use log::{error, info, warn};
-// use serde::Deserialize;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::{cmp::Ordering, path::PathBuf};
 
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
@@ -22,6 +27,109 @@ impl CloudImage {
 
     pub fn compare_dates_in_names(&self, other: &Self) -> Ordering {
         compare_str_by_date(&self.name, &other.name)
+    }
+
+    /// @todo: simplify and get it shorter
+    pub fn verify(&self, destination: &PathBuf) -> bool {
+        if let Some((_, filename)) = get_filename_destination(&self.name, &destination) {
+            match verify_file(&filename, &self.checksum) {
+                Ok(no_error) => match no_error {
+                    Some(success) => {
+                        if success {
+                            info!("{} Successfully verified {filename}", "🗸".green());
+                            return true;
+                        } else {
+                            warn!("{} Verifying failed for {filename}", "𐄂".red());
+                            return false;
+                        }
+                    }
+                    None => {
+                        // File has not been verified because it has not any associated hash
+                        // so let it be correctly not verified and return true :-)
+                        warn!("{} {filename} not verified.", "𐄂".red());
+                        return true;
+                    }
+                },
+                Err(e) => {
+                    error!("Error verifying {filename}: {e}");
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>, Box<dyn Error>> {
+    let input = match File::open(filename) {
+        Ok(input) => input,
+        Err(e) => {
+            error!("Error while opening {filename}: {e}");
+            return Err(Box::new(e));
+        }
+    };
+
+    let mut reader = BufReader::new(input);
+
+    match checksum {
+        CheckSums::None => {
+            warn!("No checksum for file {filename}: nothing verified");
+            return Ok(None);
+        }
+        CheckSums::Sha256(hash) => {
+            info!("Verifying {filename} sha256's checksum");
+            let digest = {
+                let mut hasher = Sha256::new();
+                let mut buffer = vec![0; 16_777_216];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(count) => {
+                            if count == 0 {
+                                break;
+                            }
+                            hasher.update(&buffer[..count]);
+                        }
+                        Err(e) => {
+                            error!("Error while reading file {filename} Skipped");
+                            return Err(Box::new(e));
+                        }
+                    }
+                }
+                hasher.finalize()
+            };
+            if base16ct::lower::encode_string(&digest) == *hash {
+                return Ok(Some(true));
+            } else {
+                return Ok(Some(false));
+            }
+        }
+        CheckSums::Sha512(hash) => {
+            info!("Verifying {filename} sha512's checksum");
+            let digest = {
+                let mut hasher = Sha512::new();
+                let mut buffer = vec![0; 16_777_216];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(count) => {
+                            if count == 0 {
+                                break;
+                            }
+                            hasher.update(&buffer[..count]);
+                        }
+                        Err(e) => {
+                            error!("Error while reading file {filename} Skipped");
+                            return Err(Box::new(e));
+                        }
+                    }
+                }
+                hasher.finalize()
+            };
+            if base16ct::lower::encode_string(&digest) == *hash {
+                return Ok(Some(true));
+            } else {
+                return Ok(Some(false));
+            }
+        }
     }
 }
 

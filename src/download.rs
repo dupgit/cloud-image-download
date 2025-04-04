@@ -1,18 +1,14 @@
-use crate::checksums;
 use crate::website::WSImageList;
-use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS, checksums::CheckSums};
+use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use clap_verbosity_flag::Verbosity;
 use colored::Colorize;
-use hex_literal::hex;
 use log::{error, info, warn};
 use reqwest::Url;
 use reqwest::header::{HeaderValue, USER_AGENT};
-use sha2::{Digest, Sha256, Sha512};
-use std::error::{self, Error};
-use std::fs::File;
+use std::error::Error;
 use std::fs::create_dir_all;
-use std::io::{BufReader, Read};
 use std::path::PathBuf;
+use tokio::task;
 use trauma::download::Status;
 use trauma::{
     download::{Download, Summary},
@@ -27,21 +23,14 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_filename_destination(image_name: &str, file_destination: &PathBuf) -> Option<(Url, String)> {
+pub fn get_filename_destination(image_name: &str, file_destination: &PathBuf) -> Option<(Url, String)> {
     match Url::parse(image_name) {
         Ok(url) => {
             if let Some(image_name) = image_name.split('/').last() {
-                match create_dir_if_needed(file_destination) {
-                    Ok(_) => {
-                        if let Some(filename) = file_destination.join(image_name).to_str() {
-                            return Some((url, filename.to_string()));
-                        } else {
-                            warn!("{image_name} is not a valid UTF-8 string");
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Error '{e}' while creating destination {:?} directory", file_destination);
-                    }
+                if let Some(filename) = file_destination.join(image_name).to_str() {
+                    return Some((url, filename.to_string()));
+                } else {
+                    warn!("{image_name} is not a valid UTF-8 string");
                 }
             } else {
                 warn!("Failed to get filename from {} - skipped", image_name);
@@ -63,9 +52,18 @@ pub async fn download_images(
     // Building the download list with destination directory
     for ws_image in all_ws_image_lists {
         for cloud_image in &ws_image.images_list.list {
-            if let Some((url, filename)) = get_filename_destination(&cloud_image.name, &ws_image.website.destination) {
-                info!("Will try to download {url} to {filename}");
-                download_image_list.push(Download::new(&url, &filename));
+            match create_dir_if_needed(&ws_image.website.destination) {
+                Ok(_) => {
+                    if let Some((url, filename)) =
+                        get_filename_destination(&cloud_image.name, &ws_image.website.destination)
+                    {
+                        info!("Will try to download {url} to {filename}");
+                        download_image_list.push(Download::new(&url, &filename));
+                    }
+                }
+                Err(e) => {
+                    warn!("Error '{e}' while creating destination {:?} directory", &ws_image.website.destination);
+                }
             }
         }
     }
@@ -74,7 +72,7 @@ pub async fn download_images(
     let retry = 3;
     let user_agent = HeaderValue::from_str(CID_USER_AGENT).unwrap();
 
-    // Defines the maxuimum simultaneous downloads at a time
+    // Defines the maximum simultaneous downloads at a time
     let max: usize;
     if concurrent_download > 0 {
         max = concurrent_download;
@@ -97,111 +95,57 @@ pub async fn download_images(
     downloader.download(&download_image_list).await
 }
 
-/// This will display a summary only on info log level
-pub fn display_download_status_summary(downloaded_summary: Vec<Summary>) {
-    // Prepares file list to be checked
-    for summary in downloaded_summary {
-        let download = summary.download();
-        match summary.status() {
-            Status::Success => {
-                info!("{} Successfully downloaded {}", "🗸".green(), download.filename);
-            }
-            Status::Fail(e) => {
-                info!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
-            }
-            Status::Skipped(e) => {
-                // Probably already downloaded
-                info!("{} Skipped {} to be downloaded from {}: '{e}' ", "🗸".green(), download.filename, download.url)
-            }
-            Status::NotStarted => {
-                info!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
+/// This will display a summary of what went correctly
+/// and what did not only if -q was not selected
+pub fn display_download_status_summary(downloaded_summary: Vec<Summary>, verbose: &Verbosity) {
+    if !verbose.is_silent() {
+        // If -q hasn't been selected
+        // Prepares file list to be checked
+        for summary in downloaded_summary {
+            let download = summary.download();
+            match summary.status() {
+                Status::Success => {
+                    println!("{} Successfully downloaded {}", "🗸".green(), download.filename);
+                }
+                Status::Fail(e) => {
+                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
+                }
+                Status::Skipped(e) => {
+                    // Probably already downloaded
+                    println!(
+                        "{} Skipped {} to be downloaded from {}: '{e}' ",
+                        "🗸".green(),
+                        download.filename,
+                        download.url
+                    )
+                }
+                Status::NotStarted => {
+                    println!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
+                }
             }
         }
     }
 }
 
-pub fn verify_file(filename: &str, checksum: &CheckSums) -> Option<bool> {
-    let input = match File::open(filename) {
-        Ok(input) => input,
-        Err(e) => {
-            error!("Error while opening {filename}: {e}");
-            return None;
-        }
-    };
+/// @todo: Does not limits itself to the numbers of tasks corresponding to
+/// concurrent_downloads command line option
+pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>) {
+    let mut join_handle_list = Vec::new();
 
-    let mut reader = BufReader::new(input);
-
-    match checksum {
-        CheckSums::None => {
-            warn!("No checksum for file {filename}: nothing verified");
-            return None;
-        }
-        CheckSums::Sha256(hash) => {
-            info!("Verifying {filename} sha256's checksum");
-            let digest = {
-                let mut hasher = Sha256::new();
-                let mut buffer = vec![0; 16_777_216];
-                loop {
-                    if let Ok(count) = reader.read(&mut buffer) {
-                        if count == 0 {
-                            break;
-                        }
-                        hasher.update(&buffer[..count]);
-                    } else {
-                        error!("Error while reading file {filename} Skipped");
-                        return None;
-                    }
-                }
-                hasher.finalize()
-            };
-            if base16ct::lower::encode_string(&digest) == *hash {
-                return Some(true);
-            } else {
-                return Some(false);
-            }
-        }
-        CheckSums::Sha512(hash) => {
-            info!("Verifying {filename} sha512's checksum");
-            let digest = {
-                let mut hasher = Sha512::new();
-                let mut buffer = vec![0; 16_777_216];
-                loop {
-                    if let Ok(count) = reader.read(&mut buffer) {
-                        if count == 0 {
-                            break;
-                        }
-                        hasher.update(&buffer[..count]);
-                    } else {
-                        error!("Error while reading file {filename} Skipped");
-                        return None;
-                    }
-                }
-                hasher.finalize()
-            };
-            if base16ct::lower::encode_string(&digest) == *hash {
-                return Some(true);
-            } else {
-                return Some(false);
-            }
-        }
-    }
-}
-
-pub fn verify_downloaded_file(all_ws_image_lists: &Vec<WSImageList>) {
     for ws_image in all_ws_image_lists {
-        for cloud_image in &ws_image.images_list.list {
-            if let Some((_, filename)) = get_filename_destination(&cloud_image.name, &ws_image.website.destination) {
-                match verify_file(&filename, &cloud_image.checksum) {
-                    Some(success) => {
-                        if success {
-                            info!("{} Successfully verified {filename}", "🗸".green());
-                        } else {
-                            warn!("{} Verifying failed for {filename}", "𐄂".red())
-                        }
-                    }
-                    None => warn!("{} {filename} not verified.", "𐄂".red()),
-                }
-            }
+        for cloud_image in ws_image.images_list.list {
+            let website = ws_image.website.clone();
+            let join_handle = task::spawn(async move {
+                cloud_image.verify(&website.destination);
+            });
+            join_handle_list.push(join_handle);
+        }
+    }
+
+    for join_handle in join_handle_list {
+        match join_handle.await {
+            Ok(_) => (),
+            Err(e) => error!("Error in task: {e}"),
         }
     }
 }
