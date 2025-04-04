@@ -10,9 +10,6 @@ pub mod website;
 /// Configuration management
 pub mod settings;
 
-/// Proxy management
-pub mod proxy;
-
 /// Image download history management
 pub mod image_history;
 

@@ -1,6 +1,5 @@
 /* Configuration management */
 use crate::cli::Cli;
-use crate::proxy::Proxies;
 use crate::website::WebSite;
 use config::Config;
 use log::error;
@@ -9,7 +8,6 @@ use std::process::exit;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
-    pub proxy: Option<Proxies>,
     pub db_path: Option<String>,
     pub sites: Vec<WebSite>,
 }
@@ -68,13 +66,7 @@ fn test_settings_from_config() {
 
     let settings = Settings::from_config(&cli);
 
-    // We know that we have a proxy section with a http proxy set in
-    // the configuration file above so using unwrap() here should be Ok.
-    let proxies = settings.proxy.unwrap();
-
-    assert_eq!(settings.sites.len(), 3);
-    assert_eq!(proxies.https, None);
-    assert_eq!(proxies.http, Some("http://localhost:3128".to_string()));
+    assert_eq!(settings.sites.len(), 4);
     assert_eq!(settings.db_path, Some("~/.cache/cid".to_string()));
 }
 

@@ -1,31 +1,28 @@
 db_path = "~/.cache/cid"
 
-[proxy]
-http = "http://localhost:3128"
+[[sites]]
+name = "Centos"
+version_list = ["9-stream", "10-stream"]
+base_url = "http://cloud.centos.org/centos"
+after_version_url = ["x86_64/images"]
+image_name_filter = "CentOS-Stream-GenericCloud"
+image_name_cleanse = ["latest", "-x86_64"]
+destination = "/dev/shm/centos"
 
-#[[sites]]
-#name = "Centos"
-#version_list = ["9-stream", "10-stream"]
-#base_url = "http://cloud.centos.org/centos"
-#after_version_url = ["x86_64/images"]
-#image_name_filter = "CentOS-Stream-GenericCloud"
-#image_name_cleanse = ["latest", "-x86_64"]
-#destination = "/dev/shm/centos"
-#
-#[[sites]]
-#name = "Ubuntu"
-#version_list = ["focal", "jammy", "noble"]
-#base_url = "https://cloud-images.ubuntu.com"
-#image_name_filter = "server-cloudimg-amd64.img"
-#destination = "/dev/shm/ubuntu"
-#
-#[[sites]]
-#name = "Fedora"
-#version_list = ["40", "41"]
-#base_url = "https://mirrors.ircam.fr/pub/fedora/linux/releases"
-#after_version_url = ["Cloud/x86_64/images", "Cloud/aarch64/images"]
-#image_name_filter = "Fedora-Cloud-Base-Generic"
-#destination = "/dev/shm/fedora"
+[[sites]]
+name = "Ubuntu"
+version_list = ["focal", "jammy", "noble"]
+base_url = "https://cloud-images.ubuntu.com"
+image_name_filter = "server-cloudimg-amd64.img"
+destination = "/dev/shm/ubuntu"
+
+[[sites]]
+name = "Fedora"
+version_list = ["40", "41"]
+base_url = "https://mirrors.ircam.fr/pub/fedora/linux/releases"
+after_version_url = ["Cloud/x86_64/images", "Cloud/aarch64/images"]
+image_name_filter = "Fedora-Cloud-Base-Generic"
+destination = "/dev/shm/fedora"
 
 [[sites]]
 name = "Debian"
