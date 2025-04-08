@@ -21,7 +21,7 @@ impl CheckSums {
                 None => return CheckSums::None,
             };
             info!("found sha512 checksum '{chksum}'");
-            return CheckSums::Sha512(chksum);
+            CheckSums::Sha512(chksum)
         } else if filename.contains("SHA256SUMS") || line.contains("SHA256") {
             let re = Regex::new(r".*([a-f0-9]{64}+).*").unwrap();
             let chksum: String = match re.captures(line) {
@@ -29,10 +29,10 @@ impl CheckSums {
                 None => return CheckSums::None,
             };
             info!("found sha256 checksum '{chksum}'");
-            return CheckSums::Sha256(chksum);
+            CheckSums::Sha256(chksum)
         } else {
             info!("no checksum found");
-            return CheckSums::None;
+            CheckSums::None
         }
     }
 
@@ -56,7 +56,7 @@ impl CheckSums {
                         trace!("line: {line}");
                         if line.contains(name) {
                             debug!("line: {line}");
-                            return CheckSums::build_checksums_from_line(&line, &filename);
+                            return CheckSums::build_checksums_from_line(line, filename);
                         }
                     }
                 }

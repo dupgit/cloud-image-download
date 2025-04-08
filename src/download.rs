@@ -147,7 +147,7 @@ pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_url: &
             }
         }
     }
-    return false;
+    false
 }
 
 /// @todo: Does not limits itself to the numbers of tasks corresponding to

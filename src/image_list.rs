@@ -32,7 +32,7 @@ impl CloudImage {
 
     /// @todo: simplify and get it shorter
     pub fn verify(&self, destination: &PathBuf) -> bool {
-        if let Some((_, filename)) = get_filename_destination(&self.url, &destination) {
+        if let Some((_, filename)) = get_filename_destination(&self.url, destination) {
             match verify_file(&filename, &self.checksum) {
                 Ok(no_error) => match no_error {
                     Some(success) => {
@@ -57,11 +57,11 @@ impl CloudImage {
                 }
             }
         }
-        return false;
+        false
     }
 
     pub fn is_in_db(&self, db: &DbImageHistory) -> bool {
-        match db.is_image_in_db(Some(&self)) {
+        match db.is_image_in_db(Some(self)) {
             Ok(in_db) => in_db,
             Err(_) => false,
         }
@@ -82,7 +82,7 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
     match checksum {
         CheckSums::None => {
             warn!("No checksum for file {filename}: nothing verified");
-            return Ok(None);
+            Ok(None)
         }
         CheckSums::Sha256(hash) => {
             info!("Verifying {filename} sha256's checksum");
@@ -106,9 +106,9 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
                 hasher.finalize()
             };
             if base16ct::lower::encode_string(&digest) == *hash {
-                return Ok(Some(true));
+                Ok(Some(true))
             } else {
-                return Ok(Some(false));
+                Ok(Some(false))
             }
         }
         CheckSums::Sha512(hash) => {
@@ -133,9 +133,9 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
                 hasher.finalize()
             };
             if base16ct::lower::encode_string(&digest) == *hash {
-                return Ok(Some(true));
+                Ok(Some(true))
             } else {
-                return Ok(Some(false));
+                Ok(Some(false))
             }
         }
     }

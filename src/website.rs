@@ -179,7 +179,7 @@ impl WebSite {
         for url in url_list {
             let list_of_dates = get_list_of_dates(&url).await;
             if list_of_dates.is_empty() {
-                final_url_list.push(format!("{url}"));
+                final_url_list.push(url.to_string());
             } else {
                 for date in list_of_dates {
                     final_url_list.push(format!("{url}/{date}"));
@@ -202,7 +202,7 @@ impl WebSite {
     ) -> ImageList {
         let mut images_url_list = ImageList::default();
 
-        match get_body_from_url(url, &client).await {
+        match get_body_from_url(url, client).await {
             Some(body) => {
                 trace!("{body}");
                 let document = Html::parse_document(&body);
@@ -216,7 +216,7 @@ impl WebSite {
                     .filter(|inner| self.filter_element(inner))
                     .collect::<Vec<_>>();
 
-                match self.guess_checksum_type(&document, &selector, &url) {
+                match self.guess_checksum_type(&document, &selector, url) {
                     CheckSumType::OneFile {
                         filename,
                     } => {
@@ -224,7 +224,7 @@ impl WebSite {
                         // for each image_name in url_list build a list of
                         // image_name associated with it's Some(checksum) from
                         // list of checksums
-                        let checksums = get_body_from_url(&format!("{url}/{filename}"), &client).await;
+                        let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
                         trace!("checksums: {checksums:?}");
                         for image_name in image_list {
                             // Finds the image_name in the checksum list and get it's checksum if any
@@ -241,7 +241,7 @@ impl WebSite {
                         for image_name in image_list {
                             let url = format!("{url}/{image_name}");
                             let checksum_filename = format!("{url}.SHA256SUM");
-                            let checksum_body = get_body_from_url(&checksum_filename, &client).await;
+                            let checksum_body = get_body_from_url(&checksum_filename, client).await;
                             let checksum =
                                 CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksum_body, &url);
 
@@ -294,7 +294,7 @@ impl WebSite {
         let mut onefile: u16 = 0;
         let mut filename = String::new();
 
-        for element in document.select(&selector) {
+        for element in document.select(selector) {
             let inner = element.inner_html();
             trace!("Checksum guess: inner: {inner}");
             if inner.contains(".SHA256SUM") {
@@ -342,7 +342,7 @@ impl WebSite {
             let mut cleaned = false;
             if let Some(cleanse_filters) = &self.image_name_cleanse {
                 for clean_filter in cleanse_filters {
-                    let is_cleaned = match Regex::new(&clean_filter) {
+                    let is_cleaned = match Regex::new(clean_filter) {
                         Ok(re) => re.is_match(inner),
                         Err(e) => {
                             error!("Error in regular expression ({}): {e}", clean_filter);
@@ -416,7 +416,7 @@ impl WSImageList {
     pub fn only_effectively_downloaded(all_ws_image_lists: &mut Vec<WSImageList>, downloaded_summary: &Vec<Summary>) {
         for ws_image in all_ws_image_lists {
             ws_image.images_list.list.retain(|cloud_image| {
-                image_has_been_downloaded(&downloaded_summary, &cloud_image.url, &ws_image.website.destination)
+                image_has_been_downloaded(downloaded_summary, &cloud_image.url, &ws_image.website.destination)
             });
         }
     }
