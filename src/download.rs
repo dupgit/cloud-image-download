@@ -25,20 +25,20 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn get_filename_destination(image_name: &str, file_destination: &PathBuf) -> Option<(Url, String)> {
-    match Url::parse(image_name) {
+pub fn get_filename_destination(image_url: &str, file_destination: &PathBuf) -> Option<(Url, String)> {
+    match Url::parse(image_url) {
         Ok(url) => {
-            if let Some(image_name) = image_name.split('/').last() {
+            if let Some(image_name) = image_url.split('/').last() {
                 if let Some(filename) = file_destination.join(image_name).to_str() {
                     return Some((url, filename.to_string()));
                 } else {
                     warn!("{image_name} is not a valid UTF-8 string");
                 }
             } else {
-                warn!("Failed to get filename from {} - skipped", image_name);
+                warn!("Failed to get filename from {} - skipped", image_url);
             }
         }
-        Err(e) => warn!("Error {e}: skipped url {}", image_name),
+        Err(e) => warn!("Error {e}: skipped url {}", image_url),
     }
 
     None
@@ -57,7 +57,7 @@ pub async fn download_images(
             match create_dir_if_needed(&ws_image.website.destination) {
                 Ok(_) => {
                     if let Some((url, filename)) =
-                        get_filename_destination(&cloud_image.name, &ws_image.website.destination)
+                        get_filename_destination(&cloud_image.url, &ws_image.website.destination)
                     {
                         info!("Will try to download {url} to {filename}");
                         download_image_list.push(Download::new(&url, &filename));
@@ -130,10 +130,10 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 }
 
 /// This will tell if an image has effectively been downloaded
-pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_name: &str, destination: &PathBuf) -> bool {
+pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_url: &str, destination: &PathBuf) -> bool {
     for summary in downloaded_summary {
         let download = summary.download();
-        if let Some((url, filename)) = get_filename_destination(image_name, destination) {
+        if let Some((url, filename)) = get_filename_destination(image_url, destination) {
             if download.filename == filename && download.url == url {
                 match summary.status() {
                     Status::Success => {

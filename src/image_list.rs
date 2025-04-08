@@ -14,25 +14,25 @@ use std::{cmp::Ordering, path::PathBuf};
 
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
-    pub name: String,
+    pub url: String,
     pub checksum: CheckSums,
 }
 
 impl CloudImage {
-    pub fn new(name: String, checksum: CheckSums) -> Self {
+    pub fn new(url: String, checksum: CheckSums) -> Self {
         CloudImage {
-            name,
+            url,
             checksum,
         }
     }
 
     pub fn compare_dates_in_names(&self, other: &Self) -> Ordering {
-        compare_str_by_date(&self.name, &other.name)
+        compare_str_by_date(&self.url, &other.url)
     }
 
     /// @todo: simplify and get it shorter
     pub fn verify(&self, destination: &PathBuf) -> bool {
-        if let Some((_, filename)) = get_filename_destination(&self.name, &destination) {
+        if let Some((_, filename)) = get_filename_destination(&self.url, &destination) {
             match verify_file(&filename, &self.checksum) {
                 Ok(no_error) => match no_error {
                     Some(success) => {
@@ -144,9 +144,9 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
 impl fmt::Display for CloudImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.checksum {
-            CheckSums::None => writeln!(f, "\t-> {}", self.name),
+            CheckSums::None => writeln!(f, "\t-> {}", self.url),
             CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
-                writeln!(f, "\t-> {} with checksum {}", self.name, checksum)
+                writeln!(f, "\t-> {} with checksum {}", self.url, checksum)
             }
         }
     }

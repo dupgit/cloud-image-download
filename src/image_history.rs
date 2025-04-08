@@ -84,7 +84,7 @@ impl DbImageHistory {
     pub fn is_image_in_db(&self, cloud_image: Option<&CloudImage>) -> Result<bool, Box<dyn Error>> {
         if let Some(cloud_image) = cloud_image {
             // Checking the last part of the url: the filename itself
-            if let Some(image_name) = &cloud_image.name.split('/').last() {
+            if let Some(image_name) = &cloud_image.url.split('/').last() {
                 let checksum = cloud_image.checksum.to_string();
 
                 let mut stmt =
@@ -110,7 +110,7 @@ impl DbImageHistory {
 
     pub fn save_image_in_db(&self, cloud_image: &CloudImage) {
         // Saving only the last part of the url: the image name itself
-        if let Some(image_name) = cloud_image.name.split('/').last() {
+        if let Some(image_name) = cloud_image.url.split('/').last() {
             let checksum = cloud_image.checksum.to_string();
 
             match self
@@ -129,7 +129,7 @@ impl DbImageHistory {
                 }
             }
         } else {
-            warn!("Failed to get image name from url {}", cloud_image.name);
+            warn!("Failed to get image name from url {}", cloud_image.url);
         }
     }
 }

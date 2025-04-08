@@ -239,16 +239,13 @@ impl WebSite {
                         // checksum file that ends with .SHA256SUM and associate
                         // the Some(checksum) with the image_name
                         for image_name in image_list {
-                            let filename = format!("{url}/{image_name}");
-                            let checksum_filename = format!("{filename}.SHA256SUM");
+                            let url = format!("{url}/{image_name}");
+                            let checksum_filename = format!("{url}.SHA256SUM");
                             let checksum_body = get_body_from_url(&checksum_filename, &client).await;
-                            let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
-                                &image_name,
-                                &checksum_body,
-                                &filename,
-                            );
+                            let checksum =
+                                CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksum_body, &url);
 
-                            let cloud_image = CloudImage::new(filename, checksum);
+                            let cloud_image = CloudImage::new(url, checksum);
                             images_url_list.push(cloud_image);
                         }
                     }
@@ -277,10 +274,10 @@ impl WebSite {
         // an already successfully downloaded image ?
         if let Some(cloud_image) = images_url_list.list.first() {
             if cloud_image.is_in_db(db) {
-                warn!("Image {} is already in database", cloud_image.name);
+                warn!("Image {} is already in database", cloud_image.url);
                 images_url_list.list = vec![];
             } else {
-                info!("Image {} is not already in database", cloud_image.name);
+                info!("Image {} is not already in database", cloud_image.url);
             }
         }
 
@@ -419,7 +416,7 @@ impl WSImageList {
     pub fn only_effectively_downloaded(all_ws_image_lists: &mut Vec<WSImageList>, downloaded_summary: &Vec<Summary>) {
         for ws_image in all_ws_image_lists {
             ws_image.images_list.list.retain(|cloud_image| {
-                image_has_been_downloaded(&downloaded_summary, &cloud_image.name, &ws_image.website.destination)
+                image_has_been_downloaded(&downloaded_summary, &cloud_image.url, &ws_image.website.destination)
             });
         }
     }
