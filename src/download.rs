@@ -1,3 +1,4 @@
+use crate::image_history::DbImageHistory;
 use crate::website::WSImageList;
 use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use clap_verbosity_flag::Verbosity;
@@ -8,6 +9,7 @@ use reqwest::header::{HeaderValue, USER_AGENT};
 use std::error::Error;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::task;
 use trauma::download::Status;
 use trauma::{
@@ -97,7 +99,7 @@ pub async fn download_images(
 
 /// This will display a summary of what went correctly
 /// and what did not only if -q was not selected
-pub fn display_download_status_summary(downloaded_summary: Vec<Summary>, verbose: &Verbosity) {
+pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbose: &Verbosity) {
     if !verbose.is_silent() {
         // If -q hasn't been selected
         // Prepares file list to be checked
@@ -127,16 +129,41 @@ pub fn display_download_status_summary(downloaded_summary: Vec<Summary>, verbose
     }
 }
 
+/// This will tell if an image has effectively been downloaded
+pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_name: &str, destination: &PathBuf) -> bool {
+    for summary in downloaded_summary {
+        let download = summary.download();
+        if let Some((url, filename)) = get_filename_destination(image_name, destination) {
+            if download.filename == filename && download.url == url {
+                match summary.status() {
+                    Status::Success => {
+                        info!("Keeping image {filename} from {url}");
+                        return true;
+                    }
+                    Status::Fail(_) | Status::Skipped(_) | Status::NotStarted => {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /// @todo: Does not limits itself to the numbers of tasks corresponding to
 /// concurrent_downloads command line option
-pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>) {
+pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>, db: Arc<DbImageHistory>) {
     let mut join_handle_list = Vec::new();
 
     for ws_image in all_ws_image_lists {
         for cloud_image in ws_image.images_list.list {
             let website = ws_image.website.clone();
             let join_handle = task::spawn(async move {
-                cloud_image.verify(&website.destination);
+                if cloud_image.verify(&website.destination) {
+                    Some(cloud_image)
+                } else {
+                    None
+                }
             });
             join_handle_list.push(join_handle);
         }
@@ -144,7 +171,10 @@ pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>) {
 
     for join_handle in join_handle_list {
         match join_handle.await {
-            Ok(_) => (),
+            Ok(option_cloud_image) => match option_cloud_image {
+                Some(cloud_image) => db.save_image_in_db(&cloud_image),
+                None => (),
+            },
             Err(e) => error!("Error in task: {e}"),
         }
     }

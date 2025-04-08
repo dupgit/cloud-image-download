@@ -1,5 +1,6 @@
 use crate::CID_USER_AGENT;
 use crate::checksums::CheckSums;
+use crate::download::image_has_been_downloaded;
 use crate::image_history::DbImageHistory;
 use crate::image_list::{CloudImage, ImageList, compare_str_by_date};
 use colored::Colorize;
@@ -12,6 +13,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use trauma::download::Summary;
 
 #[derive(Debug, Deserialize)]
 enum CheckSumType {
@@ -228,18 +230,8 @@ impl WebSite {
                             // Finds the image_name in the checksum list and get it's checksum if any
                             let checksum =
                                 CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksums, &filename);
-                            match db.is_image_in_db(&image_name, &checksum) {
-                                Ok(in_db) => {
-                                    if !in_db {
-                                        info!("Image {image_name} is not already in database");
-                                        let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
-                                        images_url_list.push(cloud_image);
-                                    } else {
-                                        warn!("Image {image_name} is already in database");
-                                    }
-                                }
-                                Err(e) => warn!("Error while checking db: {e}"),
-                            }
+                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
+                            images_url_list.push(cloud_image);
                         }
                     }
                     CheckSumType::EveryFile => {
@@ -256,18 +248,8 @@ impl WebSite {
                                 &filename,
                             );
 
-                            match db.is_image_in_db(&image_name, &checksum) {
-                                Ok(in_db) => {
-                                    if !in_db {
-                                        info!("Image {image_name} is not already in database");
-                                        let cloud_image = CloudImage::new(filename, checksum);
-                                        images_url_list.push(cloud_image);
-                                    } else {
-                                        warn!("Image {image_name} is already in database");
-                                    }
-                                }
-                                Err(e) => warn!("Error while checking db: {e}"),
-                            }
+                            let cloud_image = CloudImage::new(filename, checksum);
+                            images_url_list.push(cloud_image);
                         }
                     }
                     CheckSumType::Unknown => {
@@ -286,6 +268,21 @@ impl WebSite {
         // otherwise they have already been filtered out in `get_list_of_dates()`
         images_url_list.sort_by_date();
         images_url_list.only_keep_last_element();
+
+        // As we only have one element in the list (if any) we
+        // can take the first one and test it against the database
+        // if it is already in the database then we can return an
+        // empty list has we already downloaded it.
+        // @todo: may be add an option to allow one to reload again
+        // an already successfully downloaded image ?
+        if let Some(cloud_image) = images_url_list.list.first() {
+            if cloud_image.is_in_db(db) {
+                warn!("Image {} is already in database", cloud_image.name);
+                images_url_list.list = vec![];
+            } else {
+                info!("Image {} is not already in database", cloud_image.name);
+            }
+        }
 
         images_url_list
     }
@@ -416,6 +413,14 @@ impl WSImageList {
         WSImageList {
             website,
             images_list: images_url_list,
+        }
+    }
+
+    pub fn only_effectively_downloaded(all_ws_image_lists: &mut Vec<WSImageList>, downloaded_summary: &Vec<Summary>) {
+        for ws_image in all_ws_image_lists {
+            ws_image.images_list.list.retain(|cloud_image| {
+                image_has_been_downloaded(&downloaded_summary, &cloud_image.name, &ws_image.website.destination)
+            });
         }
     }
 }

@@ -8,7 +8,7 @@ use clap::Parser;
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Uses an alternative configuration file
-    #[arg(long, default_value = "/etc/cloud-image-download.toml", global = true)]
+    #[arg(long, default_value = "/etc/cloud-image-download.toml")]
     pub config: String,
 
     /// path to the database

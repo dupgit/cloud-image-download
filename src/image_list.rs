@@ -1,6 +1,7 @@
 /* Image list management */
 use crate::checksums::CheckSums;
 use crate::download::get_filename_destination;
+use crate::image_history::DbImageHistory;
 use colored::Colorize;
 use log::{error, info, warn};
 use regex::Regex;
@@ -57,6 +58,13 @@ impl CloudImage {
             }
         }
         return false;
+    }
+
+    pub fn is_in_db(&self, db: &DbImageHistory) -> bool {
+        match db.is_image_in_db(Some(&self)) {
+            Ok(in_db) => in_db,
+            Err(_) => false,
+        }
     }
 }
 
@@ -179,7 +187,7 @@ impl ImageList {
         self
     }
 
-    // Extends the ImageList with another ImageList
+    /// Extends the ImageList with another ImageList
     pub fn extend(&mut self, image_list: ImageList) -> &mut Self {
         self.list.extend(image_list.list);
         self
