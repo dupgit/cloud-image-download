@@ -143,7 +143,7 @@ the configuration file
 - **clap-verbosity**: Manages -v (--verbose) or -q (--quiet) options along
   with the log system.
 - **config**: Reading configuration from files and environment variables
-- **directories**: to get user directories from XDG specifications [1]
+- **directories**: to get user directories from XDG specifications \[1\]
 - **reqwest**: Interface to http requests helps revrieving web pages
 - **rusqlite**: Gives access to an sqlite database and is used to store the
   download history

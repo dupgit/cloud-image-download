@@ -8,7 +8,7 @@ use reqwest::Url;
 use reqwest::header::{HeaderValue, USER_AGENT};
 use std::error::Error;
 use std::fs::create_dir_all;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task;
 use trauma::download::Status;
@@ -25,10 +25,10 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn get_filename_destination(image_url: &str, file_destination: &PathBuf) -> Option<(Url, String)> {
+pub fn get_filename_destination(image_url: &str, file_destination: &Path) -> Option<(Url, String)> {
     match Url::parse(image_url) {
         Ok(url) => {
-            if let Some(image_name) = image_url.split('/').last() {
+            if let Some(image_name) = image_url.split('/').next_back() {
                 if let Some(filename) = file_destination.join(image_name).to_str() {
                     return Some((url, filename.to_string()));
                 } else {
@@ -107,14 +107,14 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
             let download = summary.download();
             match summary.status() {
                 Status::Success => {
-                    println!("{} Successfully downloaded {}", "🗸".green(), download.filename);
+                    info!("{} Successfully downloaded {}", "🗸".green(), download.filename);
                 }
                 Status::Fail(e) => {
-                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
+                    info!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
                 }
                 Status::Skipped(e) => {
                     // Probably already downloaded
-                    println!(
+                    info!(
                         "{} Skipped {} to be downloaded from {}: '{e}' ",
                         "🗸".green(),
                         download.filename,
@@ -122,7 +122,7 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
                     )
                 }
                 Status::NotStarted => {
-                    println!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
+                    info!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
                 }
             }
         }
@@ -171,10 +171,11 @@ pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>, db: Ar
 
     for join_handle in join_handle_list {
         match join_handle.await {
-            Ok(option_cloud_image) => match option_cloud_image {
-                Some(cloud_image) => db.save_image_in_db(&cloud_image),
-                None => (),
-            },
+            Ok(option_cloud_image) => {
+                if let Some(cloud_image) = option_cloud_image {
+                    db.save_image_in_db(&cloud_image)
+                }
+            }
             Err(e) => error!("Error in task: {e}"),
         }
     }

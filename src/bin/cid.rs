@@ -20,7 +20,7 @@ fn get_no_color_compliance_writestyle() -> WriteStyle {
     }
 }
 
-/// Initializes logging environment with `NO_COLOR` compliance
+/// Initializes logging environment with `NO_COLOR` compliance
 fn init_log_environment(cli: &Cli) {
     let color = get_no_color_compliance_writestyle();
 
@@ -63,7 +63,7 @@ async fn main() {
     // Downloads images
     let downloaded_summary = download_images(&all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
 
-    // This will only display a summary on info log level
+    // This will only display a summary only if -q has not been selected
     display_download_status_summary(&downloaded_summary, &cli.verbose);
 
     // This will retain from `all_ws_image_lists` list only images

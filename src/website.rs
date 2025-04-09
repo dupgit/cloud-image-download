@@ -15,15 +15,28 @@ use std::process::exit;
 use std::sync::Arc;
 use trauma::download::Summary;
 
+/// Enum to tell the type of checksum
+/// used by the website.
 #[derive(Debug, Deserialize)]
 enum CheckSumType {
+    /// `CheckSumType::OneFile` is used for websites that have
+    /// a recognized file that contains all checksums for all
+    /// downloadable images
     OneFile {
         filename: String,
     },
+    /// `CheckSumType::EveryFile` is used when no file has been
+    /// recognized to get all the checksums but we have found
+    /// evidence that the websites has checksum files for each
+    /// image that one may download (We only look for SHA256
+    /// checksum files)
     EveryFile,
+    /// `CheckSumType::EveryFile` when none of the above has
+    /// been found and we can not decide where are the checksums
     Unknown,
 }
 
+/// Website description structure
 #[derive(Debug, Deserialize)]
 pub struct WebSite {
     pub name: String,
@@ -35,7 +48,8 @@ pub struct WebSite {
     pub destination: PathBuf,
 }
 
-// image_list: Option<ImageList>, // @todo determine how to correctly associated the image_list with the website, tuple ?
+/// Associates a list of images with the website
+/// they come from
 pub struct WSImageList {
     pub images_list: ImageList,
     pub website: Arc<WebSite>,
@@ -44,7 +58,7 @@ pub struct WSImageList {
 /// Tells whether inner String contains a date
 /// formats in the wild are YYYYMMDD and YYYYMMDD-VVVV
 /// where VVVV is a version number.
-fn filter_dates(inner: &String) -> bool {
+fn filter_dates(inner: &str) -> bool {
     let re = Regex::new(r"\d{8}(?:-\d{4})?/$").unwrap();
     re.is_match(inner)
 }
@@ -368,11 +382,10 @@ impl WebSite {
 }
 
 impl WSImageList {
-    /// Retrieves for this website all downloadable images and
-    /// makes  an ImageList (image url and associated checksum)
-    /// in an async way
-    /// Returns a tuple formed with the website itself and the
-    /// generated image list.
+    /// Retrieves for this website all downloadable images and makes an ImageList
+    /// (ie an image url and an associated checksum).
+    /// Returns a `WSImageList` formed with the website itself and the generated
+    /// image list `Imagelist`.
     pub async fn get_images_url_list(
         website: Arc<WebSite>,
         concurrent_downloads: usize,
@@ -404,15 +417,15 @@ impl WSImageList {
             images_url_list.extend(image_list);
         }
 
-        // @todo: filters out the images that have already been successfully
-        // donloaded and that are in the database.
-
         WSImageList {
             website,
             images_list: images_url_list,
         }
     }
 
+    /// Retains only images that have been effectively downloaded
+    /// and not skipped, in error state or in "not started" state
+    /// using `Vec<Summary>` to know their state
     pub fn only_effectively_downloaded(all_ws_image_lists: &mut Vec<WSImageList>, downloaded_summary: &Vec<Summary>) {
         for ws_image in all_ws_image_lists {
             ws_image.images_list.list.retain(|cloud_image| {
