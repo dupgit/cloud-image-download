@@ -32,6 +32,15 @@ shellexpand = { version = "3.1.0", features = ["full"] }
 tokio = { version = "1.42.0", features = ["full"] }
 trauma = "2.2.6"
 
+# Uncomment these lines to use vendored sources to recompile
+#
+#[source.crates-io]
+#replace-with = "vendored-sources"
+#
+#[source.vendored-sources]
+#directory = "vendor"
+
+
 [lints.clippy]
 single_match = "warn"
 single_match_else = "warn"
@@ -48,3 +57,5 @@ match_bool = "warn"
 needless_bool = "deny"
 unwrap_used = "warn"
 expect_used = "warn"
+
+
