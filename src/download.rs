@@ -107,14 +107,14 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
             let download = summary.download();
             match summary.status() {
                 Status::Success => {
-                    info!("{} Successfully downloaded {}", "🗸".green(), download.filename);
+                    println!("{} Successfully downloaded {}", "🗸".green(), download.filename);
                 }
                 Status::Fail(e) => {
-                    info!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
+                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
                 }
                 Status::Skipped(e) => {
                     // Probably already downloaded
-                    info!(
+                    println!(
                         "{} Skipped {} to be downloaded from {}: '{e}' ",
                         "🗸".green(),
                         download.filename,
@@ -122,7 +122,7 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
                     )
                 }
                 Status::NotStarted => {
-                    info!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
+                    println!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
                 }
             }
         }
