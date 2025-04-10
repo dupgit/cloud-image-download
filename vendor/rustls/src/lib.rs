@@ -416,7 +416,7 @@ mod log {
 mod test_macros;
 
 /// This internal `sync` module aliases the `Arc` implementation to allow downstream forks
-/// of rustls targetting architectures without atomic pointers to replace the implementation
+/// of rustls targeting architectures without atomic pointers to replace the implementation
 /// with another implementation such as `portable_atomic_util::Arc` in one central location.
 mod sync {
     #[allow(clippy::disallowed_types)]
@@ -476,8 +476,8 @@ pub mod internal {
         }
         pub mod enums {
             pub use crate::msgs::enums::{
-                AlertLevel, CertificateType, Compression, EchVersion, HpkeAead, HpkeKdf, HpkeKem,
-                NamedGroup,
+                AlertLevel, CertificateType, Compression, EchVersion, ExtensionType, HpkeAead,
+                HpkeKdf, HpkeKem, NamedGroup,
             };
         }
         pub mod fragmenter {
