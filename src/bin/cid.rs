@@ -41,7 +41,7 @@ async fn main() {
     let base_dirs = match BaseDirs::new() {
         Some(b) => b,
         None => {
-            error!("Unable to get $HOME directory");
+            error!("Unable to get base directories");
             exit(1);
         }
     };
