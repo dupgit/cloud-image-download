@@ -18,6 +18,10 @@ pub struct Cli {
     #[arg(long, default_value_t = CONCURRENT_REQUESTS)]
     pub concurrent_downloads: usize,
 
+    /// Forces verification of skipped downloads (useful to rebuild db)
+    #[arg(long, default_value_t = false)]
+    pub verify_skipped: bool,
+
     // Verbosity level managed through clap_verbosity_flag crate
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,

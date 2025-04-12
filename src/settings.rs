@@ -62,6 +62,7 @@ fn test_settings_from_config() {
         config: "test_data/cloud-image-download.toml".to_string(),
         verbose: Verbosity::new(0, 0),
         concurrent_downloads: 2,
+        verify_skipped: false,
     };
 
     let settings = Settings::from_config(&cli);
@@ -79,6 +80,7 @@ fn test_db_path_settings_from_config() {
         config: "test_data/cloud-image-download.toml".to_string(),
         verbose: Verbosity::new(0, 0),
         concurrent_downloads: 2,
+        verify_skipped: false,
     };
 
     let settings = Settings::from_config(&cli);

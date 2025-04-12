@@ -69,7 +69,7 @@ async fn main() {
 
         // This will retain from `all_ws_image_lists` list only images
         // that have been effectively downloaded
-        WSImageList::only_effectively_downloaded(&mut all_ws_image_lists, &downloaded_summary);
+        WSImageList::only_effectively_downloaded(&mut all_ws_image_lists, &downloaded_summary, cli.verify_skipped);
 
         verify_downloaded_file(all_ws_image_lists, db).await;
     } else {

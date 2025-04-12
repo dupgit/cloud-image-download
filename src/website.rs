@@ -426,10 +426,19 @@ impl WSImageList {
     /// Retains only images that have been effectively downloaded
     /// and not skipped, in error state or in "not started" state
     /// using `Vec<Summary>` to know their state
-    pub fn only_effectively_downloaded(all_ws_image_lists: &mut Vec<WSImageList>, downloaded_summary: &Vec<Summary>) {
+    pub fn only_effectively_downloaded(
+        all_ws_image_lists: &mut Vec<WSImageList>,
+        downloaded_summary: &Vec<Summary>,
+        verify_skipped: bool,
+    ) {
         for ws_image in all_ws_image_lists {
             ws_image.images_list.list.retain(|cloud_image| {
-                image_has_been_downloaded(downloaded_summary, &cloud_image.url, &ws_image.website.destination)
+                image_has_been_downloaded(
+                    downloaded_summary,
+                    &cloud_image.url,
+                    &ws_image.website.destination,
+                    verify_skipped,
+                )
             });
         }
     }

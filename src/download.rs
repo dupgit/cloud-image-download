@@ -130,7 +130,12 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 }
 
 /// This will tell if an image has effectively been downloaded
-pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_url: &str, destination: &PathBuf) -> bool {
+pub fn image_has_been_downloaded(
+    downloaded_summary: &Vec<Summary>,
+    image_url: &str,
+    destination: &PathBuf,
+    verify_skipped: bool,
+) -> bool {
     for summary in downloaded_summary {
         let download = summary.download();
         if let Some((url, filename)) = get_filename_destination(image_url, destination) {
@@ -140,8 +145,11 @@ pub fn image_has_been_downloaded(downloaded_summary: &Vec<Summary>, image_url: &
                         info!("Keeping image {filename} from {url}");
                         return true;
                     }
-                    Status::Fail(_) | Status::Skipped(_) | Status::NotStarted => {
+                    Status::Fail(_) | Status::NotStarted => {
                         return false;
+                    }
+                    Status::Skipped(_) => {
+                        return verify_skipped;
                     }
                 }
             }
