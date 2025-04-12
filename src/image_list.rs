@@ -203,6 +203,10 @@ impl ImageList {
             self.list = vec![self.list.swap_remove(len - 1)];
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
 }
 
 impl fmt::Display for ImageList {

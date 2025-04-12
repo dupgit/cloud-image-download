@@ -433,4 +433,16 @@ impl WSImageList {
             });
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.images_list.is_empty()
+    }
+}
+
+pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> bool {
+    let mut is_empty = true;
+    for ws_image in all_ws_image_lists {
+        is_empty = is_empty && ws_image.is_empty();
+    }
+    is_empty
 }

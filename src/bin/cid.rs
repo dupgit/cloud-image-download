@@ -2,11 +2,11 @@ use cloud_image_download::cli::Cli;
 use cloud_image_download::download::{display_download_status_summary, download_images, verify_downloaded_file};
 use cloud_image_download::image_history::DbImageHistory;
 use cloud_image_download::settings::Settings;
-use cloud_image_download::website::WSImageList;
+use cloud_image_download::website::{WSImageList, vec_ws_image_lists_is_empty};
 use directories::BaseDirs;
 use env_logger::{Env, WriteStyle};
 use futures::{StreamExt, stream};
-use log::{debug, error};
+use log::{debug, error, info};
 use std::env::var;
 use std::process::exit;
 use std::sync::Arc;
@@ -60,15 +60,19 @@ async fn main() {
 
     let mut all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
 
-    // Downloads images
-    let downloaded_summary = download_images(&all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
+    if !vec_ws_image_lists_is_empty(&all_ws_image_lists) {
+        // Downloads images
+        let downloaded_summary = download_images(&all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
 
-    // This will only display a summary only if -q has not been selected
-    display_download_status_summary(&downloaded_summary, &cli.verbose);
+        // This will only display a summary only if -q has not been selected
+        display_download_status_summary(&downloaded_summary, &cli.verbose);
 
-    // This will retain from `all_ws_image_lists` list only images
-    // that have been effectively downloaded
-    WSImageList::only_effectively_downloaded(&mut all_ws_image_lists, &downloaded_summary);
+        // This will retain from `all_ws_image_lists` list only images
+        // that have been effectively downloaded
+        WSImageList::only_effectively_downloaded(&mut all_ws_image_lists, &downloaded_summary);
 
-    verify_downloaded_file(all_ws_image_lists, db).await;
+        verify_downloaded_file(all_ws_image_lists, db).await;
+    } else {
+        info!("Nothing to do");
+    }
 }
