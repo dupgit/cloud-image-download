@@ -6,7 +6,7 @@ name := "cid"
 
 bump patch:
     # Checking that we do not have any untracked or uncommitted file
-    [ $(git status -s | wc -l) == 0 ]
+    git status -s | wc -l | grep '0'
 
     # Updating all dependencies
     cargo update
