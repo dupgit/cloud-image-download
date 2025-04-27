@@ -1,5 +1,82 @@
 # CHANGELOG
 
+0.2.10 (2025-04-21)
+===================
+This release includes a bug fix for parsing `Tuesday` when using `%A` via
+Jiff's `strptime` APIs. Specifically, it would recognize `Tueday` instead of
+`Tuesday`.
+
+Bug fixes:
+
+* [#333](https://github.com/BurntSushi/jiff/issues/333):
+Fix typo in `strptime` parsing from `Tueday` to `Tuesday`.
+
+
+0.2.9 (2025-04-19)
+==================
+This release includes a bug fix that, in debug mode, could result in datetime
+types having different hashes for the same value. This could cause problems,
+for example, if you are using datetimes as keys in a hash map. This problem
+didn't exist when Jiff was compiled in release mode.
+
+This release also improves the panic message shown when the `js` feature isn't
+enabled and the current time is requested on `wasm32-unknown-unknown` targets.
+
+Enhancements:
+
+* [#296](https://github.com/BurntSushi/jiff/issues/296):
+Provide a better panic message when `Zoned::now()` fails on WASM.
+
+Bug fixes:
+
+* [#330](https://github.com/BurntSushi/jiff/issues/330):
+Fix bug where `Hash` on datetime types could yield different hash values for
+the same underlying date/time.
+
+
+0.2.8 (2025-04-13)
+==================
+This release fixes a bug where the constructors on `SignedDuration`
+for floating point durations could panic (in debug mode) or produce
+incorrect results (in release mode). This bug only impacts users of
+the `try_from_secs_{f32,f64}` and `from_secs_{f32,f64}` methods on
+`SignedDuration`.
+
+Enhancements:
+
+* [#326](https://github.com/BurntSushi/jiff/pull/326):
+Add an alternate `Debug` impl for `SignedDuration` that only shows its second
+and nanosecond components (while using only one component when the other is
+zero).
+
+Bug fixes:
+
+* [#324](https://github.com/BurntSushi/jiff/issues/324):
+Fix a bug that could produce a panic or incorrect results in
+`SignedDuration::(try_)?from_secs_{f32,f64}`.
+
+
+0.2.7 (2025-04-13)
+==================
+This release includes a bug fix that changes how an empty but set `TZ`
+environment variable is interpreted (as indistinguishable from `TZ=UTC`).
+This also includes a new enabled by default create feature, `perf-inline`,
+which allows toggling Jiff's use of `inline(always)`. This may help improve
+compile times or decrease binary size.
+
+Enhancements:
+
+* [#320](https://github.com/BurntSushi/jiff/pull/320):
+Remove some internal uses of generics to mildly improve compile times.
+* [#321](https://github.com/BurntSushi/jiff/pull/321):
+Add `perf-inline` crate feature for controlling `inline(always)` annotations.
+
+Bug fixes:
+
+* [#311](https://github.com/BurntSushi/jiff/issues/311):
+Make `TZ=` indistinguishable from `TZ=UTC`.
+
+
 0.2.6 (2025-04-07)
 ==================
 This release includes a few bug fixes and support for discovering the IANA Time
@@ -609,7 +686,7 @@ support. Here are some examples:
 To quickly demonstrate this new feature, here's a simple CLI program using
 Clap:
 
-```rust,no_run
+```ignore
 use clap::Parser;
 use jiff::{Span, Zoned};
 

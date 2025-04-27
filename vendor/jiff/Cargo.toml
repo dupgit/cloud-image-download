@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.70"
 name = "jiff"
-version = "0.2.6"
+version = "0.2.10"
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 build = false
 include = [
@@ -69,12 +69,14 @@ default = [
     "tzdb-bundle-platform",
     "tzdb-zoneinfo",
     "tzdb-concatenated",
+    "perf-inline",
 ]
 js = [
     "dep:wasm-bindgen",
     "dep:js-sys",
 ]
 logging = ["dep:log"]
+perf-inline = []
 serde = ["dep:serde"]
 static = [
     "static-tz",
@@ -138,16 +140,8 @@ features = ["serde"]
 [dev-dependencies.chrono-tz]
 version = "0.10.0"
 
-[dev-dependencies.clap]
-version = "4.5.23"
-features = ["derive"]
-
 [dev-dependencies.humantime]
 version = "2.1.0"
-
-[dev-dependencies.icu]
-version = "1.5.0"
-features = ["std"]
 
 [dev-dependencies.insta]
 version = "1.39.0"
@@ -192,7 +186,7 @@ version = "0.2.70"
 optional = true
 
 [target."cfg(any())".dependencies.jiff-static]
-version = "=0.2.6"
+version = "=0.2.10"
 
 [target.'cfg(any(windows, target_family = "wasm"))'.dependencies.jiff-tzdb-platform]
 version = "0.1.3"

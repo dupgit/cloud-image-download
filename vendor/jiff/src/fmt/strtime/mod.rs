@@ -270,6 +270,7 @@ use crate::{
         self,
         array_str::Abbreviation,
         escape,
+        rangeint::RInto,
         t::{self, C},
     },
     Error, Timestamp, Zoned,
@@ -600,7 +601,7 @@ impl BrokenDownTime {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Example: how to parse a only parse of a timestamp
+    /// # Example: how to parse only a part of a timestamp
     ///
     /// If you only need, for example, the date from a timestamp, then you
     /// can parse it as a prefix:
@@ -1083,7 +1084,8 @@ impl BrokenDownTime {
     ) -> Result<Option<Date>, Error> {
         let Some(doy) = self.day_of_year else { return Ok(None) };
         Ok(Some({
-            let first = Date::new_ranged(year, C(1), C(1)).unwrap();
+            let first =
+                Date::new_ranged(year, C(1).rinto(), C(1).rinto()).unwrap();
             first
                 .with()
                 .day_of_year(doy.get())
@@ -1114,8 +1116,8 @@ impl BrokenDownTime {
         };
         let week = i16::from(week);
         let wday = i16::from(weekday.to_sunday_zero_offset());
-        let first_of_year =
-            Date::new_ranged(year, C(1), C(1)).context("invalid date")?;
+        let first_of_year = Date::new_ranged(year, C(1).rinto(), C(1).rinto())
+            .context("invalid date")?;
         let first_sunday = first_of_year
             .nth_weekday_of_month(1, Weekday::Sunday)
             .map(|d| d.day_of_year())
@@ -1162,8 +1164,8 @@ impl BrokenDownTime {
         };
         let week = i16::from(week);
         let wday = i16::from(weekday.to_monday_zero_offset());
-        let first_of_year =
-            Date::new_ranged(year, C(1), C(1)).context("invalid date")?;
+        let first_of_year = Date::new_ranged(year, C(1).rinto(), C(1).rinto())
+            .context("invalid date")?;
         let first_monday = first_of_year
             .nth_weekday_of_month(1, Weekday::Monday)
             .map(|d| d.day_of_year())
@@ -2659,7 +2661,7 @@ impl Extension {
     /// Parses an optional directive flag from the beginning of `fmt`. This
     /// assumes `fmt` is not empty and guarantees that the return unconsumed
     /// slice is also non-empty.
-    #[inline(always)]
+    #[cfg_attr(feature = "perf-inline", inline(always))]
     fn parse_flag<'i>(
         fmt: &'i [u8],
     ) -> Result<(Option<Flag>, &'i [u8]), Error> {
@@ -2692,7 +2694,7 @@ impl Extension {
     /// and `%.f`. In the former case, the width is just re-interpreted as
     /// a precision setting. In the latter case, something like `%5.9f` is
     /// technically valid, but the `5` is ignored.
-    #[inline(always)]
+    #[cfg_attr(feature = "perf-inline", inline(always))]
     fn parse_width<'i>(
         fmt: &'i [u8],
     ) -> Result<(Option<u8>, &'i [u8]), Error> {

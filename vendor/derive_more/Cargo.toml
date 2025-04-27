@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "derive_more"
-version = "0.99.19"
+version = "0.99.20"
 authors = ["Jelte Fennema <github-tech@jeltef.nl>"]
 build = false
 include = [
@@ -47,10 +47,65 @@ categories = [
 license = "MIT"
 repository = "https://github.com/JelteF/derive_more"
 
-[package.metadata.playground]
-features = [
-    "full",
-    "std",
+[badges.github]
+repository = "JelteF/derive_more"
+workflow = "CI"
+
+[features]
+add = []
+add_assign = []
+as_mut = []
+as_ref = []
+constructor = []
+default = [
+    "add_assign",
+    "add",
+    "as_mut",
+    "as_ref",
+    "constructor",
+    "deref",
+    "deref_mut",
+    "display",
+    "error",
+    "from",
+    "from_str",
+    "index",
+    "index_mut",
+    "into",
+    "into_iterator",
+    "iterator",
+    "mul_assign",
+    "mul",
+    "not",
+    "sum",
+    "try_into",
+    "is_variant",
+    "unwrap",
+]
+deref = []
+deref_mut = []
+display = ["syn/extra-traits"]
+error = ["syn/extra-traits"]
+from = ["syn/extra-traits"]
+from_str = []
+generate-parsing-rs = ["peg"]
+index = []
+index_mut = []
+into = ["syn/extra-traits"]
+into_iterator = []
+is_variant = ["convert_case"]
+iterator = []
+mul = ["syn/extra-traits"]
+mul_assign = ["syn/extra-traits"]
+nightly = []
+not = ["syn/extra-traits"]
+sum = []
+testing-helpers = ["rustc_version"]
+track-caller = []
+try_into = ["syn/extra-traits"]
+unwrap = [
+    "convert_case",
+    "rustc_version",
 ]
 
 [lib]
@@ -290,64 +345,3 @@ optional = true
 [build-dependencies.rustc_version]
 version = "0.4"
 optional = true
-
-[features]
-add = []
-add_assign = []
-as_mut = []
-as_ref = []
-constructor = []
-default = [
-    "add_assign",
-    "add",
-    "as_mut",
-    "as_ref",
-    "constructor",
-    "deref",
-    "deref_mut",
-    "display",
-    "error",
-    "from",
-    "from_str",
-    "index",
-    "index_mut",
-    "into",
-    "into_iterator",
-    "iterator",
-    "mul_assign",
-    "mul",
-    "not",
-    "sum",
-    "try_into",
-    "is_variant",
-    "unwrap",
-]
-deref = []
-deref_mut = []
-display = ["syn/extra-traits"]
-error = ["syn/extra-traits"]
-from = ["syn/extra-traits"]
-from_str = []
-generate-parsing-rs = ["peg"]
-index = []
-index_mut = []
-into = ["syn/extra-traits"]
-into_iterator = []
-is_variant = ["convert_case"]
-iterator = []
-mul = ["syn/extra-traits"]
-mul_assign = ["syn/extra-traits"]
-nightly = []
-not = ["syn/extra-traits"]
-sum = []
-testing-helpers = ["rustc_version"]
-track-caller = []
-try_into = ["syn/extra-traits"]
-unwrap = [
-    "convert_case",
-    "rustc_version",
-]
-
-[badges.github]
-repository = "JelteF/derive_more"
-workflow = "CI"

@@ -77,6 +77,16 @@ increasing the MSRV for `full` will be minor version bump.
 
 ## Changelog
 
+### Version 3.1.1 - 2025-04-14
+
+Improved:
+
+* MSRV (1.31.0) declared in Cargo.toml.
+
+Added:
+
+* Relaxed dependency on `dirs` to allow 6.x.
+
 ### Version 3.1.0 - 2023-03-24
 
 Added:

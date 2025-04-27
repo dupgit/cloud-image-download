@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.70"
 name = "jiff-static"
-version = "0.2.6"
+version = "0.2.10"
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 build = false
 include = [
@@ -44,6 +44,7 @@ repository = "https://github.com/BurntSushi/jiff"
 
 [features]
 default = []
+perf-inline = []
 tz-fat = []
 tzdb = ["dep:jiff-tzdb"]
 
