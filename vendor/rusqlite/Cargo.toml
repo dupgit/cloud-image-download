@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "rusqlite"
-version = "0.34.0"
+version = "0.35.0"
 authors = ["The rusqlite developers"]
 build = false
 exclude = [
@@ -93,6 +93,7 @@ bundled-sqlcipher-vendored-openssl = [
 bundled-windows = ["libsqlite3-sys/bundled-windows"]
 collation = []
 column_decltype = []
+column_metadata = ["libsqlite3-sys/column_metadata"]
 csvtab = [
     "csv",
     "vtab",
@@ -115,6 +116,7 @@ modern-full = [
     "modern_sqlite",
     "chrono",
     "collation",
+    "column_metadata",
     "column_decltype",
     "csvtab",
     "extra_check",
@@ -249,7 +251,7 @@ optional = true
 default-features = false
 
 [dependencies.libsqlite3-sys]
-version = "0.32.0"
+version = "0.33.0"
 
 [dependencies.rusqlite-macros]
 version = "0.4.0"
