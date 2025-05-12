@@ -29,3 +29,7 @@ bump patch:
     git add Cargo.toml Cargo.lock {{name}}.sbom.spdx.json vendor
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
+
+git-publish:
+    git push
+    git push --tags
