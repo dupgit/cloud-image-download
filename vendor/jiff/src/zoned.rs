@@ -3209,12 +3209,31 @@ impl core::fmt::Debug for Zoned {
 
 /// Converts a `Zoned` datetime into a RFC 9557 compliant string.
 ///
-/// Options currently supported:
+/// # Formatting options supported
 ///
 /// * [`std::fmt::Formatter::precision`] can be set to control the precision
-/// of the fractional second component.
+/// of the fractional second component. When not set, the minimum precision
+/// required to losslessly render the value is used.
 ///
 /// # Example
+///
+/// This shows the default rendering:
+///
+/// ```
+/// use jiff::civil::date;
+///
+/// // No fractional seconds:
+/// let zdt = date(2024, 6, 15).at(7, 0, 0, 0).in_tz("US/Eastern")?;
+/// assert_eq!(format!("{zdt}"), "2024-06-15T07:00:00-04:00[US/Eastern]");
+///
+/// // With fractional seconds:
+/// let zdt = date(2024, 6, 15).at(7, 0, 0, 123_000_000).in_tz("US/Eastern")?;
+/// assert_eq!(format!("{zdt}"), "2024-06-15T07:00:00.123-04:00[US/Eastern]");
+///
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Example: setting the precision
 ///
 /// ```
 /// use jiff::civil::date;
@@ -5739,6 +5758,73 @@ mod tests {
         insta::assert_snapshot!(
             zdt.round(options).unwrap_err(),
             @"increment 2 for rounding datetime to days must be 1) less than 2, 2) divide into it evenly and 3) greater than zero"
+        );
+    }
+
+    // This tests that if we get a time zone offset with an explicit second
+    // component, then it must *exactly* match the correct offset for that
+    // civil time.
+    //
+    // See: https://github.com/tc39/proposal-temporal/issues/3099
+    // See: https://github.com/tc39/proposal-temporal/pull/3107
+    #[test]
+    fn time_zone_offset_seconds_exact_match() {
+        if crate::tz::db().is_definitively_empty() {
+            return;
+        }
+
+        let zdt: Zoned =
+            "1970-06-01T00:00:00-00:45[Africa/Monrovia]".parse().unwrap();
+        assert_eq!(
+            zdt.to_string(),
+            "1970-06-01T00:00:00-00:45[Africa/Monrovia]"
+        );
+
+        let zdt: Zoned =
+            "1970-06-01T00:00:00-00:44:30[Africa/Monrovia]".parse().unwrap();
+        assert_eq!(
+            zdt.to_string(),
+            "1970-06-01T00:00:00-00:45[Africa/Monrovia]"
+        );
+
+        insta::assert_snapshot!(
+            "1970-06-01T00:00:00-00:44:40[Africa/Monrovia]".parse::<Zoned>().unwrap_err(),
+            @r#"parsing "1970-06-01T00:00:00-00:44:40[Africa/Monrovia]" failed: datetime 1970-06-01T00:00:00 could not resolve to a timestamp since 'reject' conflict resolution was chosen, and because datetime has offset -00:44:40, but the time zone Africa/Monrovia for the given datetime unambiguously has offset -00:44:30"#,
+        );
+
+        insta::assert_snapshot!(
+            "1970-06-01T00:00:00-00:45:00[Africa/Monrovia]".parse::<Zoned>().unwrap_err(),
+            @r#"parsing "1970-06-01T00:00:00-00:45:00[Africa/Monrovia]" failed: datetime 1970-06-01T00:00:00 could not resolve to a timestamp since 'reject' conflict resolution was chosen, and because datetime has offset -00:45, but the time zone Africa/Monrovia for the given datetime unambiguously has offset -00:44:30"#,
+        );
+    }
+
+    // These are some interesting tests because the time zones have transitions
+    // that are very close to one another (within 14 days!). I picked these up
+    // from a bug report to Temporal. Their reference implementation uses
+    // different logic to examine time zone transitions than Jiff. In contrast,
+    // Jiff uses the IANA time zone database directly. So it was unaffected.
+    //
+    // [1]: https://github.com/tc39/proposal-temporal/issues/3110
+    #[test]
+    fn weird_time_zone_transitions() {
+        if crate::tz::db().is_definitively_empty() {
+            return;
+        }
+
+        let zdt: Zoned =
+            "2000-10-08T01:00:00-01:00[America/Noronha]".parse().unwrap();
+        let sod = zdt.start_of_day().unwrap();
+        assert_eq!(
+            sod.to_string(),
+            "2000-10-08T01:00:00-01:00[America/Noronha]"
+        );
+
+        let zdt: Zoned =
+            "2000-10-08T03:00:00-03:00[America/Boa_Vista]".parse().unwrap();
+        let sod = zdt.start_of_day().unwrap();
+        assert_eq!(
+            sod.to_string(),
+            "2000-10-08T01:00:00-03:00[America/Boa_Vista]",
         );
     }
 }

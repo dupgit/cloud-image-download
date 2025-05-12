@@ -1,5 +1,72 @@
 # CHANGELOG
 
+0.2.13 (2025-05-05)
+===================
+This release fixes a bug in a corner case where `TimeZone::following` could
+sometimes omit the last time zone transition. This could only happen in time
+zones that once had daylight saving time, but ended it. This did not have an
+impact on other Jiff APIs that handle daylight saving time.
+
+Bug fixes:
+
+* [#362](https://github.com/BurntSushi/jiff/issues/362):
+Fix a bug where `TimeZone::following` could omit the last historical time zone
+transition.
+
+
+0.2.12 (2025-05-03)
+===================
+This release fixes a couple bugs in Jiff's parser. In particular, a regression
+was introduced in `jiff 0.2.11` where its RFC 2822 parser could panic on some
+inputs. Previous releases of Jiff are unaffected.
+
+Bug fixes:
+
+* [#357](https://github.com/BurntSushi/jiff/issues/357):
+Fix a bug where parsing `1970-06-01T00-00:45:00[Africa/Monrovia]` succeeded
+but it should fail.
+* [#359](https://github.com/BurntSushi/jiff/issues/359):
+Fix a bug where the RFC 2822 parser could panic on some inputs.
+
+
+0.2.11 (2025-05-01)
+===================
+This release includes new APIs for customizing Jiff's `strtime` behavior along
+with a few minor bug fixes. Jiff's `strtime` formatting API has also been
+optimized. It's about twice as fast as it was.
+
+This release also coincides with the publication of `jiff-icu 0.2.0-beta.2`,
+which has support for `icu 2.0.0-beta.2`.
+
+Enhancements:
+
+* [#338](https://github.com/BurntSushi/jiff/pull/338):
+Add support for the `%c`, `%r`, `%X` and `%x` conversion specifiers.
+* [#341](https://github.com/BurntSushi/jiff/issues/341):
+Add support for `%q` in `jiff::fmt::strtime` (prints quarter of year).
+* [#342](https://github.com/BurntSushi/jiff/issues/342):
+Add support for `%::z` and `%:::z` in `jiff::fmt::strtime`.
+* [#344](https://github.com/BurntSushi/jiff/issues/344):
+Add support for `%N` in `jiff::fmt::strtime` (alias for `%9f`).
+* [#350](https://github.com/BurntSushi/jiff/issues/350):
+Add a "lenient" mode for `strtime` formatting APIs that ignores most errors.
+
+Bug fixes:
+
+* [#328](https://github.com/BurntSushi/jiff/issues/328):
+Document default precision behavior of `Display` impls for datetime types.
+* [#340](https://github.com/BurntSushi/jiff/issues/340):
+Allow whitespace in more places in RFC 2822 parser (improves spec compliance).
+* [#346](https://github.com/BurntSushi/jiff/issues/346):
+`TimeZone::get("UTC")` should now always return `TimeZone::UTC`.
+
+Performance:
+
+* [#338](https://github.com/BurntSushi/jiff/pull/338):
+Jiff's `strftime` APIs are now approximately twice as fast as they were.
+Performance should be comparable to `chrono` and `time`'s prebuilt APIs.
+
+
 0.2.10 (2025-04-21)
 ===================
 This release includes a bug fix for parsing `Tuesday` when using `%A` via

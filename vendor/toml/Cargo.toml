@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.66"
 name = "toml"
-version = "0.8.21"
+version = "0.8.22"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 build = false
 include = [
@@ -184,7 +184,7 @@ version = "0.6.9"
 features = ["serde"]
 
 [dependencies.toml_edit]
-version = "0.22.25"
+version = "0.22.26"
 features = ["serde"]
 optional = true
 default-features = false

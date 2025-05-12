@@ -561,6 +561,27 @@ impl Build {
         self
     }
 
+    /// Add multiple flags to the invocation of the compiler.
+    /// This is equivalent to calling [`flag`](Self::flag) for each item in the iterator.
+    ///
+    /// # Example
+    /// ```no_run
+    /// cc::Build::new()
+    ///     .file("src/foo.c")
+    ///     .flags(["-Wall", "-Wextra"])
+    ///     .compile("foo");
+    /// ```
+    pub fn flags<Iter>(&mut self, flags: Iter) -> &mut Build
+    where
+        Iter: IntoIterator,
+        Iter::Item: AsRef<OsStr>,
+    {
+        for flag in flags {
+            self.flag(flag);
+        }
+        self
+    }
+
     /// Removes a compiler flag that was added by [`Build::flag`].
     ///
     /// Will not remove flags added by other means (default flags,
@@ -1350,6 +1371,12 @@ impl Build {
                 is_arm,
             },
         );
+
+        // Checking for compiler flags does not require linking (and we _must_
+        // avoid making it do so, since it breaks cross-compilation when the C
+        // compiler isn't configured to be able to link).
+        // https://github.com/rust-lang/cc-rs/issues/1423
+        cmd.arg("-c");
 
         if compiler.supports_path_delimiter() {
             cmd.arg("--");

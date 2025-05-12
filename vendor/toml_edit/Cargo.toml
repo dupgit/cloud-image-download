@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.66"
 name = "toml_edit"
-version = "0.22.25"
+version = "0.22.26"
 authors = [
     "Andronik Ordian <write@reusable.software>",
     "Ed Page <eopage@gmail.com>",
@@ -188,7 +188,7 @@ optional = true
 version = "0.6.9"
 
 [dependencies.toml_write]
-version = "0.1.0"
+version = "0.1.1"
 optional = true
 
 [dependencies.winnow]
