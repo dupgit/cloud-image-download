@@ -4,7 +4,15 @@ default:
 
 name := "cid"
 
+# Installs all cargo tools to build a release or test coverage
+install-dev-tools:
+    cargo install cargo-release cargo-sbom cargo-tarpaulin
+
+# Bumps {patch} (major, minor or patch) version number and does a release
 bump patch:
+    # Ensures that the source code is correctly formatted -> it should not modify anything
+    cargo fmt
+
     # Checking that we do not have any untracked or uncommitted file
     git status -s | wc -l | grep '0'
 
@@ -22,7 +30,7 @@ bump patch:
     cargo test --release
     cargo doc --no-deps
 
-    # Generetaing a Software Bills of Materials in SPDX format (sorting will reduce the diff size and allow one to figure out what has really changed)
+    # Generetaing a Software Bills of Materials in SPDX format (sorting will reduce the diff size and allow one to figure out what has really changed)
     cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{name}}.sbom.spdx.json
 
     # Creating the release
@@ -30,6 +38,23 @@ bump patch:
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
 
+# Creates the documentation and open it in a browser
+document:
+    cargo doc --no-deps --open
+
+# Publishing in the git repository (with tags)
 git-publish:
     git push
     git push --tags
+
+# Publishing to crates.io
+rust-publish:
+    cargo publish
+
+# Publishing to git and then to crates.io
+publish: git-publish rust-publish
+
+# Runs a coverage test and open it's result in a web browser
+coverage:
+    cargo tarpaulin --frozen -o Html
+    open tarpaulin-report.html
