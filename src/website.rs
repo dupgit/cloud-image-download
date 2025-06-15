@@ -5,6 +5,7 @@ use crate::image_history::DbImageHistory;
 use crate::image_list::{CloudImage, ImageList, compare_str_by_date};
 use colored::Colorize;
 use futures::{StreamExt, stream};
+use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use reqwest::header::{ACCEPT, USER_AGENT};
@@ -77,47 +78,6 @@ fn build_all_link_selector() -> Selector {
     }
 }
 
-/// Gets a list of all possible dates from one url
-/// that may contain directories named with dates
-/// in YYYYMMDD format. This uses an async get request
-/// (from reqwest) to get the page at the url
-async fn get_list_of_dates(url: &str) -> Vec<String> {
-    let mut dates_list = vec![];
-    match reqwest::get(url).await {
-        Ok(response) => {
-            match response.text().await {
-                Ok(body) => {
-                    let document = Html::parse_document(&body);
-                    let selector = build_all_link_selector();
-                    // selecting all <a> html tag then mapping it's inner element
-                    // then filtering these elements with filter_dates() function
-                    let dates_slash_list = document
-                        .select(&selector)
-                        .map(|element| element.inner_html())
-                        .filter(|inner| filter_dates(inner))
-                        .collect::<Vec<String>>();
-
-                    for date_slash in dates_slash_list {
-                        dates_list.push(date_slash.replace("/", ""))
-                    }
-                }
-                Err(e) => warn!("Error: not body in response: {e}"),
-            };
-        }
-        Err(e) => warn!("Error while fetching url {url}: {e}"),
-    };
-
-    // If any we only keep the latest date so we need to sort
-    // the list and then keep only the last element
-    dates_list.sort_by(|a, b| compare_str_by_date(a, b));
-    let len = dates_list.len();
-    if len >= 1 {
-        dates_list = vec![dates_list.swap_remove(len - 1)];
-    };
-
-    dates_list
-}
-
 /// Tells if inner String indicates that we are
 /// in presence of a checksum files that contains
 /// all checksums for all downloadable images
@@ -162,10 +122,12 @@ async fn get_body_from_url(url: &str, client: &reqwest::Client) -> Option<String
 }
 
 impl WebSite {
-    /// Generates all url to be checked for images for
-    /// this particular website. Checks whether the site
-    /// has dates directories and in that case adds them
-    /// to the list. The returned list may be empty.
+    /// Generates all url to be checked for images for this particular website
+    /// using versions from `version_list` and `after_version_url` that both
+    /// are vectors and may contain more than one element.
+    /// Checks whether the site has dates directories and in that case adds
+    /// the latest one to the list instead of the url itself.
+    /// The returned list may be empty.
     async fn generate_url_list(&self) -> Vec<String> {
         let mut url_list = vec![];
         for version in &self.version_list {
@@ -189,19 +151,42 @@ impl WebSite {
         }
 
         let mut final_url_list = vec![];
-
         for url in url_list {
-            let list_of_dates = get_list_of_dates(&url).await;
-            if list_of_dates.is_empty() {
-                final_url_list.push(url.to_string());
-            } else {
-                for date in list_of_dates {
-                    final_url_list.push(format!("{url}/{date}"));
-                }
+            if let Some(url_checked) = WebSite::check_for_directories_with_dates(&url).await {
+                final_url_list.push(url_checked);
             }
         }
-
         final_url_list
+    }
+
+    /// Checks if an url has directories with dates and then returns the url
+    /// containing that directory instead of url itself. If the url has no
+    /// directories with dates then returns this url
+    async fn check_for_directories_with_dates(url: &str) -> Option<String> {
+        if let Ok(list_of_dates) = HttpDirectory::new(&url).await {
+            if let Ok(list_of_dates) = list_of_dates.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
+                if list_of_dates.is_empty() {
+                    debug!("This {url} has no dates in it");
+                    return Some(url.to_string());
+                } else {
+                    debug!("This {url} has dates in it:");
+                    // Keep only the latest entry
+                    if let Some(entry) = list_of_dates.sort_by_date(Sorting::Descending).first() {
+                        if let Some(date) = entry.dirname() {
+                            debug!("Adding {date}");
+                            return Some(format!("{url}/{date}"));
+                        } else {
+                            debug!("Error getting directory name");
+                        }
+                    } else {
+                        debug!("Error while trying to get the latest directory entry");
+                    }
+                }
+            } else {
+                return Some(url.to_string());
+            }
+        }
+        None
     }
 
     /// Adds all images that can be gathered from this

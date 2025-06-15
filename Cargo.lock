@@ -973,9 +973,9 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "httpdirectory"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce7382aab3c4df50221eb0b802885b497523abd828ef36bb51c63bb5a66cb6f"
+checksum = "4019ca858215c95e1d88449a876dbb57cd010fde41e10c98c100b36c3df535d2"
 dependencies = [
  "chrono",
  "colored",
