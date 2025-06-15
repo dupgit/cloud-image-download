@@ -1,8 +1,7 @@
-use futures_util::future::BoxFuture;
 use opentelemetry::trace::{Status, TracerProvider as _};
 use opentelemetry_sdk::{
-    export::trace::{ExportResult, SpanData, SpanExporter},
-    trace::{Tracer, TracerProvider},
+    error::OTelSdkResult,
+    trace::{SdkTracerProvider, SpanData, SpanExporter, Tracer},
 };
 use std::sync::{Arc, Mutex};
 use tracing::level_filters::LevelFilter;
@@ -14,20 +13,18 @@ use tracing_subscriber::prelude::*;
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
         let spans = self.0.clone();
-        Box::pin(async move {
-            if let Ok(mut inner) = spans.lock() {
-                inner.append(&mut batch);
-            }
-            Ok(())
-        })
+        if let Ok(mut inner) = spans.lock() {
+            inner.append(&mut batch);
+        }
+        Ok(())
     }
 }
 
-fn test_tracer() -> (Tracer, TracerProvider, TestExporter, impl Subscriber) {
+fn test_tracer() -> (Tracer, SdkTracerProvider, TestExporter, impl Subscriber) {
     let exporter = TestExporter::default();
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
     let tracer = provider.tracer("test");
@@ -73,4 +70,98 @@ fn set_status_helper(status: Status) -> SpanData {
     assert_eq!(spans.len(), 1);
 
     spans.iter().find(|s| s.name == "root").unwrap().clone()
+}
+
+#[test]
+fn test_add_event() {
+    let (_tracer, provider, exporter, subscriber) = test_tracer();
+
+    let event_name = "my_event";
+    let event_attrs = vec![
+        opentelemetry::KeyValue::new("event_key_1", "event_value_1"),
+        opentelemetry::KeyValue::new("event_key_2", 123),
+    ];
+
+    tracing::subscriber::with_default(subscriber, || {
+        let root = tracing::debug_span!("root");
+        let _enter = root.enter(); // Enter span to make it current for the event addition
+
+        // Add the event using the new extension method
+        root.add_event(event_name, event_attrs.clone());
+    });
+
+    drop(provider); // flush all spans
+    let spans = exporter.0.lock().unwrap();
+
+    assert_eq!(spans.len(), 1, "Should have exported exactly one span.");
+    let root_span_data = spans.first().unwrap();
+
+    assert_eq!(
+        root_span_data.events.len(),
+        1,
+        "Span should have one event."
+    );
+    let event_data = root_span_data.events.first().unwrap();
+
+    assert_eq!(event_data.name, event_name, "Event name mismatch.");
+    assert_eq!(
+        event_data.attributes, event_attrs,
+        "Event attributes mismatch."
+    );
+}
+
+#[test]
+fn test_add_event_with_timestamp() {
+    use std::time::{Duration, SystemTime};
+
+    let (_tracer, provider, exporter, subscriber) = test_tracer();
+
+    let event_name = "my_specific_time_event";
+    let event_attrs = vec![opentelemetry::KeyValue::new("event_key_a", "value_a")];
+    // Define a specific timestamp (e.g., 10 seconds ago)
+    let specific_timestamp = SystemTime::now() - Duration::from_secs(10);
+
+    tracing::subscriber::with_default(subscriber, || {
+        let root = tracing::debug_span!("root_with_timestamped_event");
+        let _enter = root.enter();
+
+        // Add the event using the new extension method with the specific timestamp
+        root.add_event_with_timestamp(event_name, specific_timestamp, event_attrs.clone());
+    });
+
+    drop(provider); // flush all spans
+    let spans = exporter.0.lock().unwrap();
+
+    assert_eq!(spans.len(), 1, "Should have exported exactly one span.");
+    let root_span_data = spans.first().unwrap();
+
+    assert_eq!(
+        root_span_data.events.len(),
+        1,
+        "Span should have one event."
+    );
+    let event_data = root_span_data.events.first().unwrap();
+
+    assert_eq!(event_data.name, event_name, "Event name mismatch.");
+    assert_eq!(
+        event_data.attributes, event_attrs,
+        "Event attributes mismatch."
+    );
+
+    // Assert the timestamp matches the one we provided
+    // Allow for a small tolerance due to potential precision differences during conversion
+    let timestamp_diff = event_data
+        .timestamp
+        .duration_since(specific_timestamp)
+        .unwrap_or_else(|_| {
+            specific_timestamp
+                .duration_since(event_data.timestamp)
+                .unwrap_or_default()
+        });
+    assert!(
+        timestamp_diff < Duration::from_millis(1),
+        "Timestamp mismatch. Expected: {:?}, Got: {:?}",
+        specific_timestamp,
+        event_data.timestamp
+    );
 }

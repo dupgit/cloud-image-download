@@ -20,8 +20,8 @@
 //! special fields are:
 //!
 //! * `otel.name`: Override the span name sent to OpenTelemetry exporters.
-//!    Setting this field is useful if you want to display non-static information
-//!    in your span name.
+//!   Setting this field is useful if you want to display non-static information
+//!   in your span name.
 //! * `otel.kind`: Set the span kind to one of the supported OpenTelemetry [span kinds].
 //! * `otel.status_code`: Set the span status code to one of the supported OpenTelemetry [span status codes].
 //! * `otel.status_message`: Set the span status message.
@@ -51,14 +51,14 @@
 //! ## Examples
 //!
 //! ```
-//! use opentelemetry_sdk::trace::TracerProvider;
+//! use opentelemetry_sdk::trace::SdkTracerProvider;
 //! use opentelemetry::trace::{Tracer, TracerProvider as _};
 //! use tracing::{error, span};
 //! use tracing_subscriber::layer::SubscriberExt;
 //! use tracing_subscriber::Registry;
 //!
 //! // Create a new OpenTelemetry trace pipeline that prints to stdout
-//! let provider = TracerProvider::builder()
+//! let provider = SdkTracerProvider::builder()
 //!     .with_simple_exporter(opentelemetry_stdout::SpanExporter::default())
 //!     .build();
 //! let tracer = provider.tracer("readme_example");
@@ -104,8 +104,7 @@
 //! long as doing so complies with this policy.
 //!
 //! [subscriber]: tracing_subscriber::subscribe
-#![deny(unreachable_pub)]
-#![cfg_attr(test, deny(warnings))]
+#![warn(unreachable_pub)]
 #![doc(html_root_url = "https://docs.rs/tracing-opentelemetry/0.22.0")]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/tokio-rs/tracing/master/assets/logo-type.png",

@@ -48,18 +48,18 @@ fn main() {
 
     if version.minor >= 80 {
         println!(
-            r#"cargo:rustc-check-cfg=cfg(target_feature,values("zacas","fast-serialization","load-store-on-cond","distinct-ops","miscellaneous-extensions-3"))"#
+            r#"cargo:rustc-check-cfg=cfg(target_feature,values("lsfe","fast-serialization","load-store-on-cond","distinct-ops","miscellaneous-extensions-3"))"#
         );
 
         // Custom cfgs set by build script. Not public API.
         // grep -F 'cargo:rustc-cfg=' build.rs | grep -Ev '^ *//' | sed -E 's/^.*cargo:rustc-cfg=//; s/(=\\)?".*$//' | LC_ALL=C sort -u | tr '\n' ',' | sed -E 's/,$/\n/'
         println!(
-            "cargo:rustc-check-cfg=cfg(portable_atomic_disable_fiq,portable_atomic_force_amo,portable_atomic_ll_sc_rmw,portable_atomic_new_atomic_intrinsics,portable_atomic_no_asm,portable_atomic_no_asm_maybe_uninit,portable_atomic_no_atomic_64,portable_atomic_no_atomic_cas,portable_atomic_no_atomic_load_store,portable_atomic_no_atomic_min_max,portable_atomic_no_cfg_target_has_atomic,portable_atomic_no_cmpxchg16b_intrinsic,portable_atomic_no_cmpxchg16b_target_feature,portable_atomic_no_const_mut_refs,portable_atomic_no_const_raw_ptr_deref,portable_atomic_no_const_transmute,portable_atomic_no_core_unwind_safe,portable_atomic_no_diagnostic_namespace,portable_atomic_no_offset_of,portable_atomic_no_strict_provenance,portable_atomic_no_stronger_failure_ordering,portable_atomic_no_track_caller,portable_atomic_no_unsafe_op_in_unsafe_fn,portable_atomic_pre_llvm_15,portable_atomic_pre_llvm_16,portable_atomic_pre_llvm_18,portable_atomic_pre_llvm_20,portable_atomic_s_mode,portable_atomic_sanitize_thread,portable_atomic_target_feature,portable_atomic_unsafe_assume_single_core,portable_atomic_unstable_asm,portable_atomic_unstable_asm_experimental_arch,portable_atomic_unstable_cfg_target_has_atomic,portable_atomic_unstable_isa_attribute)"
+            "cargo:rustc-check-cfg=cfg(portable_atomic_disable_fiq,portable_atomic_force_amo,portable_atomic_ll_sc_rmw,portable_atomic_atomic_intrinsics,portable_atomic_no_asm,portable_atomic_no_asm_maybe_uninit,portable_atomic_no_atomic_64,portable_atomic_no_atomic_cas,portable_atomic_no_atomic_load_store,portable_atomic_no_atomic_min_max,portable_atomic_no_cfg_target_has_atomic,portable_atomic_no_cmpxchg16b_intrinsic,portable_atomic_no_cmpxchg16b_target_feature,portable_atomic_no_const_mut_refs,portable_atomic_no_const_raw_ptr_deref,portable_atomic_no_const_transmute,portable_atomic_no_core_unwind_safe,portable_atomic_no_diagnostic_namespace,portable_atomic_no_offset_of,portable_atomic_no_strict_provenance,portable_atomic_no_stronger_failure_ordering,portable_atomic_no_track_caller,portable_atomic_no_unsafe_op_in_unsafe_fn,portable_atomic_pre_llvm_15,portable_atomic_pre_llvm_16,portable_atomic_pre_llvm_18,portable_atomic_pre_llvm_20,portable_atomic_s_mode,portable_atomic_sanitize_thread,portable_atomic_target_feature,portable_atomic_unsafe_assume_single_core,portable_atomic_unstable_asm,portable_atomic_unstable_asm_experimental_arch,portable_atomic_unstable_cfg_target_has_atomic,portable_atomic_unstable_isa_attribute)"
         );
         // TODO: handle multi-line target_feature_fallback
         // grep -F 'target_feature_fallback("' build.rs | grep -Ev '^ *//' | sed -E 's/^.*target_feature_fallback\(//; s/",.*$/"/' | LC_ALL=C sort -u | tr '\n' ',' | sed -E 's/,$/\n/'
         println!(
-            r#"cargo:rustc-check-cfg=cfg(portable_atomic_target_feature,values("cmpxchg16b","distinct-ops","fast-serialization","load-store-on-cond","lse","lse128","lse2","mclass","miscellaneous-extensions-3","quadword-atomics","rcpc3","v6","zaamo","zabha","zacas"))"#
+            r#"cargo:rustc-check-cfg=cfg(portable_atomic_target_feature,values("cmpxchg16b","distinct-ops","fast-serialization","load-store-on-cond","lse","lse128","lse2","lsfe","mclass","miscellaneous-extensions-3","quadword-atomics","rcpc3","v6","zaamo","zabha","zacas"))"#
         );
     }
 
@@ -130,6 +130,17 @@ fn main() {
     // strict_provenance/exposed_provenance APIs stabilized in Rust 1.84 (nightly-2024-10-22): https://github.com/rust-lang/rust/pull/130350
     if !version.probe(84, 2024, 10, 21) {
         println!("cargo:rustc-cfg=portable_atomic_no_strict_provenance");
+    }
+
+    // For Miri and ThreadSanitizer. (aarch64, arm64ec, s390x, powerpc64)
+    // https://github.com/rust-lang/rust/pull/97423 merged in Rust 1.64 (nightly-2022-06-30).
+    // https://github.com/rust-lang/rust/pull/141507 merged in Rust 1.89 (nightly-2025-05-31).
+    if version.nightly
+        && version.probe(64, 2022, 6, 29)
+        && !version.probe(89, 2025, 5, 30)
+        && (target_arch != "powerpc64" || version.llvm >= 15)
+    {
+        println!("cargo:rustc-cfg=portable_atomic_atomic_intrinsics");
     }
 
     // asm! on AArch64, Arm, RISC-V, x86, and x86_64 stabilized in Rust 1.59 (nightly-2021-12-16): https://github.com/rust-lang/rust/pull/91728
@@ -249,8 +260,9 @@ fn main() {
                 // x86_64 Apple targets always support CMPXCHG16B:
                 // https://github.com/rust-lang/rust/blob/1.68.0/compiler/rustc_target/src/spec/x86_64_apple_darwin.rs#L8
                 // https://github.com/rust-lang/rust/blob/1.68.0/compiler/rustc_target/src/spec/apple_base.rs#L69-L70
-                // (Since Rust 1.78, Windows (except Windows 7) targets also enable CMPXCHG16B, but
-                // this branch is only used on pre-1.69 that cmpxchg16b_target_feature is unstable.)
+                // (Windows (except Windows 7, since Rust 1.78) and Fuchsia (since Rust 1.87) targets
+                // also enable CMPXCHG16B, but this branch is only used on pre-1.69 that
+                // cmpxchg16b_target_feature is unstable.)
                 // Script to get builtin targets that support CMPXCHG16B by default:
                 // $ (for target in $(rustc -Z unstable-options --print all-target-specs-json | jq -r '. | to_entries[] | if .value.arch == "x86_64" then .key else empty end'); do rustc --print cfg --target "${target}" | grep -Fq '"cmpxchg16b"' && printf '%s\n' "${target}"; done)
                 let is_apple = env::var("CARGO_CFG_TARGET_VENDOR").unwrap_or_default() == "apple";
@@ -261,18 +273,12 @@ fn main() {
             }
         }
         "aarch64" | "arm64ec" => {
-            // For Miri and ThreadSanitizer.
-            // https://github.com/rust-lang/rust/pull/97423 merged in Rust 1.64 (nightly-2022-06-30).
-            if version.nightly && version.probe(64, 2022, 6, 29) {
-                println!("cargo:rustc-cfg=portable_atomic_new_atomic_intrinsics");
-            }
-
             // target_feature "lse2"/"lse128"/"rcpc3" is unstable and available on rustc side since nightly-2024-08-30: https://github.com/rust-lang/rust/pull/128192
             if !version.probe(82, 2024, 8, 29) || needs_target_feature_fallback(&version, None) {
                 // FEAT_LSE2 doesn't imply FEAT_LSE. FEAT_LSE128 implies FEAT_LSE but not FEAT_LSE2.
                 // AArch64 macOS always supports FEAT_LSE and FEAT_LSE2 because M1 is Armv8.4 with all features of Armv8.5 except FEAT_BTI:
-                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/AArch64/AArch64Processors.td#L1230
-                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/AArch64/AArch64Processors.td#L891
+                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/AArch64/AArch64Processors.td#L1230
+                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/AArch64/AArch64Processors.td#L891
                 // Script to get builtin targets that support FEAT_LSE/FEAT_LSE2 by default:
                 // $ (for target in $(rustc -Z unstable-options --print all-target-specs-json | jq -r '. | to_entries[] | if .value.arch == "aarch64" or .value.arch == "arm64ec" then .key else empty end'); do rustc --print cfg --target "${target}" | grep -Fq '"lse"' && printf '%s\n' "${target}"; done)
                 // $ (for target in $(rustc -Z unstable-options --print all-target-specs-json | jq -r '. | to_entries[] | if .value.arch == "aarch64" or .value.arch == "arm64ec" then .key else empty end'); do rustc --print cfg --target "${target}" | grep -Fq '"lse2"' && printf '%s\n' "${target}"; done)
@@ -286,6 +292,9 @@ fn main() {
                     target_feature_fallback("lse", lse);
                 }
             }
+            // As of rustc 1.85, target_feature "lsfe" is not available on rustc side:
+            // https://github.com/rust-lang/rust/blob/1.85.0/compiler/rustc_target/src/target_features.rs
+            target_feature_fallback("lsfe", false);
 
             // As of Apple M1/M1 Pro, on Apple hardware, CAS-loop-based RMW is much slower than
             // LL/SC-loop-based RMW: https://github.com/taiki-e/portable-atomic/pull/89
@@ -351,17 +360,18 @@ fn main() {
             // zabha and zacas imply zaamo in GCC, LLVM 20+, and Rust, but do not in LLVM 19.
             // However, enabling them without zaamo or a is not allowed in LLVM 19, so we can assume
             // zaamo is available when zabha is enabled).
-            // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/RISCV/RISCVFeatures.td#L233-L247
+            // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/RISCV/RISCVFeatures.td#L233-L247
             // https://github.com/llvm/llvm-project/commit/956361ca080a689a96b6552d28681aaf0ad2f494
             // https://github.com/gcc-mirror/gcc/blob/08693e29ec186fd7941d0b73d4d466388971fe2f/gcc/config/riscv/arch-canonicalize#L45-L46
             // https://github.com/rust-lang/rust/pull/130877
             let mut zaamo = false;
-            // As of rustc 1.84, target_feature "zacas" is not available on rustc side:
-            // https://github.com/rust-lang/rust/blob/1.84.0/compiler/rustc_target/src/target_features.rs#L425
-            // amocas.{w,d,q} (and amocas.{b,h} if zabha is also available)
-            // available as experimental since LLVM 17 https://github.com/llvm/llvm-project/commit/29f630a1ddcbb03caa31b5002f0cbc105ff3a869
-            // available non-experimental since LLVM 20 https://github.com/llvm/llvm-project/commit/614aeda93b2225c6eb42b00ba189ba7ca2585c60
-            zaamo |= target_feature_fallback("zacas", false);
+            // target_feature "zacas" is unstable and available on rustc side since nightly-2025-02-26: https://github.com/rust-lang/rust/pull/137417
+            if !version.probe(87, 2025, 2, 25) || needs_target_feature_fallback(&version, None) {
+                // amocas.{w,d,q} (and amocas.{b,h} if zabha is also available)
+                // available as experimental since LLVM 17 https://github.com/llvm/llvm-project/commit/29f630a1ddcbb03caa31b5002f0cbc105ff3a869
+                // available non-experimental since LLVM 20 https://github.com/llvm/llvm-project/commit/614aeda93b2225c6eb42b00ba189ba7ca2585c60
+                zaamo |= target_feature_fallback("zacas", false);
+            }
             // target_feature "zaamo"/"zabha" is unstable and available on rustc side since nightly-2024-10-02: https://github.com/rust-lang/rust/pull/130877
             if !version.probe(83, 2024, 10, 1) || needs_target_feature_fallback(&version, None) {
                 if version.llvm >= 19 {
@@ -384,21 +394,21 @@ fn main() {
                             pwr8_features = cpu_version >= 8;
                         }
                     } else {
-                        // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/PowerPC/PPC.td#L714
-                        // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/PowerPC/PPC.td#L483
+                        // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/PowerPC/PPC.td#L714
+                        // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/PowerPC/PPC.td#L483
                         // On the minimum external LLVM version of the oldest rustc version which we can use asm_experimental_arch
                         // on this target (see CI config for more), "future" is based on pwr10 features.
                         // https://github.com/llvm/llvm-project/blob/llvmorg-12.0.0/llvm/lib/Target/PowerPC/PPC.td#L370
                         pwr8_features = cpu == "future" || cpu == "ppc64le";
                     }
                 } else {
-                    // powerpc64le is pwr8 by default https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/PowerPC/PPC.td#L714
+                    // powerpc64le is pwr8 by default https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/PowerPC/PPC.td#L714
                     // See also https://github.com/rust-lang/rust/issues/59932
                     pwr8_features = env::var("CARGO_CFG_TARGET_ENDIAN")
                         .expect("CARGO_CFG_TARGET_ENDIAN not set")
                         == "little";
                 }
-                // power8 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/PowerPC/PPC.td#L409
+                // power8 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/PowerPC/PPC.td#L409
                 // lqarx and stqcx.
                 target_feature_fallback("quadword-atomics", pwr8_features);
             }
@@ -408,7 +418,7 @@ fn main() {
             let mut arch13_features = false; // z15+
             if let Some(cpu) = target_cpu() {
                 // LLVM and GCC recognize the same names:
-                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/SystemZ/SystemZProcessors.td
+                // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/SystemZ/SystemZProcessors.td
                 // https://github.com/gcc-mirror/gcc/blob/releases/gcc-14.2.0/gcc/config/s390/s390.opt#L58-L125
                 if let Some(arch_version) = strip_prefix(&cpu, "arch") {
                     if let Ok(arch_version) = arch_version.parse::<u32>() {
@@ -428,14 +438,14 @@ fn main() {
             }
             // As of rustc 1.84, target_feature "fast-serialization"/"load-store-on-cond"/"distinct-ops"/"miscellaneous-extensions-3" is not available on rustc side:
             // https://github.com/rust-lang/rust/blob/1.84.0/compiler/rustc_target/src/target_features.rs#L547
-            // arch9 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/SystemZ/SystemZFeatures.td#L103
+            // arch9 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/SystemZ/SystemZFeatures.td#L103
             // bcr 14,0
             target_feature_fallback("fast-serialization", arch9_features);
             // {l,st}oc{,g}{,r}
             target_feature_fallback("load-store-on-cond", arch9_features);
             // {al,sl,n,o,x}{,g}rk
             target_feature_fallback("distinct-ops", arch9_features);
-            // arch13 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/SystemZ/SystemZFeatures.td#L301
+            // arch13 features: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/SystemZ/SystemZFeatures.td#L301
             // nand (nnr{,g}k), select (sel{,g}r), etc.
             target_feature_fallback("miscellaneous-extensions-3", arch13_features);
         }

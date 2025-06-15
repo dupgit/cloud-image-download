@@ -1,13 +1,9 @@
-use std::mem::replace;
-use std::ops::DerefMut;
-use std::vec;
-use std::{sync::Mutex, time::SystemTime};
-
-use crate::metrics::data::{self, Aggregation, DataPoint};
+use crate::metrics::data::{self, AggregatedMetrics, MetricData, SumDataPoint};
 use crate::metrics::Temporality;
 use opentelemetry::KeyValue;
 
-use super::{Aggregator, AtomicTracker, Number};
+use super::aggregate::{AggregateTimeInitiator, AttributeSetFilter};
+use super::{Aggregator, AtomicTracker, ComputeAggregation, Measure, Number};
 use super::{AtomicallyUpdate, ValueMap};
 
 struct Increment<T>
@@ -44,8 +40,10 @@ where
 /// Summarizes a set of measurements made as their arithmetic sum.
 pub(crate) struct Sum<T: Number> {
     value_map: ValueMap<Increment<T>>,
+    init_time: AggregateTimeInitiator,
+    temporality: Temporality,
+    filter: AttributeSetFilter,
     monotonic: bool,
-    start: Mutex<SystemTime>,
 }
 
 impl<T: Number> Sum<T> {
@@ -54,29 +52,35 @@ impl<T: Number> Sum<T> {
     ///
     /// Each sum is scoped by attributes and the aggregation cycle the measurements
     /// were made in.
-    pub(crate) fn new(monotonic: bool) -> Self {
+    pub(crate) fn new(
+        temporality: Temporality,
+        filter: AttributeSetFilter,
+        monotonic: bool,
+        cardinality_limit: usize,
+    ) -> Self {
         Sum {
-            value_map: ValueMap::new(()),
+            value_map: ValueMap::new((), cardinality_limit),
+            init_time: AggregateTimeInitiator::default(),
+            temporality,
+            filter,
             monotonic,
-            start: Mutex::new(SystemTime::now()),
         }
     }
 
-    pub(crate) fn measure(&self, measurement: T, attrs: &[KeyValue]) {
-        // The argument index is not applicable to Sum.
-        self.value_map.measure(measurement, attrs);
-    }
-
-    pub(crate) fn delta(
-        &self,
-        dest: Option<&mut dyn Aggregation>,
-    ) -> (usize, Option<Box<dyn Aggregation>>) {
-        let t = SystemTime::now();
-
-        let s_data = dest.and_then(|d| d.as_mut().downcast_mut::<data::Sum<T>>());
+    pub(crate) fn delta(&self, dest: Option<&mut MetricData<T>>) -> (usize, Option<MetricData<T>>) {
+        let time = self.init_time.delta();
+        let s_data = dest.and_then(|d| {
+            if let MetricData::Sum(sum) = d {
+                Some(sum)
+            } else {
+                None
+            }
+        });
         let mut new_agg = if s_data.is_none() {
             Some(data::Sum {
                 data_points: vec![],
+                start_time: time.start,
+                time: time.current,
                 temporality: Temporality::Delta,
                 is_monotonic: self.monotonic,
             })
@@ -84,39 +88,38 @@ impl<T: Number> Sum<T> {
             None
         };
         let s_data = s_data.unwrap_or_else(|| new_agg.as_mut().expect("present if s_data is none"));
+        s_data.start_time = time.start;
+        s_data.time = time.current;
         s_data.temporality = Temporality::Delta;
         s_data.is_monotonic = self.monotonic;
 
-        let prev_start = self
-            .start
-            .lock()
-            .map(|mut start| replace(start.deref_mut(), t))
-            .unwrap_or(t);
         self.value_map
-            .collect_and_reset(&mut s_data.data_points, |attributes, aggr| DataPoint {
+            .collect_and_reset(&mut s_data.data_points, |attributes, aggr| SumDataPoint {
                 attributes,
-                start_time: Some(prev_start),
-                time: Some(t),
                 value: aggr.value.get_value(),
                 exemplars: vec![],
             });
 
-        (
-            s_data.data_points.len(),
-            new_agg.map(|a| Box::new(a) as Box<_>),
-        )
+        (s_data.data_points.len(), new_agg.map(Into::into))
     }
 
     pub(crate) fn cumulative(
         &self,
-        dest: Option<&mut dyn Aggregation>,
-    ) -> (usize, Option<Box<dyn Aggregation>>) {
-        let t = SystemTime::now();
-
-        let s_data = dest.and_then(|d| d.as_mut().downcast_mut::<data::Sum<T>>());
+        dest: Option<&mut MetricData<T>>,
+    ) -> (usize, Option<MetricData<T>>) {
+        let time = self.init_time.cumulative();
+        let s_data = dest.and_then(|d| {
+            if let MetricData::Sum(sum) = d {
+                Some(sum)
+            } else {
+                None
+            }
+        });
         let mut new_agg = if s_data.is_none() {
             Some(data::Sum {
                 data_points: vec![],
+                start_time: time.start,
+                time: time.current,
                 temporality: Temporality::Cumulative,
                 is_monotonic: self.monotonic,
             })
@@ -124,23 +127,44 @@ impl<T: Number> Sum<T> {
             None
         };
         let s_data = s_data.unwrap_or_else(|| new_agg.as_mut().expect("present if s_data is none"));
+
+        s_data.start_time = time.start;
+        s_data.time = time.current;
         s_data.temporality = Temporality::Cumulative;
         s_data.is_monotonic = self.monotonic;
 
-        let prev_start = self.start.lock().map(|start| *start).unwrap_or(t);
-
         self.value_map
-            .collect_readonly(&mut s_data.data_points, |attributes, aggr| DataPoint {
+            .collect_readonly(&mut s_data.data_points, |attributes, aggr| SumDataPoint {
                 attributes,
-                start_time: Some(prev_start),
-                time: Some(t),
                 value: aggr.value.get_value(),
                 exemplars: vec![],
             });
 
-        (
-            s_data.data_points.len(),
-            new_agg.map(|a| Box::new(a) as Box<_>),
-        )
+        (s_data.data_points.len(), new_agg.map(Into::into))
+    }
+}
+
+impl<T> Measure<T> for Sum<T>
+where
+    T: Number,
+{
+    fn call(&self, measurement: T, attrs: &[KeyValue]) {
+        self.filter.apply(attrs, |filtered| {
+            self.value_map.measure(measurement, filtered);
+        })
+    }
+}
+
+impl<T> ComputeAggregation for Sum<T>
+where
+    T: Number,
+{
+    fn call(&self, dest: Option<&mut AggregatedMetrics>) -> (usize, Option<AggregatedMetrics>) {
+        let data = dest.and_then(|d| T::extract_metrics_data_mut(d));
+        let (len, new) = match self.temporality {
+            Temporality::Delta => self.delta(data),
+            _ => self.cumulative(data),
+        };
+        (len, new.map(T::make_aggregated_metrics))
     }
 }

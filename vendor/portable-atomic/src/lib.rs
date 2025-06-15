@@ -52,7 +52,7 @@ portable-atomic = { version = "1.3", default-features = false, features = ["requ
 
 Native 128-bit atomic operations are available on x86_64 (Rust 1.59+), AArch64 (Rust 1.59+), riscv64 (Rust 1.59+), Arm64EC (Rust 1.84+), s390x (Rust 1.84+), and powerpc64 (nightly only), otherwise the fallback implementation is used.
 
-On x86_64, even if `cmpxchg16b` is not available at compile-time (note: `cmpxchg16b` target feature is enabled by default only on Apple and Windows (except Windows 7) targets), run-time detection checks whether `cmpxchg16b` is available. If `cmpxchg16b` is not available at either compile-time or run-time detection, the fallback implementation is used. See also [`portable_atomic_no_outline_atomics`](#optional-cfg-no-outline-atomics) cfg.
+On x86_64, even if `cmpxchg16b` is not available at compile-time (Note: `cmpxchg16b` target feature is enabled by default only on Apple, Windows (except Windows 7), and Fuchsia targets), run-time detection checks whether `cmpxchg16b` is available. If `cmpxchg16b` is not available at either compile-time or run-time detection, the fallback implementation is used. See also [`portable_atomic_no_outline_atomics`](#optional-cfg-no-outline-atomics) cfg.
 
 They are usually implemented using inline assembly, and when using Miri or ThreadSanitizer that do not support inline assembly, core intrinsics are used instead of inline assembly if possible.
 
@@ -72,7 +72,7 @@ See the [`atomic128` module's readme](https://github.com/taiki-e/portable-atomic
   - When unstable `--cfg portable_atomic_unstable_f128` is also enabled, `AtomicF128` for [unstable `f128`](https://github.com/rust-lang/rust/issues/116909) is also provided.
 
   Note:
-  - Most of `fetch_*` operations of atomic floats are implemented using CAS loops, which can be slower than equivalent operations of atomic integers. (AArch64 with FEAT_LSFE and GPU targets have atomic instructions for float, [so we plan to use these instructions for them in the future.](https://github.com/taiki-e/portable-atomic/issues/34))
+  - Atomic float's `fetch_{add,sub,min,max}` are usually implemented using CAS loops, which can be slower than equivalent operations of atomic integers. As an exception, AArch64 with FEAT_LSFE and GPU targets have atomic float instructions and we use them on AArch64 when `lsfe` target feature is available at compile-time. We [plan to use atomic float instructions for GPU targets as well in the future.](https://github.com/taiki-e/portable-atomic/issues/34))
   - Unstable cfgs are outside of the normal semver guarantees and minor or patch versions of portable-atomic may make breaking changes to them at any time.
 
 - **`std`**<br>
@@ -816,14 +816,24 @@ impl AtomicBool {
     #[inline]
     #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
     pub fn swap(&self, val: bool, order: Ordering) -> bool {
-        #[cfg(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64"))]
+        #[cfg(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        ))]
         {
             // See https://github.com/rust-lang/rust/pull/114034 for details.
             // https://github.com/rust-lang/rust/blob/1.84.0/library/core/src/sync/atomic.rs#L249
             // https://godbolt.org/z/ofbGGdx44
             if val { self.fetch_or(true, order) } else { self.fetch_and(false, order) }
         }
-        #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64")))]
+        #[cfg(not(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        )))]
         {
             self.as_atomic_u8().swap(val as u8, order) != 0
         }
@@ -878,7 +888,12 @@ impl AtomicBool {
         success: Ordering,
         failure: Ordering,
     ) -> Result<bool, bool> {
-        #[cfg(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64"))]
+        #[cfg(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        ))]
         {
             // See https://github.com/rust-lang/rust/pull/114034 for details.
             // https://github.com/rust-lang/rust/blob/1.84.0/library/core/src/sync/atomic.rs#L249
@@ -895,7 +910,12 @@ impl AtomicBool {
             };
             if old == current { Ok(old) } else { Err(old) }
         }
-        #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64")))]
+        #[cfg(not(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        )))]
         {
             match self.as_atomic_u8().compare_exchange(current as u8, new as u8, success, failure) {
                 Ok(x) => Ok(x != 0),
@@ -952,14 +972,24 @@ impl AtomicBool {
         success: Ordering,
         failure: Ordering,
     ) -> Result<bool, bool> {
-        #[cfg(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64"))]
+        #[cfg(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        ))]
         {
             // See https://github.com/rust-lang/rust/pull/114034 for details.
             // https://github.com/rust-lang/rust/blob/1.84.0/library/core/src/sync/atomic.rs#L249
             // https://godbolt.org/z/ofbGGdx44
             self.compare_exchange(current, new, success, failure)
         }
-        #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "loongarch64")))]
+        #[cfg(not(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "loongarch32",
+            target_arch = "loongarch64",
+        )))]
         {
             match self
                 .as_atomic_u8()

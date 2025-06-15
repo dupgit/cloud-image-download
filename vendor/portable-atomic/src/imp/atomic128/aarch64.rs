@@ -94,10 +94,9 @@ include!("macros.rs");
         target_os = "linux",
         any(
             target_env = "gnu",
-            all(
-                any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                not(target_feature = "crt-static"),
-            ),
+            all(target_env = "musl", any(not(target_feature = "crt-static"), feature = "std")),
+            target_env = "ohos",
+            all(target_env = "uclibc", not(target_feature = "crt-static")),
             portable_atomic_outline_atomics,
         ),
     ),
@@ -142,7 +141,6 @@ mod detect;
 
 // test only
 #[cfg(test)]
-#[cfg(not(qemu))]
 #[cfg(not(valgrind))]
 #[cfg(not(portable_atomic_no_outline_atomics))]
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
@@ -170,6 +168,7 @@ use crate::utils::{Pair, U128};
     portable_atomic_target_feature = "lse",
     not(portable_atomic_no_outline_atomics),
 ))]
+#[rustfmt::skip]
 macro_rules! debug_assert_lse {
     () => {
         #[cfg(all(
@@ -180,9 +179,11 @@ macro_rules! debug_assert_lse {
                     any(
                         target_env = "gnu",
                         all(
-                            any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                            not(target_feature = "crt-static"),
+                            target_env = "musl",
+                            any(not(target_feature = "crt-static"), feature = "std"),
                         ),
+                        target_env = "ohos",
+                        all(target_env = "uclibc", not(target_feature = "crt-static")),
                         portable_atomic_outline_atomics,
                     ),
                 ),
@@ -197,7 +198,7 @@ macro_rules! debug_assert_lse {
         ))]
         #[cfg(not(any(target_feature = "lse", portable_atomic_target_feature = "lse")))]
         {
-            debug_assert!(detect::detect().has_lse());
+            debug_assert!(detect::detect().lse());
         }
     };
 }
@@ -206,6 +207,7 @@ macro_rules! debug_assert_lse {
     portable_atomic_target_feature = "lse2",
     not(portable_atomic_no_outline_atomics),
 ))]
+#[rustfmt::skip]
 macro_rules! debug_assert_lse2 {
     () => {
         #[cfg(all(
@@ -216,9 +218,11 @@ macro_rules! debug_assert_lse2 {
                     any(
                         target_env = "gnu",
                         all(
-                            any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                            not(target_feature = "crt-static"),
+                            target_env = "musl",
+                            any(not(target_feature = "crt-static"), feature = "std"),
                         ),
+                        target_env = "ohos",
+                        all(target_env = "uclibc", not(target_feature = "crt-static")),
                         portable_atomic_outline_atomics,
                     ),
                 ),
@@ -234,7 +238,7 @@ macro_rules! debug_assert_lse2 {
         ))]
         #[cfg(not(any(target_feature = "lse2", portable_atomic_target_feature = "lse2")))]
         {
-            debug_assert!(detect::detect().has_lse2());
+            debug_assert!(detect::detect().lse2());
         }
     };
 }
@@ -246,6 +250,7 @@ macro_rules! debug_assert_lse2 {
         not(any(target_feature = "lse2", portable_atomic_target_feature = "lse2")),
     ),
 ))]
+#[rustfmt::skip]
 macro_rules! debug_assert_lse128 {
     () => {
         #[cfg(all(
@@ -256,9 +261,11 @@ macro_rules! debug_assert_lse128 {
                     any(
                         target_env = "gnu",
                         all(
-                            any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                            not(target_feature = "crt-static"),
+                            target_env = "musl",
+                            any(not(target_feature = "crt-static"), feature = "std"),
                         ),
+                        target_env = "ohos",
+                        all(target_env = "uclibc", not(target_feature = "crt-static")),
                         portable_atomic_outline_atomics,
                     ),
                 ),
@@ -274,7 +281,7 @@ macro_rules! debug_assert_lse128 {
         ))]
         #[cfg(not(any(target_feature = "lse128", portable_atomic_target_feature = "lse128")))]
         {
-            debug_assert!(detect::detect().has_lse128());
+            debug_assert!(detect::detect().lse128());
         }
     };
 }
@@ -286,6 +293,7 @@ macro_rules! debug_assert_lse128 {
         not(any(target_feature = "lse2", portable_atomic_target_feature = "lse2")),
     ),
 ))]
+#[rustfmt::skip]
 macro_rules! debug_assert_rcpc3 {
     () => {
         #[cfg(all(
@@ -296,9 +304,11 @@ macro_rules! debug_assert_rcpc3 {
                     any(
                         target_env = "gnu",
                         all(
-                            any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                            not(target_feature = "crt-static"),
+                            target_env = "musl",
+                            any(not(target_feature = "crt-static"), feature = "std"),
                         ),
+                        target_env = "ohos",
+                        all(target_env = "uclibc", not(target_feature = "crt-static")),
                         portable_atomic_outline_atomics,
                     ),
                 ),
@@ -314,7 +324,7 @@ macro_rules! debug_assert_rcpc3 {
         ))]
         #[cfg(not(any(target_feature = "rcpc3", portable_atomic_target_feature = "rcpc3")))]
         {
-            debug_assert!(detect::detect().has_rcpc3());
+            debug_assert!(detect::detect().rcpc3());
         }
     };
 }
@@ -327,12 +337,14 @@ macro_rules! debug_assert_rcpc3 {
 // is unstable on pre-1.61 rustc and incompatible with rustc_codegen_cranelift:
 // https://github.com/rust-lang/rustc_codegen_cranelift/issues/1400#issuecomment-1774599775
 //
-// The .arch_extension directive is effective until the end of the assembly block and
+// The .arch_extension directive in asm! is effective until the end of the assembly block and
 // is not propagated to subsequent code, so the end_lse macro is unneeded.
 // https://godbolt.org/z/o6EPndP94
 // https://github.com/torvalds/linux/commit/e0d5896bd356cd577f9710a02d7a474cdf58426b
 // https://github.com/torvalds/linux/commit/dd1f6308b28edf0452dd5dc7877992903ec61e69
 // (It seems GCC effectively ignores this directive and always allow FEAT_LSE instructions: https://godbolt.org/z/W9W6rensG)
+// Note that the .arch_extension directive in global_asm!/naked_asm! which are
+// not used in this crate has different behavior: https://github.com/rust-lang/rust/pull/137720#discussion_r1973608259
 //
 // The .arch directive has a similar effect, but we don't use it due to the following issue:
 // https://github.com/torvalds/linux/commit/dd1f6308b28edf0452dd5dc7877992903ec61e69
@@ -432,10 +444,10 @@ macro_rules! atomic_rmw_inst {
     };
     ($op:ident, $order:ident, write = $write:ident) => {
         match $order {
-            Ordering::Relaxed => $op!("2", ""),
-            Ordering::Acquire => $op!("a", ""),
-            Ordering::Release => $op!("6", ""),
-            Ordering::AcqRel => $op!("e", ""),
+            Ordering::Relaxed => $op!("2", ""), // ""
+            Ordering::Acquire => $op!("a", ""), // "a"
+            Ordering::Release => $op!("6", ""), // "l"
+            Ordering::AcqRel => $op!("e", ""),  // "al"
             // In MSVC environments, SeqCst stores/writes needs fences after writes.
             // https://reviews.llvm.org/D141748
             #[cfg(target_env = "msvc")]
@@ -507,9 +519,11 @@ unsafe fn atomic_load(src: *mut u128, order: Ordering) -> u128 {
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),
@@ -548,7 +562,7 @@ unsafe fn atomic_load(src: *mut u128, order: Ordering) -> u128 {
                 Ordering::Relaxed => {
                     ifunc!(unsafe fn(src: *mut u128) -> u128 {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
+                        if cpuinfo.lse2() {
                             // if detect(FEAT_LSE2) => lse2 (ldp)
                             atomic_load_lse2_relaxed
                         } else {
@@ -560,8 +574,8 @@ unsafe fn atomic_load(src: *mut u128, order: Ordering) -> u128 {
                 Ordering::Acquire => {
                     ifunc!(unsafe fn(src: *mut u128) -> u128 {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
-                            if cpuinfo.has_rcpc3() {
+                        if cpuinfo.lse2() {
+                            if cpuinfo.rcpc3() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LRCPC3) && order != relaxed => lse2_rcpc3 (ldiapp)
                                 atomic_load_lse2_rcpc3_acquire
                             } else {
@@ -577,8 +591,8 @@ unsafe fn atomic_load(src: *mut u128, order: Ordering) -> u128 {
                 Ordering::SeqCst => {
                     ifunc!(unsafe fn(src: *mut u128) -> u128 {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
-                            if cpuinfo.has_rcpc3() {
+                        if cpuinfo.lse2() {
+                            if cpuinfo.rcpc3() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LRCPC3) && order != relaxed => lse2_rcpc3 (ldiapp)
                                 atomic_load_lse2_rcpc3_seqcst
                             } else {
@@ -604,9 +618,11 @@ unsafe fn atomic_load(src: *mut u128, order: Ordering) -> u128 {
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),
@@ -930,9 +946,11 @@ unsafe fn atomic_store(dst: *mut u128, val: u128, order: Ordering) {
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),
@@ -973,7 +991,7 @@ unsafe fn atomic_store(dst: *mut u128, val: u128, order: Ordering) {
                 Ordering::Relaxed => {
                     ifunc!(unsafe fn(dst: *mut u128, val: u128) {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
+                        if cpuinfo.lse2() {
                             // if detect(FEAT_LSE2) => lse2 (stp)
                             atomic_store_lse2_relaxed
                         } else {
@@ -985,11 +1003,11 @@ unsafe fn atomic_store(dst: *mut u128, val: u128, order: Ordering) {
                 Ordering::Release => {
                     ifunc!(unsafe fn(dst: *mut u128, val: u128) {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
-                            if cpuinfo.has_rcpc3() {
+                        if cpuinfo.lse2() {
+                            if cpuinfo.rcpc3() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LRCPC3) && order != relaxed => lse2_rcpc3 (stilp)
                                 atomic_store_lse2_rcpc3_release
-                            } else if cpuinfo.has_lse128() {
+                            } else if cpuinfo.lse128() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LSE128) && order != relaxed => lse128 (swpp)
                                 atomic_store_lse128_release
                             } else {
@@ -1005,11 +1023,11 @@ unsafe fn atomic_store(dst: *mut u128, val: u128, order: Ordering) {
                 Ordering::SeqCst => {
                     ifunc!(unsafe fn(dst: *mut u128, val: u128) {
                         let cpuinfo = detect::detect();
-                        if cpuinfo.has_lse2() {
-                            if cpuinfo.has_lse128() {
+                        if cpuinfo.lse2() {
+                            if cpuinfo.lse128() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LSE128) && order == seqcst => lse128 (swpp)
                                 atomic_store_lse128_seqcst
-                            } else if cpuinfo.has_rcpc3() {
+                            } else if cpuinfo.rcpc3() {
                                 // if detect(FEAT_LSE2) && detect(FEAT_LRCPC3) && order != relaxed => lse2_rcpc3 (stilp)
                                 atomic_store_lse2_rcpc3_seqcst
                             } else {
@@ -1035,9 +1053,11 @@ unsafe fn atomic_store(dst: *mut u128, val: u128, order: Ordering) {
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),
@@ -1260,9 +1280,11 @@ unsafe fn atomic_compare_exchange(
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),
@@ -1318,7 +1340,7 @@ unsafe fn atomic_compare_exchange(
             match success {
                 Ordering::Relaxed => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_relaxed
                         } else {
@@ -1329,7 +1351,7 @@ unsafe fn atomic_compare_exchange(
                 }
                 Ordering::Acquire => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_acquire
                         } else {
@@ -1340,7 +1362,7 @@ unsafe fn atomic_compare_exchange(
                 }
                 Ordering::Release => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_release
                         } else {
@@ -1353,7 +1375,7 @@ unsafe fn atomic_compare_exchange(
                 #[cfg(not(target_env = "msvc"))]
                 Ordering::AcqRel | Ordering::SeqCst => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_acqrel
                         } else {
@@ -1365,7 +1387,7 @@ unsafe fn atomic_compare_exchange(
                 #[cfg(target_env = "msvc")]
                 Ordering::AcqRel => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_acqrel
                         } else {
@@ -1377,7 +1399,7 @@ unsafe fn atomic_compare_exchange(
                 #[cfg(target_env = "msvc")]
                 Ordering::SeqCst => {
                     ifunc!(unsafe fn(dst: *mut u128, old: u128, new: u128) -> u128 {
-                        if detect::detect().has_lse() {
+                        if detect::detect().lse() {
                             // if detect(FEAT_LSE) => casp
                             atomic_compare_exchange_casp_seqcst
                         } else {
@@ -1399,9 +1421,11 @@ unsafe fn atomic_compare_exchange(
                 any(
                     target_env = "gnu",
                     all(
-                        any(target_env = "musl", target_env = "ohos", target_env = "uclibc"),
-                        not(target_feature = "crt-static"),
+                        target_env = "musl",
+                        any(not(target_feature = "crt-static"), feature = "std"),
                     ),
+                    target_env = "ohos",
+                    all(target_env = "uclibc", not(target_feature = "crt-static")),
                     portable_atomic_outline_atomics,
                 ),
             ),

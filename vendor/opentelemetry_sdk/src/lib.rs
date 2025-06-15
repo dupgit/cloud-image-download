@@ -11,16 +11,16 @@
 //! ```no_run
 //! # #[cfg(feature = "trace")]
 //! # {
-//! use opentelemetry::{global, trace::{Tracer, TracerProvider as _}};
-//! use opentelemetry_sdk::trace::TracerProvider;
+//! use opentelemetry::{global, trace::{Tracer, TracerProvider}};
+//! use opentelemetry_sdk::trace::SdkTracerProvider;
 //!
 //! fn main() {
 //!     // Choose an exporter like `opentelemetry_stdout::SpanExporter`
-//!     # fn example<T: opentelemetry_sdk::export::trace::SpanExporter + 'static>(new_exporter: impl Fn() -> T) {
+//!     # fn example<T: opentelemetry_sdk::trace::SpanExporter + 'static>(new_exporter: impl Fn() -> T) {
 //!     let exporter = new_exporter();
 //!
 //!     // Create a new trace pipeline that prints to stdout
-//!     let provider = TracerProvider::builder()
+//!     let provider = SdkTracerProvider::builder()
 //!         .with_simple_exporter(exporter)
 //!         .build();
 //!     let tracer = provider.tracer("readme_example");
@@ -30,7 +30,7 @@
 //!     });
 //!
 //!     // Shutdown trace pipeline
-//!     global::shutdown_tracer_provider();
+//!     provider.shutdown().expect("TracerProvider should shutdown successfully")
 //!     # }
 //! }
 //! # }
@@ -44,10 +44,7 @@
 //! [examples]: https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples
 //! [`trace`]: https://docs.rs/opentelemetry/latest/opentelemetry/trace/index.html
 //!
-//! # Metrics (Alpha)
-//!
-//! Note: the metrics implementation is **still in progress** and **subject to major
-//! changes**.
+//! # Metrics
 //!
 //! ### Creating instruments and recording measurements
 //!
@@ -94,12 +91,11 @@
 //! Support for recording and exporting telemetry asynchronously and perform
 //! metrics aggregation can be added via the following flags:
 //!
+//! * `experimental_async_runtime`: Enables the experimental `Runtime` trait and related functionality.
 //! * `rt-tokio`: Spawn telemetry tasks using [tokio]'s multi-thread runtime.
 //! * `rt-tokio-current-thread`: Spawn telemetry tasks on a separate runtime so that the main runtime won't be blocked.
-//! * `rt-async-std`: Spawn telemetry tasks using [async-std]'s runtime.
 //!
 //! [tokio]: https://crates.io/crates/tokio
-//! [async-std]: https://crates.io/crates/async-std
 #![warn(
     future_incompatible,
     missing_debug_implementations,
@@ -120,7 +116,6 @@
 )]
 #![cfg_attr(test, deny(warnings))]
 
-pub mod export;
 pub(crate) mod growable_array;
 
 #[cfg(feature = "logs")]
@@ -133,12 +128,12 @@ pub mod metrics;
 #[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod propagation;
 pub mod resource;
+#[cfg(feature = "experimental_async_runtime")]
 pub mod runtime;
 #[cfg(any(feature = "testing", test))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "testing", test))))]
 pub mod testing;
 
-#[allow(deprecated)]
 #[cfg(feature = "trace")]
 #[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod trace;
@@ -150,3 +145,25 @@ pub mod util;
 pub use resource::Resource;
 
 pub mod error;
+pub use error::ExportError;
+
+#[cfg(any(feature = "testing", test))]
+#[derive(thiserror::Error, Debug)]
+/// Errors that can occur during when returning telemetry from InMemoryLogExporter
+pub enum InMemoryExporterError {
+    /// Operation failed due to an internal error.
+    ///
+    /// The error message is intended for logging purposes only and should not
+    /// be used to make programmatic decisions. It is implementation-specific
+    /// and subject to change without notice. Consumers of this error should not
+    /// rely on its content beyond logging.
+    #[error("Unable to obtain telemetry. Reason: {0}")]
+    InternalFailure(String),
+}
+
+#[cfg(any(feature = "testing", test))]
+impl<T> From<std::sync::PoisonError<T>> for InMemoryExporterError {
+    fn from(err: std::sync::PoisonError<T>) -> Self {
+        InMemoryExporterError::InternalFailure(format!("Mutex poison error: {}", err))
+    }
+}

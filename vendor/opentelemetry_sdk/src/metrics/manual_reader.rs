@@ -1,11 +1,14 @@
+use opentelemetry::otel_debug;
+use std::time::Duration;
 use std::{
     fmt,
     sync::{Mutex, Weak},
 };
 
-use opentelemetry::otel_debug;
-
-use crate::metrics::{MetricError, MetricResult, Temporality};
+use crate::{
+    error::{OTelSdkError, OTelSdkResult},
+    metrics::Temporality,
+};
 
 use super::{
     data::ResourceMetrics,
@@ -27,7 +30,7 @@ use super::{
 /// # drop(reader)
 /// ```
 pub struct ManualReader {
-    inner: Box<Mutex<ManualReaderInner>>,
+    inner: Mutex<ManualReaderInner>,
     temporality: Temporality,
 }
 
@@ -58,10 +61,10 @@ impl ManualReader {
     /// A [MetricReader] which is directly called to collect metrics.
     pub(crate) fn new(temporality: Temporality) -> Self {
         ManualReader {
-            inner: Box::new(Mutex::new(ManualReaderInner {
+            inner: Mutex::new(ManualReaderInner {
                 sdk_producer: None,
                 is_shutdown: false,
-            })),
+            }),
             temporality,
         }
     }
@@ -87,12 +90,16 @@ impl MetricReader for ManualReader {
     /// callbacks necessary and returning the results.
     ///
     /// Returns an error if called after shutdown.
-    fn collect(&self, rm: &mut ResourceMetrics) -> MetricResult<()> {
-        let inner = self.inner.lock()?;
+    fn collect(&self, rm: &mut ResourceMetrics) -> OTelSdkResult {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| OTelSdkError::InternalFailure("Failed to lock pipeline".into()))?;
+
         match &inner.sdk_producer.as_ref().and_then(|w| w.upgrade()) {
             Some(producer) => producer.produce(rm)?,
             None => {
-                return Err(MetricError::Other(
+                return Err(OTelSdkError::InternalFailure(
                     "reader is shut down or not registered".into(),
                 ))
             }
@@ -102,13 +109,16 @@ impl MetricReader for ManualReader {
     }
 
     /// ForceFlush is a no-op, it always returns nil.
-    fn force_flush(&self) -> MetricResult<()> {
+    fn force_flush(&self) -> OTelSdkResult {
         Ok(())
     }
 
     /// Closes any connections and frees any resources used by the reader.
-    fn shutdown(&self) -> MetricResult<()> {
-        let mut inner = self.inner.lock()?;
+    fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| OTelSdkError::InternalFailure(format!("Failed to acquire lock: {}", e)))?;
 
         // Any future call to collect will now return an error.
         inner.sdk_producer = None;

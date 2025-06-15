@@ -1,9 +1,6 @@
-use futures_util::future::BoxFuture;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::{
-    export::trace::{ExportResult, SpanData, SpanExporter},
-    trace::{Tracer, TracerProvider},
-};
+use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter, Tracer};
 use std::sync::{Arc, Mutex};
 use tracing::{instrument, Subscriber};
 use tracing_opentelemetry::layer;
@@ -85,9 +82,9 @@ fn test_tracer(
     // Uses options to capture changes of the default behavior
     error_event_exceptions: Option<bool>,
     error_event_status: Option<bool>,
-) -> (Tracer, TracerProvider, TestExporter, impl Subscriber) {
+) -> (Tracer, SdkTracerProvider, TestExporter, impl Subscriber) {
     let exporter = TestExporter::default();
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
     let tracer = provider.tracer("test");
@@ -108,13 +105,11 @@ fn test_tracer(
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
         let spans = self.0.clone();
-        Box::pin(async move {
-            if let Ok(mut inner) = spans.lock() {
-                inner.append(&mut batch);
-            }
-            Ok(())
-        })
+        if let Ok(mut inner) = spans.lock() {
+            inner.append(&mut batch);
+        }
+        Ok(())
     }
 }

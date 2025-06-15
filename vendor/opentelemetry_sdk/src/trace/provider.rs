@@ -1,3 +1,5 @@
+use super::IdGenerator;
+use crate::error::{OTelSdkError, OTelSdkResult};
 /// # Trace Provider SDK
 ///
 /// The `TracerProvider` handles the creation and management of [`Tracer`] instances and coordinates
@@ -35,11 +37,11 @@
 ///
 /// ```
 /// use opentelemetry::global;
-/// use opentelemetry_sdk::trace::TracerProvider;
+/// use opentelemetry_sdk::trace::SdkTracerProvider;
 /// use opentelemetry::trace::Tracer;
 ///
-/// fn init_tracing() -> TracerProvider {
-///     let provider = TracerProvider::default();
+/// fn init_tracing() -> SdkTracerProvider {
+///     let provider = SdkTracerProvider::default();
 ///
 ///     // Set the provider to be used globally
 ///     let _ = global::set_tracer_provider(provider.clone());
@@ -62,30 +64,28 @@
 ///     provider.shutdown();
 /// }
 /// ```
-use crate::runtime::RuntimeChannel;
 use crate::trace::{
-    BatchSpanProcessor, Config, RandomIdGenerator, Sampler, SimpleSpanProcessor, SpanLimits, Tracer,
+    BatchSpanProcessor, Config, RandomIdGenerator, Sampler, SdkTracer, SimpleSpanProcessor,
+    SpanLimits,
 };
 use crate::Resource;
-use crate::{export::trace::SpanExporter, trace::SpanProcessor};
-use opentelemetry::trace::TraceError;
-use opentelemetry::InstrumentationScope;
-use opentelemetry::{otel_debug, trace::TraceResult};
+use crate::{trace::SpanExporter, trace::SpanProcessor};
+use opentelemetry::otel_debug;
+use opentelemetry::{otel_info, InstrumentationScope};
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-
-use super::IdGenerator;
+use std::time::Duration;
 
 static PROVIDER_RESOURCE: OnceLock<Resource> = OnceLock::new();
 
 // a no nop tracer provider used as placeholder when the provider is shutdown
 // TODO Replace with LazyLock once it is stable
-static NOOP_TRACER_PROVIDER: OnceLock<TracerProvider> = OnceLock::new();
+static NOOP_TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
 #[inline]
-fn noop_tracer_provider() -> &'static TracerProvider {
+fn noop_tracer_provider() -> &'static SdkTracerProvider {
     NOOP_TRACER_PROVIDER.get_or_init(|| {
-        TracerProvider {
+        SdkTracerProvider {
             inner: Arc::new(TracerProviderInner {
                 processors: Vec::new(),
                 config: Config {
@@ -112,20 +112,25 @@ pub(crate) struct TracerProviderInner {
 impl TracerProviderInner {
     /// Crate-private shutdown method to be called both from explicit shutdown
     /// and from Drop when the last reference is released.
-    pub(crate) fn shutdown(&self) -> Vec<TraceError> {
-        let mut errs = vec![];
+    pub(crate) fn shutdown_with_timeout(&self, timeout: Duration) -> Vec<OTelSdkResult> {
+        let mut results = vec![];
         for processor in &self.processors {
-            if let Err(err) = processor.shutdown() {
+            let result = processor.shutdown_with_timeout(timeout);
+            if let Err(err) = &result {
                 // Log at debug level because:
                 //  - The error is also returned to the user for handling (if applicable)
                 //  - Or the error occurs during `TracerProviderInner::Drop` as part of telemetry shutdown,
                 //    which is non-actionable by the user
                 otel_debug!(name: "TracerProvider.Drop.ShutdownError",
                         error = format!("{err}"));
-                errs.push(err);
             }
+            results.push(result);
         }
-        errs
+        results
+    }
+    /// shutdown with default timeout
+    pub(crate) fn shutdown(&self) -> Vec<OTelSdkResult> {
+        self.shutdown_with_timeout(Duration::from_secs(5))
     }
 }
 
@@ -135,13 +140,14 @@ impl Drop for TracerProviderInner {
             let _ = self.shutdown(); // errors are handled within shutdown
         } else {
             otel_debug!(
-                name: "TracerProvider.Drop.AlreadyShutdown"
+                name: "TracerProvider.Drop.AlreadyShutdown",
+                message = "TracerProvider was already shut down; drop will not attempt shutdown again."
             );
         }
     }
 }
 
-/// Creator and registry of named [`Tracer`] instances.
+/// Creator and registry of named [`SdkTracer`] instances.
 ///
 /// `TracerProvider` is a container holding pointers to `SpanProcessor` and other components.
 /// Cloning a `TracerProvider` instance and dropping it will not stop span processing. To stop span processing, users
@@ -149,27 +155,27 @@ impl Drop for TracerProviderInner {
 /// to be dropped. When the last reference is dropped, the shutdown process will be automatically triggered
 /// to ensure proper cleanup.
 #[derive(Clone, Debug)]
-pub struct TracerProvider {
+pub struct SdkTracerProvider {
     inner: Arc<TracerProviderInner>,
 }
 
-impl Default for TracerProvider {
+impl Default for SdkTracerProvider {
     fn default() -> Self {
-        TracerProvider::builder().build()
+        SdkTracerProvider::builder().build()
     }
 }
 
-impl TracerProvider {
+impl SdkTracerProvider {
     /// Build a new tracer provider
     pub(crate) fn new(inner: TracerProviderInner) -> Self {
-        TracerProvider {
+        SdkTracerProvider {
             inner: Arc::new(inner),
         }
     }
 
-    /// Create a new [`TracerProvider`] builder.
-    pub fn builder() -> Builder {
-        Builder::default()
+    /// Create a new [`SdkTracerProvider`] builder.
+    pub fn builder() -> TracerProviderBuilder {
+        TracerProviderBuilder::default()
     }
 
     /// Span processors associated with this provider
@@ -194,10 +200,10 @@ impl TracerProvider {
     ///
     /// ```
     /// use opentelemetry::global;
-    /// use opentelemetry_sdk::trace::TracerProvider;
+    /// use opentelemetry_sdk::trace::SdkTracerProvider;
     ///
-    /// fn init_tracing() -> TracerProvider {
-    ///     let provider = TracerProvider::default();
+    /// fn init_tracing() -> SdkTracerProvider {
+    ///     let provider = SdkTracerProvider::default();
     ///
     ///     // Set provider to be used as global tracer provider
     ///     let _ = global::set_tracer_provider(provider.clone());
@@ -211,31 +217,33 @@ impl TracerProvider {
     ///     // create spans..
     ///
     ///     // force all spans to flush
-    ///     for result in provider.force_flush() {
-    ///         if let Err(err) = result {
-    ///             // .. handle flush error
-    ///         }
+    ///     if let Err(err) = provider.force_flush() {
+    ///         // .. handle flush error
     ///     }
     ///
     ///     // create more spans..
     ///
-    ///     // dropping provider and shutting down global provider ensure all
-    ///     // remaining spans are exported
+    ///     // dropping provider ensures all remaining spans are exported
     ///     drop(provider);
-    ///     global::shutdown_tracer_provider();
     /// }
     /// ```
-    pub fn force_flush(&self) -> Vec<TraceResult<()>> {
-        self.span_processors()
+    pub fn force_flush(&self) -> OTelSdkResult {
+        let result: Vec<_> = self
+            .span_processors()
             .iter()
             .map(|processor| processor.force_flush())
-            .collect()
+            .collect();
+        if result.iter().all(|r| r.is_ok()) {
+            Ok(())
+        } else {
+            Err(OTelSdkError::InternalFailure(format!("errs: {:?}", result)))
+        }
     }
 
     /// Shuts down the current `TracerProvider`.
     ///
     /// Note that shut down doesn't means the TracerProvider has dropped
-    pub fn shutdown(&self) -> TraceResult<()> {
+    pub fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
         if self
             .inner
             .is_shutdown
@@ -243,85 +251,107 @@ impl TracerProvider {
             .is_ok()
         {
             // propagate the shutdown signal to processors
-            let errs = self.inner.shutdown();
-            if errs.is_empty() {
+            let results = self.inner.shutdown_with_timeout(timeout);
+
+            if results.iter().all(|res| res.is_ok()) {
                 Ok(())
             } else {
-                Err(TraceError::Other(format!("{errs:?}").into()))
+                Err(OTelSdkError::InternalFailure(format!(
+                    "Shutdown errors: {:?}",
+                    results
+                        .into_iter()
+                        .filter_map(Result::err)
+                        .collect::<Vec<_>>() // Collect only the errors
+                )))
             }
         } else {
-            Err(TraceError::TracerProviderAlreadyShutdown)
+            Err(OTelSdkError::AlreadyShutdown)
         }
+    }
+
+    /// shutdown with default timeout
+    pub fn shutdown(&self) -> OTelSdkResult {
+        self.shutdown_with_timeout(Duration::from_secs(5))
     }
 }
 
-/// Default tracer name if empty string is provided.
-const DEFAULT_COMPONENT_NAME: &str = "rust.opentelemetry.io/sdk/tracer";
-
-impl opentelemetry::trace::TracerProvider for TracerProvider {
+impl opentelemetry::trace::TracerProvider for SdkTracerProvider {
     /// This implementation of `TracerProvider` produces `Tracer` instances.
-    type Tracer = Tracer;
+    type Tracer = SdkTracer;
 
     fn tracer(&self, name: impl Into<Cow<'static, str>>) -> Self::Tracer {
-        let mut name = name.into();
-
-        if name.is_empty() {
-            name = Cow::Borrowed(DEFAULT_COMPONENT_NAME)
-        };
-
         let scope = InstrumentationScope::builder(name).build();
         self.tracer_with_scope(scope)
     }
 
     fn tracer_with_scope(&self, scope: InstrumentationScope) -> Self::Tracer {
         if self.inner.is_shutdown.load(Ordering::Relaxed) {
-            return Tracer::new(scope, noop_tracer_provider().clone());
+            return SdkTracer::new(scope, noop_tracer_provider().clone());
         }
-        Tracer::new(scope, self.clone())
+        if scope.name().is_empty() {
+            otel_info!(name: "TracerNameEmpty",  message = "Tracer name is empty; consider providing a meaningful name. Tracer will function normally and the provided name will be used as-is.");
+        };
+        SdkTracer::new(scope, self.clone())
     }
 }
 
 /// Builder for provider attributes.
 #[derive(Debug, Default)]
-pub struct Builder {
+pub struct TracerProviderBuilder {
     processors: Vec<Box<dyn SpanProcessor>>,
     config: crate::trace::Config,
+    resource: Option<Resource>,
 }
 
-impl Builder {
-    /// The `SpanExporter` that this provider should use.
+impl TracerProviderBuilder {
+    /// Adds a [SimpleSpanProcessor] with the configured exporter to the pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `exporter` - The exporter to be used by the SimpleSpanProcessor.
+    ///
+    /// # Returns
+    ///
+    /// A new `Builder` instance with the SimpleSpanProcessor added to the pipeline.
+    ///
+    /// Processors are invoked in the order they are added.
     pub fn with_simple_exporter<T: SpanExporter + 'static>(self, exporter: T) -> Self {
-        let mut processors = self.processors;
-        processors.push(Box::new(SimpleSpanProcessor::new(Box::new(exporter))));
-
-        Builder { processors, ..self }
+        let simple = SimpleSpanProcessor::new(exporter);
+        self.with_span_processor(simple)
     }
 
-    /// The [`SpanExporter`] setup using a default [`BatchSpanProcessor`] that this provider should use.
-    pub fn with_batch_exporter<T: SpanExporter + 'static, R: RuntimeChannel>(
-        self,
-        exporter: T,
-        runtime: R,
-    ) -> Self {
-        let batch = BatchSpanProcessor::builder(exporter, runtime).build();
+    /// Adds a [BatchSpanProcessor] with the configured exporter to the pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `exporter` - The exporter to be used by the BatchSpanProcessor.
+    ///
+    /// # Returns
+    ///
+    /// A new `Builder` instance with the BatchSpanProcessor added to the pipeline.
+    ///
+    /// Processors are invoked in the order they are added.
+    pub fn with_batch_exporter<T: SpanExporter + 'static>(self, exporter: T) -> Self {
+        let batch = BatchSpanProcessor::builder(exporter).build();
         self.with_span_processor(batch)
     }
 
-    /// The [`SpanProcessor`] that this provider should use.
+    /// Adds a custom [SpanProcessor] to the pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `processor` - The `SpanProcessor` to be added.
+    ///
+    /// # Returns
+    ///
+    /// A new `Builder` instance with the custom `SpanProcessor` added to the pipeline.
+    ///
+    /// Processors are invoked in the order they are added.
     pub fn with_span_processor<T: SpanProcessor + 'static>(self, processor: T) -> Self {
         let mut processors = self.processors;
         processors.push(Box::new(processor));
 
-        Builder { processors, ..self }
-    }
-
-    /// The sdk [`crate::trace::Config`] that this provider will use.
-    #[deprecated(
-        since = "0.27.1",
-        note = "Config is becoming a private type. Use Builder::with_{config_name}(resource) instead. ex: Builder::with_resource(resource)"
-    )]
-    pub fn with_config(self, config: crate::trace::Config) -> Self {
-        Builder { config, ..self }
+        TracerProviderBuilder { processors, ..self }
     }
 
     /// Specify the sampler to be used.
@@ -338,7 +368,7 @@ impl Builder {
 
     /// Specify the number of events to be recorded per span.
     pub fn with_max_events_per_span(mut self, max_events: u32) -> Self {
-        self.config.span_limits.max_attributes_per_span = max_events;
+        self.config.span_limits.max_events_per_span = max_events;
         self
     }
 
@@ -372,24 +402,34 @@ impl Builder {
         self
     }
 
-    /// Associates a [Resource] with a [TracerProvider].
+    /// Associates a [Resource] with a [SdkTracerProvider].
     ///
     /// This [Resource] represents the entity producing telemetry and is associated
-    /// with all [Tracer]s the [TracerProvider] will create.
+    /// with all [Tracer]s the [SdkTracerProvider] will create.
     ///
     /// By default, if this option is not used, the default [Resource] will be used.
     ///
+    /// *Note*: Calls to this method are additive, each call merges the provided
+    /// resource with the previous one.
+    ///
     /// [Tracer]: opentelemetry::trace::Tracer
     pub fn with_resource(self, resource: Resource) -> Self {
-        Builder {
-            config: self.config.with_resource(resource),
-            ..self
-        }
+        let resource = match self.resource {
+            Some(existing) => Some(existing.merge(&resource)),
+            None => Some(resource),
+        };
+
+        TracerProviderBuilder { resource, ..self }
     }
 
     /// Create a new provider from this configuration.
-    pub fn build(self) -> TracerProvider {
+    pub fn build(self) -> SdkTracerProvider {
         let mut config = self.config;
+
+        // Now, we can update the config with the resource.
+        if let Some(resource) = self.resource {
+            config.resource = Cow::Owned(resource);
+        };
 
         // Standard config will contain an owned [`Resource`] (either sdk default or use supplied)
         // we can optimize the common case with a static ref to avoid cloning the underlying
@@ -416,7 +456,7 @@ impl Builder {
         }
 
         let is_shutdown = AtomicBool::new(false);
-        TracerProvider::new(TracerProviderInner {
+        SdkTracerProvider::new(TracerProviderInner {
             processors,
             config,
             is_shutdown,
@@ -426,19 +466,21 @@ impl Builder {
 
 #[cfg(test)]
 mod tests {
-    use crate::export::trace::SpanData;
+    use crate::error::{OTelSdkError, OTelSdkResult};
     use crate::resource::{
         SERVICE_NAME, TELEMETRY_SDK_LANGUAGE, TELEMETRY_SDK_NAME, TELEMETRY_SDK_VERSION,
     };
     use crate::trace::provider::TracerProviderInner;
     use crate::trace::{Config, Span, SpanProcessor};
+    use crate::trace::{SdkTracerProvider, SpanData};
     use crate::Resource;
-    use opentelemetry::trace::{TraceError, TraceResult, Tracer, TracerProvider};
+    use opentelemetry::trace::{Tracer, TracerProvider};
     use opentelemetry::{Context, Key, KeyValue, Value};
 
     use std::env;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::time::Duration;
 
     // fields below is wrapped with Arc so we can assert it
     #[derive(Default, Debug)]
@@ -488,15 +530,15 @@ mod tests {
             // ignore
         }
 
-        fn force_flush(&self) -> TraceResult<()> {
+        fn force_flush(&self) -> OTelSdkResult {
             if self.success {
                 Ok(())
             } else {
-                Err(TraceError::from("cannot export"))
+                Err(OTelSdkError::InternalFailure("cannot export".into()))
             }
         }
 
-        fn shutdown(&self) -> TraceResult<()> {
+        fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
             if self.assert_info.0.is_shutdown.load(Ordering::SeqCst) {
                 Ok(())
             } else {
@@ -513,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_force_flush() {
-        let tracer_provider = super::TracerProvider::new(TracerProviderInner {
+        let tracer_provider = super::SdkTracerProvider::new(TracerProviderInner {
             processors: vec![
                 Box::from(TestSpanProcessor::new(true)),
                 Box::from(TestSpanProcessor::new(false)),
@@ -523,44 +565,47 @@ mod tests {
         });
 
         let results = tracer_provider.force_flush();
-        assert_eq!(results.len(), 2);
+        assert!(results.is_err());
     }
 
     #[test]
     fn test_tracer_provider_default_resource() {
-        let assert_resource = |provider: &super::TracerProvider,
+        let assert_resource = |provider: &super::SdkTracerProvider,
                                resource_key: &'static str,
                                expect: Option<&'static str>| {
             assert_eq!(
                 provider
                     .config()
                     .resource
-                    .get(Key::from_static_str(resource_key))
+                    .get(&Key::from_static_str(resource_key))
                     .map(|v| v.to_string()),
                 expect.map(|s| s.to_string())
             );
         };
-        let assert_telemetry_resource = |provider: &super::TracerProvider| {
+        let assert_telemetry_resource = |provider: &super::SdkTracerProvider| {
             assert_eq!(
                 provider
                     .config()
                     .resource
-                    .get(TELEMETRY_SDK_LANGUAGE.into()),
+                    .get(&TELEMETRY_SDK_LANGUAGE.into()),
                 Some(Value::from("rust"))
             );
             assert_eq!(
-                provider.config().resource.get(TELEMETRY_SDK_NAME.into()),
+                provider.config().resource.get(&TELEMETRY_SDK_NAME.into()),
                 Some(Value::from("opentelemetry"))
             );
             assert_eq!(
-                provider.config().resource.get(TELEMETRY_SDK_VERSION.into()),
+                provider
+                    .config()
+                    .resource
+                    .get(&TELEMETRY_SDK_VERSION.into()),
                 Some(Value::from(env!("CARGO_PKG_VERSION")))
             );
         };
 
         // If users didn't provide a resource and there isn't a env var set. Use default one.
         temp_env::with_var_unset("OTEL_RESOURCE_ATTRIBUTES", || {
-            let default_config_provider = super::TracerProvider::builder().build();
+            let default_config_provider = super::SdkTracerProvider::builder().build();
             assert_resource(
                 &default_config_provider,
                 SERVICE_NAME,
@@ -570,11 +615,12 @@ mod tests {
         });
 
         // If user provided config, use that.
-        let custom_config_provider = super::TracerProvider::builder()
-            .with_resource(Resource::new(vec![KeyValue::new(
-                SERVICE_NAME,
-                "test_service",
-            )]))
+        let custom_config_provider = super::SdkTracerProvider::builder()
+            .with_resource(
+                Resource::builder_empty()
+                    .with_service_name("test_service")
+                    .build(),
+            )
             .build();
         assert_resource(&custom_config_provider, SERVICE_NAME, Some("test_service"));
         assert_eq!(custom_config_provider.config().resource.len(), 1);
@@ -584,7 +630,7 @@ mod tests {
             "OTEL_RESOURCE_ATTRIBUTES",
             Some("key1=value1, k2, k3=value2"),
             || {
-                let env_resource_provider = super::TracerProvider::builder().build();
+                let env_resource_provider = super::SdkTracerProvider::builder().build();
                 assert_resource(
                     &env_resource_provider,
                     SERVICE_NAME,
@@ -602,11 +648,15 @@ mod tests {
             "OTEL_RESOURCE_ATTRIBUTES",
             Some("my-custom-key=env-val,k2=value2"),
             || {
-                let user_provided_resource_config_provider = super::TracerProvider::builder()
-                    .with_resource(Resource::new_with_defaults(vec![
-                        KeyValue::new("my-custom-key", "my-custom-value"),
-                        KeyValue::new("my-custom-key2", "my-custom-value2"),
-                    ]))
+                let user_provided_resource_config_provider = super::SdkTracerProvider::builder()
+                    .with_resource(
+                        Resource::builder()
+                            .with_attributes([
+                                KeyValue::new("my-custom-key", "my-custom-value"),
+                                KeyValue::new("my-custom-key2", "my-custom-value2"),
+                            ])
+                            .build(),
+                    )
                     .build();
                 assert_resource(
                     &user_provided_resource_config_provider,
@@ -640,7 +690,7 @@ mod tests {
         );
 
         // If user provided a resource, it takes priority during collision.
-        let no_service_name = super::TracerProvider::builder()
+        let no_service_name = super::SdkTracerProvider::builder()
             .with_resource(Resource::empty())
             .build();
 
@@ -651,7 +701,7 @@ mod tests {
     fn test_shutdown_noops() {
         let processor = TestSpanProcessor::new(false);
         let assert_handle = processor.assert_info();
-        let tracer_provider = super::TracerProvider::new(TracerProviderInner {
+        let tracer_provider = super::SdkTracerProvider::new(TracerProviderInner {
             processors: vec![Box::from(processor)],
             config: Default::default(),
             is_shutdown: AtomicBool::new(false),
@@ -666,7 +716,7 @@ mod tests {
 
         assert!(assert_handle.started_span_count(2));
 
-        let shutdown = |tracer_provider: super::TracerProvider| {
+        let shutdown = |tracer_provider: super::SdkTracerProvider| {
             let _ = tracer_provider.shutdown(); // shutdown once
         };
 
@@ -682,12 +732,45 @@ mod tests {
         // noop tracer's tracer provider should be shutdown
         assert!(noop_tracer.provider().is_shutdown());
 
-        // existing tracer becomes noops after shutdown
+        // existing tracer becomes noop after shutdown
         let _ = test_tracer_1.start("test");
         assert!(assert_handle.started_span_count(2));
 
         // also existing tracer's tracer provider are in shutdown state
         assert!(test_tracer_1.provider().is_shutdown());
+    }
+
+    #[test]
+    fn with_resource_multiple_calls_ensure_additive() {
+        let resource = SdkTracerProvider::builder()
+            .with_resource(Resource::new(vec![KeyValue::new("key1", "value1")]))
+            .with_resource(Resource::new(vec![KeyValue::new("key2", "value2")]))
+            .with_resource(
+                Resource::builder_empty()
+                    .with_schema_url(vec![], "http://example.com")
+                    .build(),
+            )
+            .with_resource(Resource::new(vec![KeyValue::new("key3", "value3")]))
+            .build()
+            .inner
+            .config
+            .resource
+            .clone()
+            .into_owned();
+
+        assert_eq!(
+            resource.get(&Key::from_static_str("key1")),
+            Some(Value::from("value1"))
+        );
+        assert_eq!(
+            resource.get(&Key::from_static_str("key2")),
+            Some(Value::from("value2"))
+        );
+        assert_eq!(
+            resource.get(&Key::from_static_str("key3")),
+            Some(Value::from("value3"))
+        );
+        assert_eq!(resource.schema_url(), Some("http://example.com"));
     }
 
     #[derive(Debug)]
@@ -710,11 +793,11 @@ mod tests {
             // No operation needed for this processor
         }
 
-        fn force_flush(&self) -> TraceResult<()> {
+        fn force_flush(&self) -> OTelSdkResult {
             Ok(())
         }
 
-        fn shutdown(&self) -> TraceResult<()> {
+        fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
             self.shutdown_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -735,10 +818,10 @@ mod tests {
             });
 
             {
-                let tracer_provider1 = super::TracerProvider {
+                let tracer_provider1 = super::SdkTracerProvider {
                     inner: shared_inner.clone(),
                 };
-                let tracer_provider2 = super::TracerProvider {
+                let tracer_provider2 = super::SdkTracerProvider {
                     inner: shared_inner.clone(),
                 };
 
@@ -774,10 +857,10 @@ mod tests {
 
         // Create a scope to test behavior when providers are dropped
         {
-            let tracer_provider1 = super::TracerProvider {
+            let tracer_provider1 = super::SdkTracerProvider {
                 inner: shared_inner.clone(),
             };
-            let tracer_provider2 = super::TracerProvider {
+            let tracer_provider2 = super::SdkTracerProvider {
                 inner: shared_inner.clone(),
             };
 

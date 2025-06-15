@@ -21,15 +21,24 @@ Supported platforms:
   Always available on:
   - aarch64 (musl 1.1.7+ https://github.com/bminor/musl/blob/v1.1.7/WHATSNEW#L1422)
   - powerpc64 (musl 1.1.15+ https://github.com/bminor/musl/blob/v1.1.15/WHATSNEW#L1702)
+  At least since Rust 1.15, std requires musl 1.1.14+ https://github.com/rust-lang/rust/blob/1.15.0/src/ci/docker/x86_64-musl/build-musl.sh#L15
+  Since Rust 1.18, std requires musl 1.1.16+ https://github.com/rust-lang/rust/pull/41089
+  Since Rust 1.23, std requires musl 1.1.17+ https://github.com/rust-lang/rust/pull/45393
+  Since Rust 1.25, std requires musl 1.1.18+ https://github.com/rust-lang/rust/pull/47283
+  Since Rust 1.29, std requires musl 1.1.19+ https://github.com/rust-lang/rust/pull/52087
   Since Rust 1.31, std requires musl 1.1.20+ https://github.com/rust-lang/rust/pull/54430
   Since Rust 1.37, std requires musl 1.1.22+ https://github.com/rust-lang/rust/pull/61252
   Since Rust 1.46, std requires musl 1.1.24+ https://github.com/rust-lang/rust/pull/73089
   Since Rust 1.71, std requires musl 1.2.3+ https://blog.rust-lang.org/2023/05/09/Updating-musl-targets.html
+  OpenHarmony uses a fork of musl 1.2 https://gitee.com/openharmony/docs/blob/master/en/application-dev/reference/native-lib/musl.md
 - uClibc-ng 1.0.43+ (through getauxval)
   https://github.com/wbx-github/uclibc-ng/commit/d869bb1600942c01a77539128f9ba5b5b55ad647
   Not always available on:
   - aarch64 (uClibc-ng 1.0.22+ https://github.com/wbx-github/uclibc-ng/commit/dba942c80dc2cfa5768a856fff98e22a755fdd27)
   (powerpc64 is not supported https://github.com/wbx-github/uclibc-ng/commit/d4d4f37fda7fa57e57132ff2f0d735ce7cc2178e)
+  In L4Re which uses uClibc-ng, a dummy API was added first in 2020 that always returns 0 (https://github.com/kernkonzept/l4re-core/commit/e88fa67198074d3e6b4983c5c8af1538e2089ff3),
+  then implemented in 2024 (https://github.com/kernkonzept/l4re-core/commit/3ee2a50dd1b3bc22955e593004990887a0a5b4a3).
+  However, getauxval(AT_HWCAP*) always returns 0 (as of 2025-03-20). (see tests/l4re test)
 - Picolibc 1.4.6+ (through getauxval)
   https://github.com/picolibc/picolibc/commit/19bfe51d62ad7e32533c7f664b5bca8e26286e31
 - Android 4.3+ (API level 18+) (through getauxval)
@@ -42,9 +51,11 @@ Supported platforms:
 - FreeBSD 12.0+ and 11.4+ (through elf_aux_info)
   https://github.com/freebsd/freebsd-src/commit/0b08ae2120cdd08c20a2b806e2fcef4d0a36c470
   https://github.com/freebsd/freebsd-src/blob/release/11.4.0/sys/sys/auxv.h
+  Always available on:
+  - powerpc64 (le) (FreeBSD 12.4+ https://www.freebsd.org/releases/12.4R/announce, https://man.freebsd.org/cgi/man.cgi?arch)
   Not always available on:
-  - aarch64 (FreeBSD 11.0+ https://www.freebsd.org/releases/11.0R/announce)
-  - powerpc64 (FreeBSD 9.0+ https://www.freebsd.org/releases/9.0R/announce)
+  - aarch64 (FreeBSD 11.0+ https://www.freebsd.org/releases/11.0R/announce, https://man.freebsd.org/cgi/man.cgi?arch)
+  - powerpc64 (be) (FreeBSD 9.0+ https://www.freebsd.org/releases/9.0R/announce, https://man.freebsd.org/cgi/man.cgi?arch)
   Since Rust 1.75, std requires FreeBSD 12+ https://github.com/rust-lang/rust/pull/114521
   Dropping support for FreeBSD 12 in std was decided in https://github.com/rust-lang/rust/pull/120869,
   but the actual update to the FreeBSD 13 toolchain was attempted twice, but both times there were
@@ -64,6 +75,14 @@ requirements: https://github.com/rust-lang/rust/issues/89626
 (That problem may have been fixed in https://github.com/rust-lang/rust/commit/9a04ae4997493e9260352064163285cddc43de3c,
 but even in the version containing that patch, [there is report](https://github.com/rust-lang/rust/issues/89626#issuecomment-1242636038)
 of the same error.)
+This seems to be due to the fact that compiler-builtins is built before libc (which is a dependency
+of std) links musl. And the std and its dependent can use getauxval without this problem at least
+since the rust-lang/rust patch mentioned above:
+https://github.com/rust-lang/rust/blob/1.85.0/library/std/src/sys/pal/unix/stack_overflow.rs#L268
+(According to https://github.com/rust-lang/rust/issues/89626#issuecomment-2420469392, this problem
+may have been fixed in https://github.com/rust-lang/rust/commit/9ed0d11efbec18a1fa4155576a3bcb685676d23c.)
+See also https://github.com/rust-lang/stdarch/pull/1746.
+So as for musl with static linking, we assume that getauxval is always available also when `std` feature enabled.
 
 On platforms that we cannot assume that getauxval/elf_aux_info is always available, so we use dlsym
 instead of directly calling getauxval/elf_aux_info. (You can force getauxval/elf_aux_info to be
@@ -123,7 +142,7 @@ mod os {
         pub(crate) use crate::utils::ffi::{c_char, c_int, c_void};
 
         sys_const!({
-            // https://github.com/torvalds/linux/blob/v6.12/include/uapi/linux/auxvec.h
+            // https://github.com/torvalds/linux/blob/v6.13/include/uapi/linux/auxvec.h
             pub(crate) const AT_HWCAP: c_ulong = 16;
             #[cfg(any(
                 test,
@@ -173,6 +192,7 @@ mod os {
                 // https://github.com/bminor/glibc/blob/glibc-2.40/misc/sys/auxv.h
                 // https://github.com/bminor/musl/blob/v1.2.5/include/sys/auxv.h
                 // https://github.com/wbx-github/uclibc-ng/blob/v1.0.47/include/sys/auxv.h
+                // https://github.com/kernkonzept/l4re-core/blob/4351d4474804636122d64ea5a5d41f5e78e9208e/uclibc/lib/contrib/uclibc/include/sys/auxv.h
                 // https://github.com/aosp-mirror/platform_bionic/blob/android-15.0.0_r1/libc/include/sys/auxv.h
                 // https://github.com/picolibc/picolibc/blob/1.8.6/newlib/libc/include/sys/auxv.h
                 #[cfg(any(
@@ -326,7 +346,13 @@ mod os {
             #[cfg(any(
                 test,
                 not(any(
-                    all(target_os = "freebsd", target_arch = "aarch64"),
+                    all(
+                        target_os = "freebsd",
+                        any(
+                            target_arch = "aarch64",
+                            all(target_arch = "powerpc64", target_endian = "little"),
+                        ),
+                    ),
                     portable_atomic_outline_atomics,
                 )),
             ))]
@@ -347,7 +373,13 @@ mod os {
                 #[cfg(any(
                     test,
                     any(
-                        all(target_os = "freebsd", target_arch = "aarch64"),
+                        all(
+                            target_os = "freebsd",
+                            any(
+                                target_arch = "aarch64",
+                                all(target_arch = "powerpc64", target_endian = "little"),
+                            ),
+                        ),
                         portable_atomic_outline_atomics,
                     ),
                 ))]
@@ -364,7 +396,13 @@ mod os {
                 #[cfg(any(
                     test,
                     not(any(
-                        all(target_os = "freebsd", target_arch = "aarch64"),
+                        all(
+                            target_os = "freebsd",
+                            any(
+                                target_arch = "aarch64",
+                                all(target_arch = "powerpc64", target_endian = "little"),
+                            ),
+                        ),
                         portable_atomic_outline_atomics,
                     )),
                 ))]
@@ -380,12 +418,24 @@ mod os {
         const OUT_LEN: ffi::c_int = mem::size_of::<ffi::c_ulong>() as ffi::c_int;
 
         #[cfg(any(
-            all(target_os = "freebsd", target_arch = "aarch64"),
+            all(
+                target_os = "freebsd",
+                any(
+                    target_arch = "aarch64",
+                    all(target_arch = "powerpc64", target_endian = "little"),
+                ),
+            ),
             portable_atomic_outline_atomics,
         ))]
         let elf_aux_info: ElfAuxInfoTy = ffi::elf_aux_info;
         #[cfg(not(any(
-            all(target_os = "freebsd", target_arch = "aarch64"),
+            all(
+                target_os = "freebsd",
+                any(
+                    target_arch = "aarch64",
+                    all(target_arch = "powerpc64", target_endian = "little"),
+                ),
+            ),
             portable_atomic_outline_atomics,
         )))]
         // SAFETY: we passed a valid C string to dlsym, and a pointer returned by dlsym
@@ -417,12 +467,12 @@ mod os {
 use self::arch::_detect;
 #[cfg(target_arch = "aarch64")]
 mod arch {
-    use super::{CpuInfo, ffi, os};
+    use super::{CpuInfo, CpuInfoFlag, ffi, os};
 
     sys_const!({
         // Linux
-        // https://github.com/torvalds/linux/blob/v6.12/arch/arm64/include/uapi/asm/hwcap.h
-        // https://github.com/torvalds/linux/blob/v6.12/Documentation/arch/arm64/elf_hwcaps.rst
+        // https://github.com/torvalds/linux/blob/v6.13/arch/arm64/include/uapi/asm/hwcap.h
+        // https://github.com/torvalds/linux/blob/v6.13/Documentation/arch/arm64/elf_hwcaps.rst
         // FreeBSD
         // Defined in machine/elf.h.
         // https://github.com/freebsd/freebsd-src/blob/release/14.2.0/sys/arm64/include/elf.h
@@ -436,7 +486,16 @@ mod arch {
         // https://github.com/freebsd/freebsd-src/blob/release/12.2.0/sys/arm64/include/elf.h
         // OpenBSD 7.6+
         // https://github.com/openbsd/src/commit/ef873df06dac50249b2dd380dc6100eee3b0d23d
-        pub(super) const HWCAP_ATOMICS: ffi::c_ulong = 1 << 8;
+        pub(crate) const HWCAP_ATOMICS: ffi::c_ulong = 1 << 8;
+        // Linux 4.11+
+        // https://github.com/torvalds/linux/commit/77c97b4ee21290f5f083173d957843b615abbff2
+        // FreeBSD 13.0+/12.2+
+        // https://github.com/freebsd/freebsd-src/blob/release/13.0.0/sys/arm64/include/elf.h
+        // https://github.com/freebsd/freebsd-src/blob/release/12.2.0/sys/arm64/include/elf.h
+        // OpenBSD 7.6+
+        // https://github.com/openbsd/src/commit/ef873df06dac50249b2dd380dc6100eee3b0d23d
+        #[cfg(test)]
+        pub(crate) const HWCAP_CPUID: ffi::c_ulong = 1 << 11;
         // Linux 4.17+
         // https://github.com/torvalds/linux/commit/7206dc93a58fb76421c4411eefa3c003337bcb2d
         // FreeBSD 13.0+/12.2+
@@ -444,21 +503,21 @@ mod arch {
         // https://github.com/freebsd/freebsd-src/blob/release/12.2.0/sys/arm64/include/elf.h
         // OpenBSD 7.6+
         // https://github.com/openbsd/src/commit/ef873df06dac50249b2dd380dc6100eee3b0d23d
-        pub(super) const HWCAP_USCAT: ffi::c_ulong = 1 << 25;
+        pub(crate) const HWCAP_USCAT: ffi::c_ulong = 1 << 25;
         // Linux 6.7+
         // https://github.com/torvalds/linux/commit/338a835f40a849cd89b993e342bd9fbd5684825c
         // FreeBSD 15.0+
         // https://github.com/freebsd/freebsd-src/commit/94686b081fdb0c1bb0fc1dfeda14bd53f26ce7c5
         #[cfg(not(target_os = "openbsd"))]
         #[cfg(target_pointer_width = "64")]
-        pub(super) const HWCAP2_LRCPC3: ffi::c_ulong = 1 << 46;
+        pub(crate) const HWCAP2_LRCPC3: ffi::c_ulong = 1 << 46;
         // Linux 6.7+
         // https://github.com/torvalds/linux/commit/94d0657f9f0d311489606589133ebf49e28104d8
         // FreeBSD 15.0+
         // https://github.com/freebsd/freebsd-src/commit/94686b081fdb0c1bb0fc1dfeda14bd53f26ce7c5
         #[cfg(not(target_os = "openbsd"))]
         #[cfg(target_pointer_width = "64")]
-        pub(super) const HWCAP2_LSE128: ffi::c_ulong = 1 << 47;
+        pub(crate) const HWCAP2_LSE128: ffi::c_ulong = 1 << 47;
     });
 
     #[cold]
@@ -484,36 +543,36 @@ mod arch {
             }
         }
 
+        macro_rules! check {
+            ($x:ident, $flag:ident, $bit:ident) => {
+                if $x & $bit != 0 {
+                    info.set(CpuInfoFlag::$flag);
+                }
+            };
+        }
         let hwcap = os::getauxval(ffi::AT_HWCAP);
-
-        if hwcap & HWCAP_ATOMICS != 0 {
-            info.set(CpuInfo::HAS_LSE);
-        }
-        if hwcap & HWCAP_USCAT != 0 {
-            info.set(CpuInfo::HAS_LSE2);
-        }
+        check!(hwcap, lse, HWCAP_ATOMICS);
+        check!(hwcap, lse2, HWCAP_USCAT);
+        #[cfg(test)]
+        check!(hwcap, cpuid, HWCAP_CPUID);
         #[cfg(not(target_os = "openbsd"))]
         // HWCAP2 is not yet available on ILP32: https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git/tree/arch/arm64/include/uapi/asm/hwcap.h?h=staging/ilp32-5.1
         #[cfg(target_pointer_width = "64")]
         {
             let hwcap2 = os::getauxval(ffi::AT_HWCAP2);
-            if hwcap2 & HWCAP2_LRCPC3 != 0 {
-                info.set(CpuInfo::HAS_RCPC3);
-            }
-            if hwcap2 & HWCAP2_LSE128 != 0 {
-                info.set(CpuInfo::HAS_LSE128);
-            }
+            check!(hwcap2, rcpc3, HWCAP2_LRCPC3);
+            check!(hwcap2, lse128, HWCAP2_LSE128);
         }
     }
 }
 #[cfg(target_arch = "powerpc64")]
 mod arch {
-    use super::{CpuInfo, ffi, os};
+    use super::{CpuInfo, CpuInfoFlag, ffi, os};
 
     sys_const!({
         // Linux
-        // https://github.com/torvalds/linux/blob/v6.12/arch/powerpc/include/uapi/asm/cputable.h
-        // https://github.com/torvalds/linux/blob/v6.12/Documentation/arch/powerpc/elf_hwcaps.rst
+        // https://github.com/torvalds/linux/blob/v6.13/arch/powerpc/include/uapi/asm/cputable.h
+        // https://github.com/torvalds/linux/blob/v6.13/Documentation/arch/powerpc/elf_hwcaps.rst
         // FreeBSD
         // Defined in machine/cpu.h.
         // https://github.com/freebsd/freebsd-src/blob/release/14.2.0/sys/powerpc/include/cpu.h
@@ -526,28 +585,29 @@ mod arch {
         // https://github.com/freebsd/freebsd-src/commit/b0bf7fcd298133457991b27625bbed766e612730
         // OpenBSD 7.6+
         // https://github.com/openbsd/src/commit/0b0568a19fc4c197871ceafbabc91fabf17ca152
-        pub(super) const PPC_FEATURE_BOOKE: ffi::c_ulong = 0x00008000;
+        pub(crate) const PPC_FEATURE_BOOKE: ffi::c_ulong = 0x00008000;
         // Linux 3.10+
         // https://github.com/torvalds/linux/commit/cbbc6f1b1433ef553d57826eee87a84ca49645ce
         // FreeBSD 11.0+
         // https://github.com/freebsd/freebsd-src/commit/b0bf7fcd298133457991b27625bbed766e612730
         // OpenBSD 7.6+
         // https://github.com/openbsd/src/commit/0b0568a19fc4c197871ceafbabc91fabf17ca152
-        pub(super) const PPC_FEATURE2_ARCH_2_07: ffi::c_ulong = 0x80000000;
+        pub(crate) const PPC_FEATURE2_ARCH_2_07: ffi::c_ulong = 0x80000000;
         // Linux 4.5+
         // https://github.com/torvalds/linux/commit/e708c24cd01ce80b1609d8baccee40ccc3608a01
         // FreeBSD 12.0+
         // https://github.com/freebsd/freebsd-src/commit/18f48e0c72f91bc2d4373078a3f1ab1bcab4d8b3
         // OpenBSD 7.6+
         // https://github.com/openbsd/src/commit/0b0568a19fc4c197871ceafbabc91fabf17ca152
-        pub(super) const PPC_FEATURE2_ARCH_3_00: ffi::c_ulong = 0x00800000;
+        pub(crate) const PPC_FEATURE2_ARCH_3_00: ffi::c_ulong = 0x00800000;
         // Linux 5.8+
         // https://github.com/torvalds/linux/commit/ee988c11acf6f9464b7b44e9a091bf6afb3b3a49
-        // FreeBSD 15.0+
+        // FreeBSD 15.0+/14.2+
         // https://github.com/freebsd/freebsd-src/commit/1e434da3b065ef96b389e5e0b604ae05a51e794e
+        // https://github.com/freebsd/freebsd-src/blob/release/14.2.0/sys/powerpc/include/cpu.h
         // OpenBSD 7.7+
         // https://github.com/openbsd/src/commit/483a78e15aaa23c010911940770c1c97db5c1287
-        pub(super) const PPC_FEATURE2_ARCH_3_1: ffi::c_ulong = 0x00040000;
+        pub(crate) const PPC_FEATURE2_ARCH_3_1: ffi::c_ulong = 0x00040000;
     });
 
     #[cold]
@@ -570,7 +630,7 @@ mod arch {
         let isa_2_07_or_later =
             PPC_FEATURE2_ARCH_2_07 | PPC_FEATURE2_ARCH_3_00 | PPC_FEATURE2_ARCH_3_1;
         if hwcap2 & isa_2_07_or_later != 0 {
-            info.set(CpuInfo::HAS_QUADWORD_ATOMICS);
+            info.set(CpuInfoFlag::quadword_atomics);
         }
     }
 }
@@ -592,7 +652,7 @@ mod tests {
     #[cfg(all(target_arch = "aarch64", target_os = "android"))]
     #[test]
     fn test_android() {
-        use std::{eprintln, slice, str};
+        use std::{slice, str};
         unsafe {
             let mut arch = [1; ffi::PROP_VALUE_MAX as usize];
             let len = ffi::__system_property_get(
@@ -600,10 +660,9 @@ mod tests {
                 arch.as_mut_ptr().cast::<ffi::c_char>(),
             );
             assert!(len >= 0);
-            eprintln!("len={}", len);
-            eprintln!("arch={:?}", arch);
-            eprintln!(
-                "arch={:?}",
+            test_helper::eprintln_nocapture!("ro.arch=raw={:?},len={}", arch, len);
+            test_helper::eprintln_nocapture!(
+                "ro.arch={:?}",
                 str::from_utf8(slice::from_raw_parts(arch.as_ptr(), len as usize)).unwrap()
             );
         }
@@ -614,16 +673,12 @@ mod tests {
     fn test_dlsym_getauxval() {
         unsafe {
             let ptr = ffi::dlsym(ffi::RTLD_DEFAULT, c!("getauxval").as_ptr());
-            if cfg!(any(
+            if cfg!(target_feature = "crt-static") {
+                assert!(ptr.is_null());
+            } else if cfg!(any(
                 all(
                     target_os = "linux",
-                    any(
-                        target_env = "gnu",
-                        all(
-                            any(target_env = "musl", target_env = "ohos"),
-                            not(target_feature = "crt-static"),
-                        ),
-                    ),
+                    any(target_env = "gnu", target_env = "musl", target_env = "ohos"),
                 ),
                 target_os = "android",
             )) {
@@ -644,7 +699,9 @@ mod tests {
     fn test_dlsym_elf_aux_info() {
         unsafe {
             let ptr = ffi::dlsym(ffi::RTLD_DEFAULT, c!("elf_aux_info").as_ptr());
-            if cfg!(target_os = "freebsd") || option_env!("CI").is_some() {
+            if cfg!(target_feature = "crt-static") {
+                assert!(ptr.is_null());
+            } else if cfg!(target_os = "freebsd") || option_env!("CI").is_some() {
                 assert!(!ptr.is_null());
             }
             if ptr.is_null() {
@@ -809,7 +866,7 @@ mod tests {
             let mut digits = release.split('.');
             let major = digits.next().unwrap().parse::<u32>().unwrap();
             let minor = digits.next().unwrap().parse::<u32>().unwrap();
-            // TODO: qemu-user bug?
+            // TODO: qemu-user bug (fails even on kernel >= 6.4) (as of 9.2)
             if (major, minor) < (6, 4) || cfg!(qemu) {
                 std::eprintln!("kernel version: {}.{} (no pr_get_auxv)", major, minor);
                 assert_eq!(getauxval_pr_get_auxv_libc(ffi::AT_HWCAP).unwrap_err(), -1);
@@ -823,7 +880,7 @@ mod tests {
                     -libc::EINVAL
                 );
             } else if cfg!(valgrind) {
-                // TODO: valgrind bug
+                // TODO: valgrind bug (result value mismatch) (as of 3.24)
             } else {
                 std::eprintln!("kernel version: {}.{} (has pr_get_auxv)", major, minor);
                 assert_eq!(
@@ -902,6 +959,7 @@ mod tests {
             }
 
             for aux in &auxv {
+                #[allow(clippy::cast_sign_loss)]
                 if aux.a_type == type_ as c_long {
                     // SAFETY: aux.a_un is #[repr(C)] union and all fields have
                     // the same size and can be safely transmuted to integers.
@@ -922,7 +980,7 @@ mod tests {
             type pid_t = c_int;
 
             // https://github.com/freebsd/freebsd-src/blob/release/14.2.0/lib/libc/aarch64/SYS.h
-            // https://github.com/golang/go/blob/4badad8d477ffd7a6b762c35bc69aed82faface7/src/syscall/asm_freebsd_arm64.s
+            // https://github.com/golang/go/blob/go1.24.0/src/syscall/asm_freebsd_arm64.s
             #[cfg(target_arch = "aarch64")]
             #[inline]
             fn getpid() -> pid_t {
@@ -1070,6 +1128,7 @@ mod tests {
             }
 
             for aux in &auxv {
+                #[allow(clippy::cast_sign_loss)]
                 if aux.a_type == type_ as c_long {
                     // SAFETY: aux.a_un is #[repr(C)] union and all fields have
                     // the same size and can be safely transmuted to integers.

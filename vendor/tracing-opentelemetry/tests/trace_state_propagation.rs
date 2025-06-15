@@ -1,13 +1,12 @@
-use futures_util::future::BoxFuture;
 use opentelemetry::{
     propagation::{TextMapCompositePropagator, TextMapPropagator},
     trace::{SpanContext, TraceContextExt, Tracer as _, TracerProvider as _},
     Context,
 };
 use opentelemetry_sdk::{
-    export::trace::{ExportResult, SpanData, SpanExporter},
+    error::OTelSdkResult,
     propagation::{BaggagePropagator, TraceContextPropagator},
-    trace::{Config, Sampler, Tracer, TracerProvider},
+    trace::{Sampler, SdkTracerProvider, SpanData, SpanExporter, Tracer},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -105,11 +104,9 @@ fn inject_context_into_outgoing_requests() {
 fn sampling_decision_respects_new_parent() {
     // custom setup required due to ParentBased(AlwaysOff) sampler
     let exporter = TestExporter::default();
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
-        .with_config(
-            Config::default().with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOff))),
-        )
+        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOff)))
         .build();
     let tracer = provider.tracer("test");
     let subscriber = tracing_subscriber::registry().with(layer().with_tracer(tracer.clone()));
@@ -171,9 +168,9 @@ fn assert_carrier_attrs_eq(
     assert_eq!(carrier_a.get("tracestate"), carrier_b.get("tracestate"));
 }
 
-fn test_tracer() -> (Tracer, TracerProvider, TestExporter, impl Subscriber) {
+fn test_tracer() -> (Tracer, SdkTracerProvider, TestExporter, impl Subscriber) {
     let exporter = TestExporter::default();
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
     let tracer = provider.tracer("test");
@@ -208,7 +205,7 @@ fn test_carrier() -> HashMap<String, String> {
     carrier
 }
 
-fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, TracerProvider) {
+fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, SdkTracerProvider) {
     let (tracer, provider, exporter, subscriber) = test_tracer();
     let span = tracer.start("sampled");
     let cx = Context::current_with_span(span);
@@ -220,13 +217,11 @@ fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, TracerPro
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
         let spans = self.0.clone();
-        Box::pin(async move {
-            if let Ok(mut inner) = spans.lock() {
-                inner.append(&mut batch);
-            }
-            Ok(())
-        })
+        if let Ok(mut inner) = spans.lock() {
+            inner.append(&mut batch);
+        }
+        Ok(())
     }
 }

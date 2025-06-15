@@ -1,6 +1,6 @@
+use libtest_mimic::{run, Arguments, Failed, Trial};
 use std::fs::{self, DirEntry};
-
-use libtest_mimic::{run_tests, Arguments, Outcome, Test};
+use std::process::ExitCode;
 
 use yaml_rust2::{
     parser::{Event, EventReceiver, Parser, Tag},
@@ -17,10 +17,18 @@ struct YamlTest {
     expected_error: bool,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
+    if !std::path::Path::new("tests/yaml-test-suite").is_dir() {
+        eprintln!("===================================================================");
+        eprintln!("/!\\ yaml-test-suite directory not found, Skipping tests /!\\");
+        eprintln!("If you intend to contribute to the library, restore the test suite.");
+        eprintln!("===================================================================");
+        return Ok(ExitCode::SUCCESS);
+    }
+
     let mut arguments = Arguments::from_args();
-    if arguments.num_threads.is_none() {
-        arguments.num_threads = Some(1);
+    if arguments.test_threads.is_none() {
+        arguments.test_threads = Some(1);
     }
     let tests: Vec<Vec<_>> = std::fs::read_dir("tests/yaml-test-suite/src")?
         .map(|entry| -> Result<_> {
@@ -29,17 +37,15 @@ fn main() -> Result<()> {
             Ok(tests)
         })
         .collect::<Result<_>>()?;
-    let mut tests: Vec<_> = tests.into_iter().flatten().collect();
-    tests.sort_by_key(|t| t.name.clone());
+    let tests: Vec<_> = tests.into_iter().flatten().collect();
 
-    run_tests(&arguments, tests, run_yaml_test).exit();
+    Ok(run(&arguments, tests).exit_code())
 }
 
-fn run_yaml_test(test: &Test<YamlTest>) -> Outcome {
-    let desc = &test.data;
-    let actual_events = parse_to_events(&desc.yaml);
-    let events_diff = actual_events.map(|events| events_differ(&events, &desc.expected_events));
-    let mut error_text = match (&events_diff, desc.expected_error) {
+fn run_yaml_test(data: YamlTest) -> Result<(), Failed> {
+    let actual_events = parse_to_events(&data.yaml);
+    let events_diff = actual_events.map(|events| events_differ(&events, &data.expected_events));
+    let mut error_text = match (&events_diff, data.expected_error) {
         (Ok(x), true) => Some(format!("no error when expected: {x:#?}")),
         (Err(_), true) | (Ok(None), false) => None,
         (Err(e), false) => Some(format!("unexpected error {e:?}")),
@@ -49,10 +55,10 @@ fn run_yaml_test(test: &Test<YamlTest>) -> Outcome {
     // Show a caret on error.
     if let Some(text) = &mut error_text {
         use std::fmt::Write;
-        let _ = writeln!(text, "\n### Input:\n{}\n### End", desc.yaml_visual);
+        let _ = writeln!(text, "\n### Input:\n{}\n### End", data.yaml_visual);
         if let Err(err) = &events_diff {
             writeln!(text, "### Error position").unwrap();
-            let mut lines = desc.yaml.lines();
+            let mut lines = data.yaml.lines();
             for _ in 0..(err.marker().line() - 1) {
                 let l = lines.next().unwrap();
                 writeln!(text, "{l}").unwrap();
@@ -70,12 +76,12 @@ fn run_yaml_test(test: &Test<YamlTest>) -> Outcome {
     }
 
     match error_text {
-        None => Outcome::Passed,
-        Some(txt) => Outcome::Failed { msg: Some(txt) },
+        None => Ok(()),
+        Some(txt) => Err(txt.into()),
     }
 }
 
-fn load_tests_from_file(entry: &DirEntry) -> Result<Vec<Test<YamlTest>>> {
+fn load_tests_from_file(entry: &DirEntry) -> Result<Vec<Trial>> {
     let file_name = entry.file_name().to_string_lossy().to_string();
     let test_name = file_name
         .strip_suffix(".yaml")
@@ -105,18 +111,14 @@ fn load_tests_from_file(entry: &DirEntry) -> Result<Vec<Test<YamlTest>>> {
             continue;
         }
 
-        result.push(Test {
-            name,
-            kind: String::new(),
-            is_ignored: false,
-            is_bench: false,
-            data: YamlTest {
+        result.push(Trial::test(name, move || {
+            run_yaml_test(YamlTest {
                 yaml_visual: current_test["yaml"].as_str().unwrap().to_string(),
                 yaml: visual_to_raw(current_test["yaml"].as_str().unwrap()),
                 expected_events: visual_to_raw(current_test["tree"].as_str().unwrap()),
                 expected_error: current_test["fail"].as_bool() == Some(true),
-            },
-        });
+            })
+        }));
     }
     Ok(result)
 }
@@ -147,12 +149,12 @@ impl EventReceiver for EventReporter {
             Event::DocumentEnd => "-DOC".into(),
 
             Event::SequenceStart(idx, tag) => {
-                format!("+SEQ{}{}", format_index(idx), format_tag(&tag))
+                format!("+SEQ{}{}", format_index(idx), format_tag(tag.as_ref()))
             }
             Event::SequenceEnd => "-SEQ".into(),
 
             Event::MappingStart(idx, tag) => {
-                format!("+MAP{}{}", format_index(idx), format_tag(&tag))
+                format!("+MAP{}{}", format_index(idx), format_tag(tag.as_ref()))
             }
             Event::MappingEnd => "-MAP".into(),
 
@@ -167,7 +169,7 @@ impl EventReceiver for EventReporter {
                 format!(
                     "=VAL{}{} {}{}",
                     format_index(idx),
-                    format_tag(tag),
+                    format_tag(tag.as_ref()),
                     kind,
                     escape_text(text)
                 )
@@ -201,7 +203,7 @@ fn escape_text(text: &str) -> String {
     text
 }
 
-fn format_tag(tag: &Option<Tag>) -> String {
+fn format_tag(tag: Option<&Tag>) -> String {
     if let Some(tag) = tag {
         format!(" <{}{}>", tag.handle, tag.suffix)
     } else {
@@ -276,7 +278,7 @@ fn expected_events(expected_tree: &str) -> Vec<String> {
                     .iter()
                     .enumerate()
                     .filter(|(_, v)| v == &name)
-                    .last()
+                    .next_back()
                     .unwrap()
                     .0;
                 s = s.replace(&s[start..], &format!("*{}", idx + 1));

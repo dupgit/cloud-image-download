@@ -29,8 +29,8 @@ MSP430 as well.
 
 See also README.md of this directory.
 
-[^avr1]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/lib/Target/AVR/AVRExpandPseudoInsts.cpp#L1074
-[^avr2]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0-rc1/llvm/test/CodeGen/AVR/atomics/load16.ll#L5
+[^avr1]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/lib/Target/AVR/AVRExpandPseudoInsts.cpp#L1074
+[^avr2]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.0/llvm/test/CodeGen/AVR/atomics/load16.ll#L5
 */
 
 // On some platforms, atomic load/store can be implemented in a more efficient
@@ -68,7 +68,7 @@ use self::arch::atomic;
 #[cfg_attr(target_arch = "xtensa", path = "xtensa.rs")]
 mod arch;
 
-use core::{cell::UnsafeCell, sync::atomic::Ordering};
+use core::{cell::UnsafeCell, ptr, sync::atomic::Ordering};
 
 // Critical section implementations might use locks internally.
 #[cfg(feature = "critical-section")]
@@ -211,7 +211,7 @@ impl<T> AtomicPtr<T> {
         // from a reference.
         with(|| unsafe {
             let prev = self.p.get().read();
-            if prev == current {
+            if ptr::eq(prev, current) {
                 self.p.get().write(new);
                 Ok(prev)
             } else {

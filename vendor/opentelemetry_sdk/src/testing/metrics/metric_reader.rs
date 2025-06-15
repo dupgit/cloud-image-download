@@ -1,9 +1,10 @@
-use std::sync::{Arc, Mutex, Weak};
-
+use crate::error::{OTelSdkError, OTelSdkResult};
+use crate::metrics::Temporality;
 use crate::metrics::{
-    data::ResourceMetrics, pipeline::Pipeline, reader::MetricReader, InstrumentKind,
+    data::ResourceMetrics, instrument::InstrumentKind, pipeline::Pipeline, reader::MetricReader,
 };
-use crate::metrics::{MetricResult, Temporality};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct TestMetricReader {
@@ -33,21 +34,21 @@ impl Default for TestMetricReader {
 impl MetricReader for TestMetricReader {
     fn register_pipeline(&self, _pipeline: Weak<Pipeline>) {}
 
-    fn collect(&self, _rm: &mut ResourceMetrics) -> MetricResult<()> {
+    fn collect(&self, _rm: &mut ResourceMetrics) -> OTelSdkResult {
         Ok(())
     }
 
-    fn force_flush(&self) -> MetricResult<()> {
+    fn force_flush(&self) -> OTelSdkResult {
         Ok(())
     }
 
-    fn shutdown(&self) -> MetricResult<()> {
+    fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
         let result = self.force_flush();
         {
             let mut is_shutdown = self.is_shutdown.lock().unwrap();
             *is_shutdown = true;
         }
-        result
+        result.map_err(|e| OTelSdkError::InternalFailure(e.to_string()))
     }
 
     fn temporality(&self, _kind: InstrumentKind) -> Temporality {

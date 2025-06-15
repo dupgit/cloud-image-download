@@ -121,7 +121,7 @@ fn test_is_lock_free() {
             not(any(target_feature = "v6", portable_atomic_target_feature = "v6")),
             not(portable_atomic_no_outline_atomics),
             not(target_has_atomic = "64"),
-            not(portable_atomic_test_outline_atomics_detect_false),
+            not(portable_atomic_test_detect_false),
         )) {
             assert!(!AtomicI64::is_always_lock_free());
             assert!(!AtomicU64::is_always_lock_free());
@@ -159,8 +159,22 @@ fn test_is_lock_free() {
         #[cfg(all(feature = "float", portable_atomic_unstable_f128))]
         assert!(!AtomicF128::is_lock_free());
     } else if cfg!(any(
-        target_arch = "aarch64",
-        all(target_arch = "arm64ec", not(portable_atomic_no_asm)),
+        all(
+            target_arch = "aarch64",
+            not(all(
+                any(miri, portable_atomic_sanitize_thread),
+                not(portable_atomic_atomic_intrinsics),
+            )),
+            any(not(portable_atomic_no_asm), portable_atomic_unstable_asm),
+        ),
+        all(
+            target_arch = "arm64ec",
+            not(all(
+                any(miri, portable_atomic_sanitize_thread),
+                not(portable_atomic_atomic_intrinsics),
+            )),
+            not(portable_atomic_no_asm),
+        ),
         all(
             target_arch = "x86_64",
             any(target_feature = "cmpxchg16b", portable_atomic_target_feature = "cmpxchg16b"),
@@ -171,13 +185,24 @@ fn test_is_lock_free() {
         ),
         all(
             target_arch = "powerpc64",
+            not(all(
+                any(miri, portable_atomic_sanitize_thread),
+                not(portable_atomic_atomic_intrinsics),
+            )),
             portable_atomic_unstable_asm_experimental_arch,
             any(
                 target_feature = "quadword-atomics",
                 portable_atomic_target_feature = "quadword-atomics",
             ),
         ),
-        all(target_arch = "s390x", not(portable_atomic_no_asm)),
+        all(
+            target_arch = "s390x",
+            not(all(
+                any(miri, portable_atomic_sanitize_thread),
+                not(portable_atomic_atomic_intrinsics),
+            )),
+            not(portable_atomic_no_asm),
+        ),
     )) {
         assert!(AtomicI128::is_always_lock_free());
         assert!(AtomicI128::is_lock_free());
@@ -209,7 +234,7 @@ fn test_is_lock_free() {
                 feature = "fallback",
                 not(portable_atomic_no_outline_atomics),
                 not(any(target_env = "sgx", miri)),
-                not(portable_atomic_test_outline_atomics_detect_false),
+                not(portable_atomic_test_detect_false),
             )) && std::is_x86_feature_detected!("cmpxchg16b");
             assert_eq!(AtomicI128::is_lock_free(), has_cmpxchg16b);
             assert_eq!(AtomicU128::is_lock_free(), has_cmpxchg16b);

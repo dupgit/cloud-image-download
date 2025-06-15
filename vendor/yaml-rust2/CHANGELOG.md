@@ -2,6 +2,24 @@
 
 ## Upcoming
 
+## v0.10.3
+
+**Changes**
+
+- Exclude `yaml-test-suite` from the Cargo package.
+  This reverts the license changes from last version.
+- 399f481: Bump `libtest-mimic` from dev-dependencies
+
+## v0.10.2
+
+**Bug fixes**
+- Parse `(?i)[+-]?(?:inf|infinity|nan)` as strings instead of floats
+
+**Changes**
+- Merge license files and respect `yaml-test-suite`  MIT license. This means we
+  now correctly state that this crate can not be licensed under only the
+  Apache-2.0 license.
+
 ## v0.10.1
 
 **Bug fixes**

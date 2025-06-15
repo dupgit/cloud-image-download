@@ -160,7 +160,7 @@ struct SpanEventVisitor<'a, 'b> {
     sem_conv_config: SemConvConfig,
 }
 
-impl<'a, 'b> field::Visit for SpanEventVisitor<'a, 'b> {
+impl field::Visit for SpanEventVisitor<'_, '_> {
     /// Record events on the underlying OpenTelemetry [`Span`] from `bool` values.
     ///
     /// [`Span`]: opentelemetry::trace::Span
@@ -403,7 +403,7 @@ struct SpanAttributeVisitor<'a> {
     sem_conv_config: SemConvConfig,
 }
 
-impl<'a> SpanAttributeVisitor<'a> {
+impl SpanAttributeVisitor<'_> {
     fn record(&mut self, attribute: KeyValue) {
         self.span_builder_updates
             .attributes
@@ -412,7 +412,7 @@ impl<'a> SpanAttributeVisitor<'a> {
     }
 }
 
-impl<'a> field::Visit for SpanAttributeVisitor<'a> {
+impl field::Visit for SpanAttributeVisitor<'_> {
     /// Set attributes on the underlying OpenTelemetry [`Span`] from `bool` values.
     ///
     /// [`Span`]: opentelemetry::trace::Span
@@ -546,7 +546,7 @@ where
     ///     .build()
     ///     .unwrap();
     ///
-    /// let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
+    /// let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
     ///     .with_simple_exporter(otlp_exporter)
     ///     .build()
     ///     .tracer("trace_demo");
@@ -598,7 +598,7 @@ where
     ///     .build()
     ///     .unwrap();
     ///
-    /// let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
+    /// let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
     ///     .with_simple_exporter(otlp_exporter)
     ///     .build()
     ///     .tracer("trace_demo");
@@ -729,6 +729,8 @@ where
     /// Sets whether or not spans metadata should include the _busy time_
     /// (total time for which it was entered), and _idle time_ (total time
     /// the span existed but was not entered).
+    ///
+    /// By default, inactivity tracking is enabled.
     pub fn with_tracked_inactivity(self, tracked_inactivity: bool) -> Self {
         Self {
             tracked_inactivity,
@@ -1070,6 +1072,15 @@ where
                 span_builder_updates: &mut builder_updates,
                 sem_conv_config: self.sem_conv_config,
             });
+
+            // If the event name is still empty, then there was no special handling of error fields.
+            // It should be safe to set the event name to the name provided by tracing.
+            // This is a hack but there are existing hacks that depend on the name being empty, so to avoid breaking those the event name is set here.
+            // Ideally, the name should be set above when the event is constructed.
+            // see: https://github.com/tokio-rs/tracing-opentelemetry/pull/28
+            if otel_event.name.is_empty() {
+                otel_event.name = std::borrow::Cow::Borrowed(event.metadata().name());
+            }
 
             let mut extensions = span.extensions_mut();
             let otel_data = extensions.get_mut::<OtelData>();
@@ -1487,6 +1498,42 @@ mod tests {
                 .into()
             )
         );
+    }
+
+    #[test]
+    fn records_event_name() {
+        let tracer = TestTracer(Arc::new(Mutex::new(None)));
+        let subscriber = tracing_subscriber::registry().with(layer().with_tracer(tracer.clone()));
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::debug_span!("test span").in_scope(|| {
+                tracing::event!(tracing::Level::INFO, "event name 1"); // this is equivalent to 'message = "event name 1"'
+                tracing::event!(name: "event name 2", tracing::Level::INFO, field1 = "field1");
+                tracing::event!(name: "event name 3", tracing::Level::INFO, error = "field2");
+                tracing::event!(name: "event name 4", tracing::Level::INFO, message = "field3");
+                tracing::event!(name: "event name 5", tracing::Level::INFO, name = "field4");
+            });
+        });
+
+        let events = tracer
+            .0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .builder
+            .events
+            .as_ref()
+            .unwrap()
+            .clone();
+
+        let mut iter = events.iter();
+
+        assert_eq!(iter.next().unwrap().name, "event name 1");
+        assert_eq!(iter.next().unwrap().name, "event name 2");
+        assert_eq!(iter.next().unwrap().name, "exception"); // error attribute is handled specially
+        assert_eq!(iter.next().unwrap().name, "field3"); // message attribute is handled specially
+        assert_eq!(iter.next().unwrap().name, "event name 5"); // name attribute should not conflict with event name.
     }
 
     #[test]

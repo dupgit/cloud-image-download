@@ -11,10 +11,11 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.75.0"
 name = "tracing-opentelemetry"
-version = "0.28.0"
+version = "0.31.0"
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -44,6 +45,18 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[features]
+default = [
+    "tracing-log",
+    "metrics",
+]
+metrics = [
+    "opentelemetry/metrics",
+    "opentelemetry_sdk/metrics",
+    "smallvec",
+]
+metrics_gauge_unstable = []
+
 [lib]
 name = "tracing_opentelemetry"
 path = "src/lib.rs"
@@ -64,6 +77,10 @@ path = "examples/opentelemetry-otlp.rs"
 [[example]]
 name = "opentelemetry-remote-context"
 path = "examples/opentelemetry-remote-context.rs"
+
+[[test]]
+name = "batch_global_subscriber"
+path = "tests/batch_global_subscriber.rs"
 
 [[test]]
 name = "errors"
@@ -123,12 +140,12 @@ optional = true
 version = "1.13.0"
 
 [dependencies.opentelemetry]
-version = "0.27.0"
+version = "0.30.0"
 features = ["trace"]
 default-features = false
 
 [dependencies.opentelemetry_sdk]
-version = "0.27.0"
+version = "0.30.0"
 features = ["trace"]
 default-features = false
 
@@ -137,8 +154,13 @@ version = "1.0"
 optional = true
 
 [dependencies.thiserror]
+version = "2"
+optional = true
+
+[dependencies.thiserror-1]
 version = "1.0.31"
 optional = true
+package = "thiserror"
 
 [dependencies.tracing]
 version = "0.1.35"
@@ -174,32 +196,36 @@ version = "0.3.17"
 default-features = false
 
 [dev-dependencies.opentelemetry]
-version = "0.27.0"
+version = "0.30.0"
 features = [
     "trace",
     "metrics",
 ]
 
 [dev-dependencies.opentelemetry-otlp]
-version = "0.27.0"
-features = ["metrics"]
+version = "0.30.0"
+features = [
+    "metrics",
+    "grpc-tonic",
+]
 
 [dev-dependencies.opentelemetry-semantic-conventions]
-version = "0.27.0"
+version = "0.30.0"
 features = ["semconv_experimental"]
 
 [dev-dependencies.opentelemetry-stdout]
-version = "0.27.0"
+version = "0.30.0"
 features = [
     "trace",
     "metrics",
 ]
 
 [dev-dependencies.opentelemetry_sdk]
-version = "0.27.0"
+version = "0.30.0"
 features = [
     "trace",
     "rt-tokio",
+    "experimental_metrics_custom_reader",
 ]
 default-features = false
 
@@ -230,18 +256,6 @@ features = [
 ]
 default-features = false
 
-[features]
-default = [
-    "tracing-log",
-    "metrics",
-]
-metrics = [
-    "opentelemetry/metrics",
-    "opentelemetry_sdk/metrics",
-    "smallvec",
-]
-metrics_gauge_unstable = ["opentelemetry/otel_unstable"]
-
 [target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dependencies.js-sys]
 version = "0.3.64"
 
@@ -249,7 +263,7 @@ version = "0.3.64"
 version = "1.0.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies.pprof]
-version = "0.13.0"
+version = "0.14.0"
 features = [
     "flamegraph",
     "criterion",

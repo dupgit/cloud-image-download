@@ -422,6 +422,7 @@ pub fn tracer_with_scope(scope: InstrumentationScope) -> BoxedTracer {
 /// It returns the [`TracerProvider`] instance that was previously mounted as global provider
 /// (e.g. [`NoopTracerProvider`] if a provider had not been set before).
 ///
+/// Libraries should NOT call this function. It is intended for applications/executables.
 /// [`TracerProvider`]: crate::trace::TracerProvider
 pub fn set_tracer_provider<P, T, S>(new_provider: P) -> GlobalTracerProvider
 where
@@ -436,17 +437,4 @@ where
         &mut *tracer_provider,
         GlobalTracerProvider::new(new_provider),
     )
-}
-
-/// Shut down the current tracer provider. This will invoke the shutdown method on all span processors.
-/// span processors should export remaining spans before return
-pub fn shutdown_tracer_provider() {
-    let mut tracer_provider = global_tracer_provider()
-        .write()
-        .expect("GLOBAL_TRACER_PROVIDER RwLock poisoned");
-
-    let _ = mem::replace(
-        &mut *tracer_provider,
-        GlobalTracerProvider::new(NoopTracerProvider::new()),
-    );
 }

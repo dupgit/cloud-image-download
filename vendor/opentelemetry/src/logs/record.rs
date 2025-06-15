@@ -1,7 +1,6 @@
 use crate::{Key, StringValue};
 
-#[cfg(feature = "trace")]
-use crate::trace::{SpanId, TraceFlags, TraceId};
+use crate::{SpanId, TraceFlags, TraceId};
 
 use std::{borrow::Cow, collections::HashMap, time::SystemTime};
 
@@ -47,7 +46,6 @@ pub trait LogRecord {
         V: Into<AnyValue>;
 
     /// Sets the trace context of the log.
-    #[cfg(feature = "trace")]
     fn set_trace_context(
         &mut self,
         trace_id: TraceId,
@@ -116,6 +114,12 @@ impl_trivial_from!(&'static str, AnyValue::String);
 impl_trivial_from!(StringValue, AnyValue::String);
 
 impl_trivial_from!(bool, AnyValue::Boolean);
+
+impl From<&[u8]> for AnyValue {
+    fn from(val: &[u8]) -> AnyValue {
+        AnyValue::Bytes(Box::new(val.to_vec()))
+    }
+}
 
 impl<T: Into<AnyValue>> FromIterator<T> for AnyValue {
     /// Creates an [`AnyValue::ListAny`] value from a sequence of `Into<AnyValue>` values.

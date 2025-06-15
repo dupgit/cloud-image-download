@@ -1,3 +1,27 @@
+# Unreleased
+
+# 0.31.0 (June 2, 2025)
+
+### Breaking Changes
+
+- Upgrade from opentelemetry 0.29.0 to 0.30.0. Refer to the upstream
+  [changelog](https://github.com/open-telemetry/opentelemetry-rust/blob/main/opentelemetry-sdk/CHANGELOG.md#0300)
+  for more information.
+
+### Added
+
+- Add `OpenTelemetrySpanExt::add_event` and `OpenTelemetrySpanExt::add_event_with_timestamp` 
+  functions to allow adding OpenTelemetry events directly to a `tracing::Span`, enabling the use of dynamic attribute keys 
+  and custom event timestamps.
+
+# 0.30.0 (March 23, 2025)
+
+### Breaking Changes
+
+- Upgrade from opentelemetry 0.28.0 to 0.29.0. Refer to the upstream
+  [changelog](https://github.com/open-telemetry/opentelemetry-rust/blob/main/opentelemetry-sdk/CHANGELOG.md#0290)
+  for more information.
+
 # 0.27.0 (October 9, 2024)
 
 ### Breaking Changes

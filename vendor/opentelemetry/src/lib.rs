@@ -246,9 +246,12 @@ pub mod global;
 
 pub mod baggage;
 
-mod context;
+pub mod context;
 
 pub use context::{Context, ContextGuard};
+
+mod trace_context;
+pub use trace_context::{SpanId, TraceFlags, TraceId};
 
 mod common;
 
@@ -264,6 +267,8 @@ pub use common::{
 #[cfg_attr(docsrs, doc(cfg(feature = "metrics")))]
 pub mod metrics;
 
+#[cfg(feature = "trace")]
+#[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod propagation;
 
 #[cfg(feature = "trace")]
@@ -275,7 +280,7 @@ pub mod trace;
 pub mod logs;
 
 #[doc(hidden)]
-#[cfg(any(feature = "metrics", feature = "trace"))]
+#[cfg(any(feature = "metrics", feature = "trace", feature = "logs"))]
 pub mod time {
     use std::time::SystemTime;
 
@@ -293,4 +298,10 @@ pub mod time {
     pub fn now() -> SystemTime {
         SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(js_sys::Date::now() as u64)
     }
+}
+
+#[doc(hidden)]
+pub mod _private {
+    #[cfg(feature = "internal-logs")]
+    pub use tracing::{debug, error, info, warn}; // re-export
 }

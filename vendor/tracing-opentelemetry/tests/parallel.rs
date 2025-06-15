@@ -1,9 +1,6 @@
-use futures_util::future::BoxFuture;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::{
-    export::trace::{ExportResult, SpanData, SpanExporter},
-    trace::{Config, SpanLimits, Tracer, TracerProvider},
-};
+use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter, SpanLimits, Tracer};
 use std::sync::{Arc, Mutex};
 use tracing::level_filters::LevelFilter;
 use tracing::Subscriber;
@@ -14,33 +11,30 @@ use tracing_subscriber::prelude::*;
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
         let spans = self.0.clone();
-        Box::pin(async move {
-            if let Ok(mut inner) = spans.lock() {
-                inner.append(&mut batch);
-            }
-            Ok(())
-        })
+        if let Ok(mut inner) = spans.lock() {
+            inner.append(&mut batch);
+        }
+        Ok(())
     }
 }
 
 fn test_tracer() -> (
     Tracer,
-    TracerProvider,
+    SdkTracerProvider,
     TestExporter,
     impl Subscriber + Clone,
 ) {
     let exporter = TestExporter::default();
-    let mut config = Config::default();
-    config.span_limits = SpanLimits {
-        max_events_per_span: u32::MAX,
-        ..SpanLimits::default()
-    };
-
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
-        .with_config(config)
+        // `with_max_events_per_span()` is buggy https://github.com/open-telemetry/opentelemetry-rust/pull/2405
+        .with_span_limits(SpanLimits {
+            max_events_per_span: u32::MAX,
+            ..SpanLimits::default()
+        })
+        .with_max_events_per_span(u32::MAX)
         .build();
 
     let tracer = provider.tracer("test");
