@@ -1,13 +1,13 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2025-06-15T21:11:16.076Z",
+    "created": "2025-06-15T21:25:17.257Z",
     "creators": [
       "Tool: cargo-sbom-v0.9.1"
     ]
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-18f6a3f6-b744-4419-a89b-eba2e05ebe47",
+  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-9d5d1ace-c4a4-4cc6-832f-e41570f47e5d",
   "files": [
     {
       "SPDXID": "SPDXRef-File-cid",
@@ -550,13 +550,13 @@
       "versionInfo": "0.7.5"
     },
     {
-      "SPDXID": "SPDXRef-Package-cloud-image-download-0.1.6",
+      "SPDXID": "SPDXRef-Package-cloud-image-download-0.1.7",
       "description": "Downloads cloud images to a directory",
       "downloadLocation": "NONE",
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "cloud-image-download",
-      "versionInfo": "0.1.6"
+      "versionInfo": "0.1.7"
     },
     {
       "SPDXID": "SPDXRef-Package-colorchoice-1.0.4",
@@ -5755,12 +5755,12 @@
   ],
   "relationships": [
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.1.6",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.1.7",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cid"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.1.6",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.1.7",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cloud_image_download"
     },
@@ -6007,112 +6007,112 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-base16ct-0.2.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-4.5.40",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-verbosity-flag-3.0.3",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-colored-3.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-config-0.15.11",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-const_format-0.2.34",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-directories-6.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-env_logger-0.11.8",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-util-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-hex-literal-1.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-httpdirectory-0.13.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-log-0.4.27",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-regex-1.11.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-reqwest-0.12.20",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-rusqlite-0.36.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-scraper-0.23.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde-1.0.219",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-sha2-0.10.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-shellexpand-3.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.45.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-trauma-2.3.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.6"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.1.7"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.59.0",
