@@ -2,40 +2,16 @@ use crate::CID_USER_AGENT;
 use crate::checksums::CheckSums;
 use crate::download::image_has_been_downloaded;
 use crate::image_history::DbImageHistory;
-use crate::image_list::{CloudImage, ImageList, compare_str_by_date};
-use colored::Colorize;
+use crate::image_list::{CloudImage, ImageList};
 use futures::{StreamExt, stream};
 use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 use regex::Regex;
 use reqwest::header::{ACCEPT, USER_AGENT};
-use scraper::{Html, Selector};
 use serde::Deserialize;
 use std::path::PathBuf;
-use std::process::exit;
 use std::sync::Arc;
 use trauma::download::Summary;
-
-/// Enum to tell the type of checksum
-/// used by the website.
-#[derive(Debug, Deserialize)]
-enum CheckSumType {
-    /// `CheckSumType::OneFile` is used for websites that have
-    /// a recognized file that contains all checksums for all
-    /// downloadable images
-    OneFile {
-        filename: String,
-    },
-    /// `CheckSumType::EveryFile` is used when no file has been
-    /// recognized to get all the checksums but we have found
-    /// evidence that the websites has checksum files for each
-    /// image that one may download (We only look for SHA256
-    /// checksum files)
-    EveryFile,
-    /// `CheckSumType::EveryFile` when none of the above has
-    /// been found and we can not decide where are the checksums
-    Unknown,
-}
 
 /// Website description structure
 #[derive(Debug, Deserialize)]
@@ -56,44 +32,14 @@ pub struct WSImageList {
     pub website: Arc<WebSite>,
 }
 
-/// Tells whether inner String contains a date
-/// formats in the wild are YYYYMMDD and YYYYMMDD-VVVV
-/// where VVVV is a version number.
-fn filter_dates(inner: &str) -> bool {
-    let re = Regex::new(r"\d{8}(?:-\d{4})?/$").unwrap();
-    re.is_match(inner)
-}
-
-/// Builds a Selector for all links (html <a> tag)
-/// This should never fail so we exit the program
-/// if it happens
-fn build_all_link_selector() -> Selector {
-    // Selects all links
-    match Selector::parse("a") {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Error: {e}");
-            exit(1);
-        }
-    }
-}
-
 /// Tells if inner String indicates that we are
 /// in presence of a checksum files that contains
 /// all checksums for all downloadable images
-fn are_all_checksums_in_one_file(inner: &String) -> bool {
+fn are_all_checksums_in_one_file(inner: &str) -> bool {
     // -CHECKSUM is used in Fedora sites
     // CHECKSUM is used in Centos sites
     // SHA256SUMS is used in Ubuntu sites
     inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
-}
-
-/// Tells whether inner String may be a checksum file.
-/// It can be a single checksum file or a multiple
-/// checksum file
-fn is_a_checksum_file(inner: &String) -> bool {
-    let re = Regex::new(r"\.(SHA1|MD5|SHA256)SUM$").unwrap();
-    are_all_checksums_in_one_file(inner) || re.is_match(inner)
 }
 
 /// Retrieves the body of a get request to the specified
@@ -166,11 +112,11 @@ impl WebSite {
         if let Ok(list_of_dates) = HttpDirectory::new(&url).await {
             if let Ok(list_of_dates) = list_of_dates.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
                 if list_of_dates.is_empty() {
-                    debug!("This {url} has no dates in it");
+                    debug!("This url ({url}) has no dates in it");
                     return Some(url.to_string());
                 } else {
-                    debug!("This {url} has dates in it:");
-                    // Keep only the latest entry
+                    debug!("This url ({url}) has dates in it:");
+                    // Keep only the latest entry !
                     if let Some(entry) = list_of_dates.sort_by_date(Sorting::Descending).first() {
                         if let Some(date) = entry.dirname() {
                             debug!("Adding {date}");
@@ -189,9 +135,29 @@ impl WebSite {
         None
     }
 
+    // Only retains entries from `HttpDirectory` listing that
+    // does NOT matches with any of the regular expressions found
+    // in `image_name_cleanse` field
+    fn clean_httpdir_image_list(&self, image_list: HttpDirectory) -> HttpDirectory {
+        debug!("Cleaning: {image_list}");
+        let mut filtered_image_list = image_list;
+        if let Some(regex_list_to_remove) = &self.image_name_cleanse {
+            for regex_to_remove in regex_list_to_remove {
+                if let Ok(re) = Regex::new(&regex_to_remove) {
+                    debug!(" -> Using '{regex_to_remove}' as Regex");
+                    filtered_image_list = filtered_image_list.filtering(|e| !e.is_match_by_name(&re));
+                }
+            }
+        }
+        debug!("Cleaned: {filtered_image_list}");
+        filtered_image_list
+    }
+
     /// Adds all images that can be gathered from this
-    /// `url` through `client` connection to a list and
-    /// returns that list (which may be empty)
+    /// `url`. Downloads through `client` connection if
+    /// possible a checksum file and extracts the checksum.
+    /// Returns an `ImageList` that contains either 0 or 1
+    /// element
     /// @todo: simplify
     async fn add_images_from_url_to_images_list(
         &self,
@@ -201,69 +167,71 @@ impl WebSite {
     ) -> ImageList {
         let mut images_url_list = ImageList::default();
 
-        match get_body_from_url(url, client).await {
-            Some(body) => {
-                trace!("{body}");
-                let document = Html::parse_document(&body);
-                let selector = build_all_link_selector();
+        if let Ok(url_httpdir) = HttpDirectory::new(url).await {
+            if let Ok(image_list) = url_httpdir.files().filter_by_name(&self.image_name_filter) {
+                let image_list = self.clean_httpdir_image_list(image_list);
+                // Keeping only the newest entry from that list
+                if let Some(image) = image_list.sort_by_date(Sorting::Descending).first() {
+                    if let Some(image_name) = image.name() {
+                        // Trying to find if we have a file that contains all checksums for
+                        // the files to be downloaded
+                        let one_file = url_httpdir.files().filtering(|e| {
+                            if let Some(name) = e.name() {
+                                are_all_checksums_in_one_file(name)
+                            } else {
+                                false
+                            }
+                        });
+                        let one_file_count = one_file.len();
+                        debug!("Checksum guess: all in one file: {one_file_count}");
+                        // We choose to download only one file if possible: we test onefile
+                        // at first for this
 
-                // selecting all <a> html tag then mapping it's inner element
-                // then filtering these elements with filter_element() function
-                let image_list = document
-                    .select(&selector)
-                    .map(|element| element.inner_html())
-                    .filter(|inner| self.filter_element(inner))
-                    .collect::<Vec<_>>();
+                        if one_file_count == 1 {
+                            if let Some(checksum_entry) = one_file.first() {
+                                // Download the CheckSum file with filename (url/filename)
+                                // for each image_name in url_list build a list of
+                                // image_name associated with it's Some(checksum) from
+                                // list of checksums
+                                if let Some(filename) = checksum_entry.name() {
+                                    // downloading the checksum file
+                                    let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
+                                    trace!("checksums: {checksums:?}");
+                                    // Finds the image_name in the checksum list and get it's checksum if any
+                                    let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
+                                        image_name, &checksums, &filename,
+                                    );
+                                    let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
+                                    images_url_list.push(cloud_image);
+                                }
+                            }
+                        } else {
+                            // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
+                            // return an Error here
+                            let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
+                            if everyfile >= 1 {
+                                let url = format!("{url}/{image_name}");
+                                let checksum_filename = format!("{url}.SHA256SUM");
+                                let checksum_body = get_body_from_url(&checksum_filename, client).await;
+                                let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
+                                    image_name,
+                                    &checksum_body,
+                                    &url,
+                                );
 
-                match self.guess_checksum_type(&document, &selector, url) {
-                    CheckSumType::OneFile {
-                        filename,
-                    } => {
-                        // Download the CheckSum file with filename (url/filename)
-                        // for each image_name in url_list build a list of
-                        // image_name associated with it's Some(checksum) from
-                        // list of checksums
-                        let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
-                        trace!("checksums: {checksums:?}");
-                        for image_name in image_list {
-                            // Finds the image_name in the checksum list and get it's checksum if any
-                            let checksum =
-                                CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksums, &filename);
-                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
-                            images_url_list.push(cloud_image);
+                                let cloud_image = CloudImage::new(url, checksum);
+                                images_url_list.push(cloud_image);
+                            } else {
+                                let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
+                                images_url_list.push(cloud_image);
+                            }
                         }
                     }
-                    CheckSumType::EveryFile => {
-                        // for each image_name in url_list download it's
-                        // checksum file that ends with .SHA256SUM and associate
-                        // the Some(checksum) with the image_name
-                        for image_name in image_list {
-                            let url = format!("{url}/{image_name}");
-                            let checksum_filename = format!("{url}.SHA256SUM");
-                            let checksum_body = get_body_from_url(&checksum_filename, client).await;
-                            let checksum =
-                                CheckSums::get_image_checksum_from_checksums_buffer(&image_name, &checksum_body, &url);
-
-                            let cloud_image = CloudImage::new(url, checksum);
-                            images_url_list.push(cloud_image);
-                        }
-                    }
-                    CheckSumType::Unknown => {
-                        // build the image_list and associate each image_name with None
-                        for image_name in image_list {
-                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
-                            images_url_list.push(cloud_image);
-                        }
-                    }
-                };
+                }
             }
-            None => (),
-        };
+        }
 
-        // If dates are in the image name than we need to filter them here
-        // otherwise they have already been filtered out in `get_list_of_dates()`
-        images_url_list.sort_by_date();
-        images_url_list.only_keep_last_element();
+        // Here we should have only one element or less in images_url_list
 
         // As we only have one element in the list (if any) we
         // can take the first one and test it against the database
@@ -281,88 +249,6 @@ impl WebSite {
         }
 
         images_url_list
-    }
-
-    /// Guesses from the HTML document and the chosen selector (<a>)
-    /// what type of checksum files we are dealing with. If anychoice
-    /// can be made we choose the unique file (has it will minimise
-    /// http get requests).
-    /// url is only here for info!() logging
-    fn guess_checksum_type(&self, document: &Html, selector: &Selector, url: &String) -> CheckSumType {
-        let mut everyfile: u16 = 0;
-        let mut onefile: u16 = 0;
-        let mut filename = String::new();
-
-        for element in document.select(selector) {
-            let inner = element.inner_html();
-            trace!("Checksum guess: inner: {inner}");
-            if inner.contains(".SHA256SUM") {
-                everyfile += 1;
-            }
-            if are_all_checksums_in_one_file(&inner) {
-                filename = inner;
-                onefile += 1;
-            }
-        }
-        debug!("Checksum guess: everyfile: {everyfile}, onefile: {onefile}");
-        // We choose to download only one file if possible: we test onefile
-        // at first for this
-        if onefile == 1 {
-            info!("Guessed checksum type for {url}: OneFile ({filename})");
-            CheckSumType::OneFile {
-                filename,
-            }
-        } else if everyfile >= 1 {
-            info!("Guessed checksum type for {url}: EveryFile");
-            CheckSumType::EveryFile
-        } else {
-            info!("Guessed checksum type for {url}: Unknown");
-            CheckSumType::Unknown
-        }
-    }
-
-    /// Returns true on inner element that we want to keep:
-    /// every inner element that matches the regular expression
-    /// found in image_name_filter. As this regular expression
-    /// comes from a user input we fail and exit in case of an
-    /// error when building it. The matching image also needs
-    /// not to be a checksum file.
-    /// @todo: simplify
-    fn filter_element(&self, inner: &String) -> bool {
-        let mut is_filtered = match Regex::new(&self.image_name_filter) {
-            Ok(re) => re.is_match(inner) && !is_a_checksum_file(inner),
-            Err(e) => {
-                error!("Error in regular expression ({}): {e}", self.image_name_filter);
-                exit(1);
-            }
-        };
-
-        if is_filtered {
-            let mut cleaned = false;
-            if let Some(cleanse_filters) = &self.image_name_cleanse {
-                for clean_filter in cleanse_filters {
-                    let is_cleaned = match Regex::new(clean_filter) {
-                        Ok(re) => re.is_match(inner),
-                        Err(e) => {
-                            error!("Error in regular expression ({}): {e}", clean_filter);
-                            exit(1);
-                        }
-                    };
-                    debug!("cleaning {inner} with {clean_filter} led to {is_cleaned}");
-                    cleaned = cleaned || is_cleaned;
-                }
-            }
-            if cleaned {
-                is_filtered = false;
-                debug!("{} {inner}", "𐄂".red());
-            } else {
-                debug!("{} {inner}", "🗸".green());
-            }
-        } else {
-            // This is really verbose so we want to print this only in trace level.
-            trace!("{} {inner}", "𐄂".red());
-        }
-        is_filtered
     }
 }
 
