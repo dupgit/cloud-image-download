@@ -31,7 +31,7 @@ serde = { version = "1.0.217", features = ["derive"] }
 sha2 = "0.10.8"
 shellexpand = { version = "3.1.0", features = ["full"] }
 tokio = { version = "1.42.0", features = ["full"] }
-trauma = "2.2.6"
+trauma = "2.3.0"
 
 # Uncomment these lines to use vendored sources to recompile
 #
