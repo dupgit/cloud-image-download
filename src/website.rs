@@ -109,7 +109,7 @@ impl WebSite {
     /// containing that directory instead of url itself. If the url has no
     /// directories with dates then returns this url
     async fn check_for_directories_with_dates(url: &str) -> Option<String> {
-        if let Ok(list_of_dates) = HttpDirectory::new(&url).await {
+        if let Ok(list_of_dates) = HttpDirectory::new(url).await {
             if let Ok(list_of_dates) = list_of_dates.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
                 if list_of_dates.is_empty() {
                     debug!("This url ({url}) has no dates in it");
@@ -138,12 +138,12 @@ impl WebSite {
     // Only retains entries from `HttpDirectory` listing that
     // does NOT matches with any of the regular expressions found
     // in `image_name_cleanse` field
-    fn clean_httpdir_image_list(&self, image_list: HttpDirectory) -> HttpDirectory {
+    fn clean_httpdir_from_image_name_cleanse_regex(&self, image_list: HttpDirectory) -> HttpDirectory {
         debug!("Cleaning: {image_list}");
         let mut filtered_image_list = image_list;
         if let Some(regex_list_to_remove) = &self.image_name_cleanse {
             for regex_to_remove in regex_list_to_remove {
-                if let Ok(re) = Regex::new(&regex_to_remove) {
+                if let Ok(re) = Regex::new(regex_to_remove) {
                     debug!(" -> Using '{regex_to_remove}' as Regex");
                     filtered_image_list = filtered_image_list.filtering(|e| !e.is_match_by_name(&re));
                 }
@@ -169,7 +169,7 @@ impl WebSite {
 
         if let Ok(url_httpdir) = HttpDirectory::new(url).await {
             if let Ok(image_list) = url_httpdir.files().filter_by_name(&self.image_name_filter) {
-                let image_list = self.clean_httpdir_image_list(image_list);
+                let image_list = self.clean_httpdir_from_image_name_cleanse_regex(image_list);
                 // Keeping only the newest entry from that list
                 if let Some(image) = image_list.sort_by_date(Sorting::Descending).first() {
                     if let Some(image_name) = image.name() {
@@ -199,7 +199,7 @@ impl WebSite {
                                     trace!("checksums: {checksums:?}");
                                     // Finds the image_name in the checksum list and get it's checksum if any
                                     let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
-                                        image_name, &checksums, &filename,
+                                        image_name, &checksums, filename,
                                     );
                                     let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
                                     images_url_list.push(cloud_image);

@@ -71,7 +71,7 @@ impl CheckSums {
 impl fmt::Display for CheckSums {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            CheckSums::None => writeln!(f, ""),
+            CheckSums::None => writeln!(f),
             CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
                 writeln!(f, "{}", checksum)
             }

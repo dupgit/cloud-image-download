@@ -10,7 +10,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::{cmp::Ordering, path::PathBuf};
+use std::{cmp::Ordering, path::Path};
 
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
@@ -31,7 +31,7 @@ impl CloudImage {
     }
 
     /// @todo: simplify and get it shorter
-    pub fn verify(&self, destination: &PathBuf) -> bool {
+    pub fn verify(&self, destination: &Path) -> bool {
         if let Some((_, filename)) = get_filename_destination(&self.url, destination) {
             match verify_file(&filename, &self.checksum) {
                 Ok(no_error) => match no_error {
@@ -61,10 +61,7 @@ impl CloudImage {
     }
 
     pub fn is_in_db(&self, db: &DbImageHistory) -> bool {
-        match db.is_image_in_db(Some(self)) {
-            Ok(in_db) => in_db,
-            Err(_) => false,
-        }
+        db.is_image_in_db(Some(self)).unwrap_or_default()
     }
 }
 
@@ -154,10 +151,7 @@ impl fmt::Display for CloudImage {
 
 fn get_date_from_string(name: &str) -> Option<String> {
     let re = Regex::new(r"(?<name>[2][0-9]{3}[0-1][0-9][0-3][0-9])").unwrap();
-    match re.captures(name) {
-        Some(capture) => Some(capture["name"].to_string()),
-        None => None,
-    }
+    re.captures(name).map(|capture| capture["name"].to_string())
 }
 
 pub fn compare_str_by_date(a: &str, b: &str) -> Ordering {

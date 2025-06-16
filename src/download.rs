@@ -75,12 +75,11 @@ pub async fn download_images(
     let user_agent = HeaderValue::from_str(CID_USER_AGENT).unwrap();
 
     // Defines the maximum simultaneous downloads at a time
-    let max: usize;
-    if concurrent_download > 0 {
-        max = concurrent_download;
+    let max: usize = if concurrent_download > 0 {
+        concurrent_download
     } else {
-        max = CONCURRENT_REQUESTS;
-    }
+        CONCURRENT_REQUESTS
+    };
 
     // Prepares downloading
     if verbose.is_silent() {
