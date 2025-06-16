@@ -5,10 +5,11 @@ use crate::image_history::DbImageHistory;
 use crate::image_list::{CloudImage, ImageList};
 use futures::{StreamExt, stream};
 use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
+use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 use trauma::download::Summary;
@@ -164,7 +165,7 @@ impl WebSite {
         url: &String,
         client: &reqwest::Client,
         db: &DbImageHistory,
-    ) -> ImageList {
+    ) -> Result<ImageList, Box<dyn Error>> {
         let mut images_url_list = ImageList::default();
 
         if let Ok(url_httpdir) = HttpDirectory::new(url).await {
@@ -248,7 +249,7 @@ impl WebSite {
             }
         }
 
-        images_url_list
+        Ok(images_url_list)
     }
 }
 
@@ -278,7 +279,15 @@ impl WSImageList {
                 let client = &client;
                 let website = website.clone();
                 let db = db.clone();
-                async move { website.add_images_from_url_to_images_list(&url, client, &db).await }
+                async move {
+                    match website.add_images_from_url_to_images_list(&url, client, &db).await {
+                        Ok(image_list) => image_list,
+                        Err(error) => {
+                            error!("Error with url ({url}) retrieving image list: {error}");
+                            ImageList::default()
+                        }
+                    }
+                }
             })
             .buffered(concurrent_downloads);
 
