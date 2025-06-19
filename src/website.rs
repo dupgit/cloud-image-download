@@ -4,12 +4,12 @@ use crate::download::image_has_been_downloaded;
 use crate::image_history::DbImageHistory;
 use crate::image_list::{CloudImage, ImageList};
 use futures::{StreamExt, stream};
+use httpdirectory::error::HttpDirError;
 use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
-use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 use trauma::download::Summary;
@@ -166,68 +166,63 @@ impl WebSite {
         url: &String,
         client: &reqwest::Client,
         db: &DbImageHistory,
-    ) -> Result<ImageList, Box<dyn Error>> {
+    ) -> Result<ImageList, HttpDirError> {
         let mut images_url_list = ImageList::default();
 
-        if let Ok(url_httpdir) = HttpDirectory::new(url).await {
-            if let Ok(image_list) = url_httpdir.files().filter_by_name(&self.image_name_filter) {
-                let image_list = self.clean_httpdir_from_image_name_cleanse_regex(image_list);
-                // Keeping only the newest entry from that list
-                if let Some(image) = image_list.sort_by_date(Sorting::Descending).first() {
-                    if let Some(image_name) = image.name() {
-                        // Trying to find if we have a file that contains all checksums for
-                        // the files to be downloaded
-                        let one_file = url_httpdir.files().filtering(|e| {
-                            if let Some(name) = e.name() {
-                                are_all_checksums_in_one_file(name)
-                            } else {
-                                false
-                            }
-                        });
-                        let one_file_count = one_file.len();
-                        debug!("Checksum guess: all in one file: {one_file_count}");
-                        // We choose to download only one file if possible: we test onefile
-                        // at first for this
+        let url_httpdir = HttpDirectory::new(url).await?;
+        let image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
+        let image_list = self.clean_httpdir_from_image_name_cleanse_regex(image_list);
 
-                        if one_file_count == 1 {
-                            if let Some(checksum_entry) = one_file.first() {
-                                // Download the CheckSum file with filename (url/filename)
-                                // for each image_name in url_list build a list of
-                                // image_name associated with it's Some(checksum) from
-                                // list of checksums
-                                if let Some(filename) = checksum_entry.name() {
-                                    // downloading the checksum file
-                                    let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
-                                    trace!("checksums: {checksums:?}");
-                                    // Finds the image_name in the checksum list and get it's checksum if any
-                                    let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
-                                        image_name, &checksums, filename,
-                                    );
-                                    let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
-                                    images_url_list.push(cloud_image);
-                                }
-                            }
-                        } else {
-                            // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
-                            // return an Error here
-                            let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
-                            if everyfile >= 1 {
-                                let url = format!("{url}/{image_name}");
-                                let checksum_filename = format!("{url}.SHA256SUM");
-                                let checksum_body = get_body_from_url(&checksum_filename, client).await;
-                                let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
-                                    image_name,
-                                    &checksum_body,
-                                    &url,
-                                );
+        // Keeping only the newest entry from that list
+        if let Some(image) = image_list.sort_by_date(Sorting::Descending).first() {
+            if let Some(image_name) = image.name() {
+                // Trying to find if we have a file that contains all checksums for
+                // the files to be downloaded
+                let one_file = url_httpdir.files().filtering(|e| {
+                    if let Some(name) = e.name() {
+                        are_all_checksums_in_one_file(name)
+                    } else {
+                        false
+                    }
+                });
+                let one_file_count = one_file.len();
+                debug!("Checksum guess: all in one file: {one_file_count}");
+                // We choose to download only one file if possible: we test onefile
+                // at first for this
 
-                                let cloud_image = CloudImage::new(url, checksum);
-                                images_url_list.push(cloud_image);
-                            } else {
-                                let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
-                                images_url_list.push(cloud_image);
-                            }
+                if one_file_count == 1 {
+                    if let Some(checksum_entry) = one_file.first() {
+                        // Download the CheckSum file with filename (url/filename)
+                        // for each image_name in url_list build a list of
+                        // image_name associated with it's Some(checksum) from
+                        // list of checksums
+                        if let Some(filename) = checksum_entry.name() {
+                            // downloading the checksum file
+                            let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
+                            trace!("checksums: {checksums:?}");
+                            // Finds the image_name in the checksum list and get it's checksum if any
+                            let checksum =
+                                CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksums, filename);
+                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
+                            images_url_list.push(cloud_image);
                         }
+                    }
+                } else {
+                    // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
+                    // return an Error here
+                    let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
+                    if everyfile >= 1 {
+                        let url = format!("{url}/{image_name}");
+                        let checksum_filename = format!("{url}.SHA256SUM");
+                        let checksum_body = get_body_from_url(&checksum_filename, client).await;
+                        let checksum =
+                            CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url);
+
+                        let cloud_image = CloudImage::new(url, checksum);
+                        images_url_list.push(cloud_image);
+                    } else {
+                        let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
+                        images_url_list.push(cloud_image);
                     }
                 }
             }
