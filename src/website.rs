@@ -40,6 +40,7 @@ fn are_all_checksums_in_one_file(inner: &str) -> bool {
     // -CHECKSUM is used in Fedora sites
     // CHECKSUM is used in Centos sites
     // SHA256SUMS is used in Ubuntu sites
+    // SHA512SUMS is used in Debian sites
     inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
 }
 
