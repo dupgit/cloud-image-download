@@ -21,7 +21,7 @@ env_logger = "0.11.6"
 futures = "0.3.31"
 futures-util = "0.3.31"
 hex-literal = "1.0.0"
-httpdirectory = "0.13.0"
+httpdirectory = "0.14.0"
 log = "0.4.22"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["stream"] }
@@ -41,6 +41,12 @@ trauma = "2.3.0"
 #[source.vendored-sources]
 #directory = "vendor"
 
+
+[profile.release]
+codegen-units = 1
+lto = true          # Enable Link Time Optimization
+panic = 'abort'
+strip = true
 
 [lints.clippy]
 single_match = "warn"
