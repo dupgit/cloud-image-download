@@ -11,6 +11,7 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 base16ct = { version = "0.2.0", features = ["alloc"] }
+chrono = "0.4.41"
 clap = { version = "4.5.26", features = ["color", "cargo", "derive"] }
 clap-verbosity-flag = "3.0.2"
 colored = "3.0.0"
@@ -21,7 +22,7 @@ env_logger = "0.11.6"
 futures = "0.3.31"
 futures-util = "0.3.31"
 hex-literal = "1.0.0"
-httpdirectory = "0.14.0"
+httpdirectory = "0.15.0"
 log = "0.4.22"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["stream"] }
@@ -44,7 +45,7 @@ trauma = "2.3.0"
 
 [profile.release]
 codegen-units = 1
-lto = true          # Enable Link Time Optimization
+lto = true        # Enable Link Time Optimization
 panic = 'abort'
 strip = true
 
@@ -64,5 +65,3 @@ match_bool = "warn"
 needless_bool = "deny"
 unwrap_used = "warn"
 expect_used = "warn"
-
-

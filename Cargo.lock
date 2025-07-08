@@ -296,6 +296,7 @@ name = "cloud-image-download"
 version = "0.1.7"
 dependencies = [
  "base16ct",
+ "chrono",
  "clap",
  "clap-verbosity-flag",
  "colored",
@@ -967,9 +968,9 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "httpdirectory"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbee8d1f1c76032ceb09c4f7b35e756718c1421e1fa464951ed790da9ed632be"
+checksum = "58b1a08bde95e848d6e085917aedfe17a8e06754021465cafe89ba669cede39f"
 dependencies = [
  "chrono",
  "colored",

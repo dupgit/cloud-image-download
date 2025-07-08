@@ -1,8 +1,7 @@
 use crate::CID_USER_AGENT;
 use crate::checksums::CheckSums;
-use crate::download::image_has_been_downloaded;
 use crate::image_history::DbImageHistory;
-use crate::image_list::{CloudImage, ImageList};
+use crate::image_list::CloudImage;
 use futures::{StreamExt, stream};
 use httpdirectory::error::HttpDirError;
 use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
@@ -12,7 +11,6 @@ use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use trauma::download::Summary;
 
 /// Website description structure
 #[derive(Debug, Deserialize)]
@@ -24,12 +22,13 @@ pub struct WebSite {
     image_name_filter: String,
     image_name_cleanse: Option<Vec<String>>,
     pub destination: PathBuf,
+    normalize: Option<bool>,
 }
 
 /// Associates a list of images with the website
 /// they come from
 pub struct WSImageList {
-    pub images_list: ImageList,
+    pub images_list: Vec<CloudImage>,
     pub website: Arc<WebSite>,
 }
 
@@ -58,12 +57,12 @@ async fn get_body_from_url(url: &str, client: &reqwest::Client) -> Option<String
                 }
             },
             _ => {
-                warn!("Error while retrieving url {url} content {}", response.status());
+                warn!("Error while retrieving url '{url}' content ({})", response.status());
                 None
             }
         },
         Err(e) => {
-            warn!("Error while fetching url {url}: {e}");
+            warn!("Error while fetching url '{url}': {e}");
             None
         }
     }
@@ -73,62 +72,56 @@ impl WebSite {
     /// Generates all url to be checked for images for this particular website
     /// using versions from `version_list` and `after_version_url` that both
     /// are vectors and may contain more than one element.
-    /// Checks whether the site has dates directories and in that case adds
-    /// the latest one to the list instead of the url itself.
+    /// Checks whether the site has dates directories or numbered directorise
+    /// and in that case adds the latest one to the list instead of the url itself.
     /// The returned list may be empty.
     async fn generate_url_list(&self) -> Vec<String> {
         let mut url_list = vec![];
         for version in &self.version_list {
-            let version_list = match &self.after_version_url {
-                Some(after) => {
-                    let mut vl = vec![];
-                    for after_version in after {
-                        let url = format!("{}/{}/{}", self.base_url, version, after_version);
-                        info!("Adding url '{url}' to list of url for {}", self.name);
-                        vl.push(url);
-                    }
-                    vl
-                }
-                None => {
-                    let url = format!("{}/{}", self.base_url, version);
-                    info!("Adding url '{url}' to list of url for {}", self.name);
-                    vec![url]
-                }
-            };
-            url_list.extend(version_list);
-        }
+            let url = format!("{}/{}", self.base_url, version);
 
-        let mut final_url_list = vec![];
-        for url in url_list {
-            if let Some(url_checked) = WebSite::check_for_directories_with_dates(&url).await {
-                final_url_list.push(url_checked);
+            if let Some(url_checked) = WebSite::check_for_directories_with_dates_or_version_numbers(&url).await {
+                if let Some(after) = &self.after_version_url {
+                    for after_version in after {
+                        // valid url_checked has a trailing /
+                        let url = format!("{}{}", url_checked, after_version);
+                        info!("Adding url '{url}' to list of url for {}", self.name);
+                        url_list.push(url);
+                    }
+                } else {
+                    info!("Adding url '{url_checked}' to list of url for {}", self.name);
+                    url_list.push(url_checked);
+                }
+            } else {
+                info!("Adding url '{url}' to list of url for {}", self.name);
+                url_list.push(url);
             }
         }
-        final_url_list
+        url_list
     }
 
     /// Checks if an url has directories with dates and then returns the url
     /// containing that directory instead of url itself. If the url has no
     /// directories with dates then returns this url
-    async fn check_for_directories_with_dates(url: &str) -> Option<String> {
-        if let Ok(list_of_dates) = HttpDirectory::new(url).await {
-            if let Ok(list_of_dates) = list_of_dates.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
+    /// Returns None when `HttpDirectory::new()` returns an Err.
+    async fn check_for_directories_with_dates_or_version_numbers(url: &str) -> Option<String> {
+        if let Ok(directory_listing) = HttpDirectory::new(url).await {
+            if let Ok(list_of_dates) = directory_listing.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
                 if list_of_dates.is_empty() {
                     debug!("This url ({url}) has no dates in it");
-                    return Some(url.to_string());
+                    if let Ok(list_of_numbers) = directory_listing.dirs().filter_by_name(r"^\d\d+/$") {
+                        if list_of_numbers.is_empty() {
+                            debug!("This url ({url}) has no numbers in it");
+                            return Some(url.to_string());
+                        } else {
+                            debug!("This url ({url}) has numbers in it:");
+                            return keep_latest_entry(list_of_numbers, url);
+                        }
+                    }
                 } else {
                     debug!("This url ({url}) has dates in it:");
                     // Keep only the latest entry !
-                    if let Some(entry) = list_of_dates.sort_by_date(Sorting::Descending).first() {
-                        if let Some(date) = entry.dirname() {
-                            debug!("Adding {date}");
-                            return Some(format!("{url}/{date}"));
-                        } else {
-                            debug!("Error getting directory name");
-                        }
-                    } else {
-                        debug!("Error while trying to get the latest directory entry");
-                    }
+                    return keep_latest_entry(list_of_dates, url);
                 }
             } else {
                 return Some(url.to_string());
@@ -137,9 +130,9 @@ impl WebSite {
         None
     }
 
-    // Only retains entries from `HttpDirectory` listing that
-    // does NOT matches with any of the regular expressions found
-    // in `image_name_cleanse` field
+    /// Only retains entries from `HttpDirectory` listing that
+    /// does NOT match with any of the regular expressions found
+    /// in `image_name_cleanse` field
     fn clean_httpdir_from_image_name_cleanse_regex(&self, image_list: HttpDirectory) -> HttpDirectory {
         debug!("Cleaning: {image_list}");
         let mut filtered_image_list = image_list;
@@ -155,111 +148,117 @@ impl WebSite {
         filtered_image_list
     }
 
-    /// Adds all images that can be gathered from this
-    /// `url`. Downloads through `client` connection if
-    /// possible a checksum file and extracts the checksum.
-    /// Returns an `ImageList` that contains either 0 or 1
-    /// element
+    /// Returns normalize parameter value for this website.
+    /// By default, when not set (None), the value is false.
+    pub fn get_normalize(&self) -> bool {
+        self.normalize.unwrap_or_default()
+    }
+
+    /// Adds the latest image that can be gathered from this `url`.
+    /// Downloads through `client` connection if possible a checksum
+    /// file and extracts the checksum. Returns a `Option<CloudImage>`
+    /// that represents the latest downloadable image if any)
+    ///
+    /// # Errors
+    /// May return an `HttpDirError` if getting the `HttpDirectory` for
+    /// this url fails
+    ///
     /// @todo: simplify
-    async fn add_images_from_url_to_images_list(
+    async fn get_latest_image_to_download_from_url(
         &self,
         url: &String,
         client: &reqwest::Client,
         db: &DbImageHistory,
-    ) -> Result<ImageList, HttpDirError> {
-        let mut images_url_list = ImageList::default();
+    ) -> Result<Option<CloudImage>, HttpDirError> {
+        //let mut images_list: Vec<CloudImage> = vec![];
+        let mut option_cloud_image: Option<CloudImage> = None;
 
+        // Getting all files whose name matches the regex self.image_name_filter and
+        // that does not matches *any* of the cimage_name_cleanse regex vector entry
         let url_httpdir = HttpDirectory::new(url).await?;
-        let image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
-        let image_list = self.clean_httpdir_from_image_name_cleanse_regex(image_list);
+        let http_image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
+        let http_image_list = self.clean_httpdir_from_image_name_cleanse_regex(http_image_list);
 
         // Keeping only the newest entry from that list
-        if let Some(image) = image_list.sort_by_date(Sorting::Descending).first() {
+        if let Some(image) = http_image_list.sort_by_date(Sorting::Descending).first() {
             if let Some(image_name) = image.name() {
-                // Trying to find if we have a file that contains all checksums for
-                // the files to be downloaded
-                let one_file = url_httpdir.files().filtering(|e| {
-                    if let Some(name) = e.name() {
-                        are_all_checksums_in_one_file(name)
-                    } else {
-                        false
-                    }
-                });
-                let one_file_count = one_file.len();
-                debug!("Checksum guess: all in one file: {one_file_count}");
-                // We choose to download only one file if possible: we test onefile
-                // at first for this
+                if let Some(date) = image.date() {
+                    // Trying to find if we have a file that contains all checksums for
+                    // the files to be downloaded
+                    let one_file = url_httpdir.files().filtering(|e| are_all_checksums_in_one_file(e.name().unwrap()));
+                    let one_file_count = one_file.len();
+                    debug!("Checksum guess: all in one file: {one_file_count}");
+                    // We choose to download only one file if possible: we test onefile
+                    // at first for this
 
-                if one_file_count == 1 {
-                    if let Some(checksum_entry) = one_file.first() {
-                        // Download the CheckSum file with filename (url/filename)
-                        // for each image_name in url_list build a list of
-                        // image_name associated with it's Some(checksum) from
-                        // list of checksums
-                        if let Some(filename) = checksum_entry.name() {
-                            // downloading the checksum file
-                            let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
-                            trace!("checksums: {checksums:?}");
-                            // Finds the image_name in the checksum list and get it's checksum if any
-                            let checksum =
-                                CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksums, filename);
-                            let cloud_image = CloudImage::new(format!("{url}/{image_name}"), checksum);
-                            images_url_list.push(cloud_image);
+                    if one_file_count == 1 {
+                        // We only have one file with all checksums so get it:
+                        if let Some(checksum_entry) = one_file.first() {
+                            // Download the checksum file with filename (url/filename)
+                            // retrieving the image name's checksum from that file.
+                            if let Some(filename) = checksum_entry.name() {
+                                // downloading the checksum file
+                                let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
+                                trace!("checksums: {checksums:?}");
+                                // Finds the image_name in the checksum list and get it's checksum if any
+                                let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
+                                    image_name, &checksums, filename,
+                                );
+                                option_cloud_image = Some(CloudImage::new(
+                                    format!("{url}/{image_name}"),
+                                    checksum,
+                                    image_name.to_string(),
+                                    date,
+                                ));
+                            }
                         }
-                    }
-                } else {
-                    // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
-                    // return an Error here
-                    let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
-                    if everyfile >= 1 {
-                        let url = format!("{url}/{image_name}");
-                        let checksum_filename = format!("{url}.SHA256SUM");
-                        let checksum_body = get_body_from_url(&checksum_filename, client).await;
-                        let checksum =
-                            CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url);
-
-                        let cloud_image = CloudImage::new(url, checksum);
-                        images_url_list.push(cloud_image);
                     } else {
-                        let cloud_image = CloudImage::new(format!("{url}/{image_name}"), CheckSums::None);
-                        images_url_list.push(cloud_image);
+                        // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
+                        // return an Error here
+                        let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
+                        if everyfile >= 1 {
+                            // Downloading a checksum file that contains only the checksums of the image file
+                            let url = format!("{url}/{image_name}");
+                            let checksum_filename = format!("{url}.SHA256SUM");
+                            let checksum_body = get_body_from_url(&checksum_filename, client).await;
+                            let checksum =
+                                CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url);
+
+                            option_cloud_image = Some(CloudImage::new(url, checksum, image_name.to_string(), date));
+                        } else {
+                            option_cloud_image = Some(CloudImage::new(
+                                format!("{url}/{image_name}"),
+                                CheckSums::None,
+                                image_name.to_string(),
+                                date,
+                            ));
+                        }
                     }
                 }
             }
         }
 
-        // Here we should have only one element or less in images_url_list
-
-        // As we only have one element in the list (if any) we
-        // can take the first one and test it against the database
-        // if it is already in the database then we can return an
-        // empty list has we already downloaded it.
-        // @todo: may be add an option to allow one to reload again
-        // an already successfully downloaded image ?
-        if let Some(cloud_image) = images_url_list.list.first() {
+        if let Some(cloud_image) = option_cloud_image {
             if cloud_image.is_in_db(db) {
                 warn!("Image {} is already in database", cloud_image.url);
-                images_url_list.list = vec![];
+                Ok(None)
             } else {
                 info!("Image {} is not already in database", cloud_image.url);
+                Ok(Some(cloud_image))
             }
+        } else {
+            Ok(None)
         }
-
-        Ok(images_url_list)
     }
 }
 
 impl WSImageList {
     /// Retrieves for this website all downloadable images and makes an ImageList
     /// (ie an image url and an associated checksum).
-    /// Returns a `WSImageList` formed with the website itself and the generated
-    /// image list `Imagelist`.
-    pub async fn get_images_url_list(
-        website: Arc<WebSite>,
-        concurrent_downloads: usize,
-        db: Arc<DbImageHistory>,
-    ) -> Self {
-        let mut images_url_list = ImageList::default();
+    /// Returns a `WSImageList` formed with the website itself and a vector of
+    /// `CloudImage`
+    pub async fn get_images_list(website: Arc<WebSite>, concurrent_downloads: usize, db: Arc<DbImageHistory>) -> Self {
+        let mut images_list: Vec<CloudImage> = vec![];
         // Creates a reqwest client to fetch url with.
         let client = reqwest::Client::new();
 
@@ -276,49 +275,54 @@ impl WSImageList {
                 let website = website.clone();
                 let db = db.clone();
                 async move {
-                    match website.add_images_from_url_to_images_list(&url, client, &db).await {
-                        Ok(image_list) => image_list,
+                    match website.get_latest_image_to_download_from_url(&url, client, &db).await {
+                        Ok(cloud_image) => cloud_image,
                         Err(error) => {
                             error!("Error with url ({url}) retrieving image list: {error}");
-                            ImageList::default()
+                            None
                         }
                     }
                 }
             })
             .buffered(concurrent_downloads);
 
-        let all_lists = lists.collect::<Vec<ImageList>>().await;
+        let all_cloud_images: Vec<Option<CloudImage>> = lists.collect().await;
 
-        for image_list in all_lists {
-            images_url_list.extend(image_list);
+        for option_cloud_image in all_cloud_images {
+            if let Some(cloud_image) = option_cloud_image {
+                images_list.push(cloud_image);
+            }
         }
 
         WSImageList {
             website,
-            images_list: images_url_list,
+            images_list,
         }
     }
 
     /// Retains only images that have been effectively downloaded
     /// and not skipped, in error state or in "not started" state
     /// using `Vec<Summary>` to know their state
-    pub fn only_effectively_downloaded(
-        all_ws_image_lists: &mut Vec<WSImageList>,
-        downloaded_summary: &Vec<Summary>,
-        verify_skipped: bool,
-    ) {
-        for ws_image in all_ws_image_lists {
-            ws_image.images_list.list.retain(|cloud_image| {
-                image_has_been_downloaded(
-                    downloaded_summary,
-                    &cloud_image.url,
-                    &ws_image.website.destination,
-                    verify_skipped,
-                )
-            });
+    /*
+        pub fn only_effectively_downloaded(
+            all_ws_image_lists: &mut Vec<WSImageList>,
+            downloaded_summary: &Vec<Summary>,
+            verify_skipped: bool,
+        ) {
+            for ws_image in all_ws_image_lists {
+                let normalize = ws_image.website.get_normalize();
+                ws_image.images_list.into_iter().filter(|cloud_image| {
+                    image_has_been_downloaded(
+                        downloaded_summary,
+                        &cloud_image.url,
+                        &ws_image.website.destination,
+                        verify_skipped,
+                        normalize,
+                    )
+                });
+            }
         }
-    }
-
+    */
     pub fn is_empty(&self) -> bool {
         self.images_list.is_empty()
     }
@@ -330,4 +334,19 @@ pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> boo
         is_empty = is_empty && ws_image.is_empty();
     }
     is_empty
+}
+
+fn keep_latest_entry(list_of_entries: HttpDirectory, url: &str) -> Option<String> {
+    if let Some(entry) = list_of_entries.sort_by_date(Sorting::Descending).first() {
+        if let Some(dirname) = entry.dirname() {
+            debug!("Adding {dirname}");
+            Some(format!("{url}/{dirname}"))
+        } else {
+            debug!("Error getting directory name");
+            None
+        }
+    } else {
+        debug!("Error while trying to get the latest directory entry");
+        None
+    }
 }

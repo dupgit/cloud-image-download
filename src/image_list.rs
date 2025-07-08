@@ -2,6 +2,7 @@
 use crate::checksums::CheckSums;
 use crate::download::get_filename_destination;
 use crate::image_history::DbImageHistory;
+use chrono::NaiveDateTime;
 use colored::Colorize;
 use log::{error, info, warn};
 use regex::Regex;
@@ -15,14 +16,18 @@ use std::{cmp::Ordering, path::Path};
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
     pub url: String,
+    pub name: String,
     pub checksum: CheckSums,
+    pub date: NaiveDateTime,
 }
 
 impl CloudImage {
-    pub fn new(url: String, checksum: CheckSums) -> Self {
+    pub fn new(url: String, checksum: CheckSums, name: String, date: NaiveDateTime) -> Self {
         CloudImage {
             url,
+            name,
             checksum,
+            date,
         }
     }
 
@@ -31,8 +36,8 @@ impl CloudImage {
     }
 
     /// @todo: simplify and get it shorter
-    pub fn verify(&self, destination: &Path) -> bool {
-        if let Some((_, filename)) = get_filename_destination(&self.url, destination) {
+    pub fn verify(&self, destination: &Path, normalize: bool) -> bool {
+        if let Some(filename) = get_filename_destination(&self.name, destination, normalize, self.date) {
             match verify_file(&filename, &self.checksum) {
                 Ok(no_error) => match no_error {
                     Some(success) => {
@@ -162,52 +167,5 @@ pub fn compare_str_by_date(a: &str, b: &str) -> Ordering {
         (None, Some(_)) => Ordering::Less,
         (Some(_), None) => Ordering::Greater,
         (None, None) => a.cmp(b),
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct ImageList {
-    pub list: Vec<CloudImage>,
-}
-
-impl ImageList {
-    pub fn new() -> Self {
-        ImageList::default()
-    }
-
-    /// Adds a new image into the list
-    pub fn push(&mut self, cloudimage: CloudImage) -> &mut Self {
-        self.list.push(cloudimage);
-        self
-    }
-
-    /// Extends the ImageList with another ImageList
-    pub fn extend(&mut self, image_list: ImageList) -> &mut Self {
-        self.list.extend(image_list.list);
-        self
-    }
-
-    pub fn sort_by_date(&mut self) {
-        self.list.sort_by(|a, b| a.compare_dates_in_names(b));
-    }
-
-    pub fn only_keep_last_element(&mut self) {
-        let len = self.list.len();
-        if len >= 1 {
-            self.list = vec![self.list.swap_remove(len - 1)];
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
-    }
-}
-
-impl fmt::Display for ImageList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for image in &self.list {
-            write!(f, "{image}")?;
-        }
-        Ok(())
     }
 }

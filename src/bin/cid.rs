@@ -50,15 +50,15 @@ async fn main() {
     db.create_db_image_history();
     let db = Arc::new(db);
 
-    // Getting all images that should downloaded
+    // Getting all images that should be downloaded
     let ws_image_list = stream::iter(settings.sites)
         .map(|website| {
             let db = db.clone();
-            async move { WSImageList::get_images_url_list(Arc::new(website), cli.concurrent_downloads, db).await }
+            async move { WSImageList::get_images_list(Arc::new(website), cli.concurrent_downloads, db).await }
         })
         .buffered(cli.concurrent_downloads);
 
-    let mut all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
+    let all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
 
     if !vec_ws_image_lists_is_empty(&all_ws_image_lists) {
         // Downloads images
@@ -67,11 +67,7 @@ async fn main() {
         // This will only display a summary only if -q has not been selected
         display_download_status_summary(&downloaded_summary, &cli.verbose);
 
-        // This will retain from `all_ws_image_lists` list only images
-        // that have been effectively downloaded
-        WSImageList::only_effectively_downloaded(&mut all_ws_image_lists, &downloaded_summary, cli.verify_skipped);
-
-        verify_downloaded_file(all_ws_image_lists, db).await;
+        verify_downloaded_file(all_ws_image_lists, db, &downloaded_summary, cli.verify_skipped).await;
     } else {
         info!("Nothing to do");
     }

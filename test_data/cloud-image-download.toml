@@ -15,14 +15,16 @@ version_list = ["focal", "jammy", "noble"]
 base_url = "https://cloud-images.ubuntu.com"
 image_name_filter = "server-cloudimg-amd64.img"
 destination = "/dev/shm/ubuntu"
+normalize = true
 
 [[sites]]
 name = "Fedora"
-version_list = ["40", "41"]
-base_url = "https://mirrors.ircam.fr/pub/fedora/linux/releases"
+version_list = ["releases"]
+base_url = "https://mirrors.ircam.fr/pub/fedora/linux"
 after_version_url = ["Cloud/x86_64/images", "Cloud/aarch64/images"]
 image_name_filter = "Fedora-Cloud-Base-Generic"
 destination = "/dev/shm/fedora"
+normalize = true
 
 [[sites]]
 name = "Debian"

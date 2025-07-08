@@ -1,6 +1,8 @@
 use crate::image_history::DbImageHistory;
+use crate::image_list::CloudImage;
 use crate::website::WSImageList;
 use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
+use chrono::NaiveDateTime;
 use clap_verbosity_flag::Verbosity;
 use colored::Colorize;
 use log::{error, info, warn};
@@ -25,23 +27,25 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn get_filename_destination(image_url: &str, file_destination: &Path) -> Option<(Url, String)> {
-    match Url::parse(image_url) {
-        Ok(url) => {
-            if let Some(image_name) = image_url.split('/').next_back() {
-                if let Some(filename) = file_destination.join(image_name).to_str() {
-                    return Some((url, filename.to_string()));
-                } else {
-                    warn!("{image_name} is not a valid UTF-8 string");
-                }
-            } else {
-                warn!("Failed to get filename from {} - skipped", image_url);
-            }
-        }
-        Err(e) => warn!("Error {e}: skipped url {}", image_url),
-    }
+pub fn get_filename_destination(
+    image_name: &str,
+    file_destination: &Path,
+    normalize: bool,
+    image_date: NaiveDateTime,
+) -> Option<String> {
+    let mut normalized_image_name: String = image_name.to_string();
 
-    None
+    if normalize {
+        if let Some((first_part, last_part)) = image_name.rsplit_once('.') {
+            normalized_image_name = format!("{first_part}-{}.{last_part}", image_date.format("%Y%m%d"));
+        }
+    }
+    if let Some(filename) = file_destination.join(normalized_image_name).to_str() {
+        return Some(filename.to_string());
+    } else {
+        warn!("{image_name} is not a valid UTF-8 string");
+        None
+    }
 }
 
 pub async fn download_images(
@@ -53,14 +57,26 @@ pub async fn download_images(
 
     // Building the download list with destination directory
     for ws_image in all_ws_image_lists {
-        for cloud_image in &ws_image.images_list.list {
+        for cloud_image in &ws_image.images_list {
             match create_dir_if_needed(&ws_image.website.destination) {
                 Ok(_) => {
-                    if let Some((url, filename)) =
-                        get_filename_destination(&cloud_image.url, &ws_image.website.destination)
-                    {
-                        info!("Will try to download {url} to {filename}");
-                        download_image_list.push(Download::new(&url, &filename));
+                    let normalize = ws_image.website.get_normalize();
+                    if let Some(filename) = get_filename_destination(
+                        &cloud_image.name,
+                        &ws_image.website.destination,
+                        normalize,
+                        cloud_image.date,
+                    ) {
+                        match Url::parse(&cloud_image.url) {
+                            Ok(url) => {
+                                info!("Will try to download '{}' to {filename}", cloud_image.url);
+                                download_image_list.push(Download::new(&url, &filename));
+                            }
+                            Err(e) => {
+                                error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url);
+                                info!("As a result {filename} will not be downloaded");
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -131,25 +147,33 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 /// This will tell if an image has effectively been downloaded
 pub fn image_has_been_downloaded(
     downloaded_summary: &Vec<Summary>,
-    image_url: &str,
+    cloud_image: &CloudImage,
     destination: &PathBuf,
     verify_skipped: bool,
+    normalize: bool,
 ) -> bool {
     for summary in downloaded_summary {
         let download = summary.download();
-        if let Some((url, filename)) = get_filename_destination(image_url, destination) {
-            if download.filename == filename && download.url == url {
-                match summary.status() {
-                    Status::Success => {
-                        info!("Keeping image {filename} from {url}");
-                        return true;
-                    }
-                    Status::Fail(_) | Status::NotStarted => {
-                        return false;
-                    }
-                    Status::Skipped(_) => {
-                        return verify_skipped;
-                    }
+        if let Some(filename) = get_filename_destination(&cloud_image.name, destination, normalize, cloud_image.date) {
+            match Url::parse(&cloud_image.url) {
+                Ok(url) => {
+                    if download.filename == filename && download.url == url {
+                        match summary.status() {
+                            Status::Success => {
+                                info!("Keeping image {filename} from {url}");
+                                return true;
+                            }
+                            Status::Fail(_) | Status::NotStarted => {
+                                return false;
+                            }
+                            Status::Skipped(_) => {
+                                return verify_skipped;
+                            }
+                        }
+                    };
+                }
+                Err(e) => {
+                    error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url);
                 }
             }
         }
@@ -159,20 +183,36 @@ pub fn image_has_been_downloaded(
 
 /// @todo: Does not limits itself to the numbers of tasks corresponding to
 /// concurrent_downloads command line option
-pub async fn verify_downloaded_file(all_ws_image_lists: Vec<WSImageList>, db: Arc<DbImageHistory>) {
+pub async fn verify_downloaded_file(
+    all_ws_image_lists: Vec<WSImageList>,
+    db: Arc<DbImageHistory>,
+    downloaded_summary: &Vec<Summary>,
+    verify_skipped: bool,
+) {
     let mut join_handle_list = Vec::new();
 
     for ws_image in all_ws_image_lists {
-        for cloud_image in ws_image.images_list.list {
-            let website = ws_image.website.clone();
-            let join_handle = task::spawn(async move {
-                if cloud_image.verify(&website.destination) {
-                    Some(cloud_image)
-                } else {
-                    None
-                }
-            });
-            join_handle_list.push(join_handle);
+        for cloud_image in ws_image.images_list {
+            // Checks that the image has been downloaded effectively
+            // before checking its checksum
+            let normalize = ws_image.website.get_normalize();
+            if image_has_been_downloaded(
+                downloaded_summary,
+                &cloud_image,
+                &ws_image.website.destination,
+                verify_skipped,
+                normalize,
+            ) {
+                let website = ws_image.website.clone();
+                let join_handle = task::spawn(async move {
+                    if cloud_image.verify(&website.destination, normalize) {
+                        Some(cloud_image)
+                    } else {
+                        None
+                    }
+                });
+                join_handle_list.push(join_handle);
+            }
         }
     }
 
