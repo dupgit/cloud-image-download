@@ -112,7 +112,7 @@ impl WebSite {
                     if let Ok(list_of_numbers) = directory_listing.dirs().filter_by_name(r"^\d\d+/$") {
                         if list_of_numbers.is_empty() {
                             debug!("This url ({url}) has no numbers in it");
-                            return Some(url.to_string());
+                            return Some(format!("{url}/"));
                         } else {
                             debug!("This url ({url}) has numbers in it:");
                             return keep_latest_entry(list_of_numbers, url);
@@ -124,7 +124,7 @@ impl WebSite {
                     return keep_latest_entry(list_of_dates, url);
                 }
             } else {
-                return Some(url.to_string());
+                return Some(format!("{url}/"));
             }
         }
         None
