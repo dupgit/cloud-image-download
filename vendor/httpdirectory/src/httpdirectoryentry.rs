@@ -1,5 +1,6 @@
 use crate::entry::Entry;
 use crate::httpdirectory::Sorting;
+use chrono::NaiveDateTime;
 use log::trace;
 use regex::Regex;
 use std::cmp::Ordering;
@@ -88,8 +89,7 @@ impl HttpDirectoryEntry {
     pub fn is_match_by_name(&self, re: &Regex) -> bool {
         match self {
             HttpDirectoryEntry::ParentDirectory(_) => false,
-            HttpDirectoryEntry::Directory(dir) => re.is_match(dir.name()),
-            HttpDirectoryEntry::File(file) => re.is_match(file.name()),
+            HttpDirectoryEntry::Directory(entry) | HttpDirectoryEntry::File(entry) => re.is_match(entry.name()),
         }
     }
 
@@ -123,8 +123,19 @@ impl HttpDirectoryEntry {
     pub fn name(&self) -> Option<&str> {
         match self {
             HttpDirectoryEntry::ParentDirectory(_) => None,
-            HttpDirectoryEntry::File(file) => Some(file.name()),
-            HttpDirectoryEntry::Directory(dir) => Some(dir.name()),
+            HttpDirectoryEntry::File(entry) | HttpDirectoryEntry::Directory(entry) => Some(entry.name()),
+        }
+    }
+
+    /// Returns an `Option` with the date of the directory or the file corresponding
+    /// to the `HttpDirectoryEntry` if this entry is effectively a directory or a
+    /// file.
+    /// Returns None otherwise
+    #[must_use]
+    pub fn date(&self) -> Option<NaiveDateTime> {
+        match self {
+            HttpDirectoryEntry::ParentDirectory(_) => None,
+            HttpDirectoryEntry::File(entry) | HttpDirectoryEntry::Directory(entry) => entry.date(),
         }
     }
 
@@ -207,13 +218,14 @@ pub fn assert_entry(dir_entry: &HttpDirectoryEntry, entry_type: &EntryType, name
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::HttpDirectoryEntry;
-    use crate::{
-        httpdirectory::{self, Sorting},
-        httpdirectoryentry::CompareField,
+    use {
+        super::HttpDirectoryEntry,
+        crate::{httpdirectory::Sorting, httpdirectoryentry::CompareField},
+        chrono::NaiveDate,
+        std::cmp::Ordering,
     };
-    use std::cmp::Ordering;
 
     #[test]
     fn test_file_httpdirectoryentry_output() {
@@ -235,6 +247,10 @@ mod tests {
         assert_eq!(httpdirectoryentry.dirname(), Some("name"));
         assert_eq!(httpdirectoryentry.filename(), None);
         assert_eq!(httpdirectoryentry.name(), Some("name"));
+        assert_eq!(
+            httpdirectoryentry.date(),
+            Some(NaiveDate::from_ymd_opt(2025, 05, 20).unwrap().and_hms_opt(20, 19, 00).unwrap())
+        );
     }
 
     #[test]
@@ -246,6 +262,7 @@ mod tests {
         assert_eq!(httpdirectoryentry.dirname(), None);
         assert_eq!(httpdirectoryentry.filename(), None);
         assert_eq!(httpdirectoryentry.name(), None);
+        assert_eq!(httpdirectoryentry.date(), None);
     }
 
     #[test]

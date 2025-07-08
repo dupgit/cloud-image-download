@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.66"
 name = "toml"
-version = "0.8.23"
+version = "0.9.0"
 build = false
 include = [
     "build.rs",
@@ -38,6 +38,7 @@ readme = "README.md"
 keywords = [
     "encoding",
     "toml",
+    "no_std",
 ]
 categories = [
     "encoding",
@@ -92,20 +93,45 @@ replace = """
 search = "<!-- next-url -->"
 
 [features]
+debug = [
+    "std",
+    "toml_parser?/debug",
+    "dep:anstream",
+    "dep:anstyle",
+]
 default = [
+    "std",
+    "serde",
     "parse",
     "display",
 ]
-display = [
-    "dep:toml_edit",
-    "toml_edit?/display",
+display = ["dep:toml_writer"]
+fast_hash = [
+    "preserve_order",
+    "dep:foldhash",
 ]
 parse = [
-    "dep:toml_edit",
-    "toml_edit?/parse",
+    "dep:toml_parser",
+    "dep:winnow",
 ]
-preserve_order = ["indexmap"]
-unbounded = ["toml_edit?/unbounded"]
+preserve_order = [
+    "dep:indexmap",
+    "std",
+]
+serde = [
+    "dep:serde",
+    "toml_datetime/serde",
+    "serde_spanned/serde",
+]
+std = [
+    "indexmap?/std",
+    "serde?/std",
+    "toml_parser?/std",
+    "toml_writer?/std",
+    "toml_datetime/std",
+    "serde_spanned/std",
+]
+unbounded = []
 
 [lib]
 name = "toml"
@@ -117,6 +143,7 @@ path = "examples/decode.rs"
 required-features = [
     "parse",
     "display",
+    "serde",
 ]
 
 [[example]]
@@ -125,6 +152,7 @@ path = "examples/enum_external.rs"
 required-features = [
     "parse",
     "display",
+    "serde",
 ]
 
 [[example]]
@@ -133,32 +161,67 @@ path = "examples/toml2json.rs"
 required-features = [
     "parse",
     "display",
+    "serde",
 ]
+
+[dependencies.anstream]
+version = "0.6.15"
+optional = true
+
+[dependencies.anstyle]
+version = "1.0.8"
+optional = true
+
+[dependencies.foldhash]
+version = "0.1.5"
+optional = true
+default-features = false
 
 [dependencies.indexmap]
 version = "2.0.0"
 optional = true
+default-features = false
 
 [dependencies.serde]
 version = "1.0.145"
-
-[dependencies.serde_spanned]
-version = "0.6.9"
-features = ["serde"]
-
-[dependencies.toml_datetime]
-version = "0.6.11"
-features = ["serde"]
-
-[dependencies.toml_edit]
-version = "0.22.27"
-features = ["serde"]
+features = ["alloc"]
 optional = true
 default-features = false
+
+[dependencies.serde_spanned]
+version = "1.0.0"
+features = ["alloc"]
+default-features = false
+
+[dependencies.toml_datetime]
+version = "0.7.0"
+features = ["alloc"]
+default-features = false
+
+[dependencies.toml_parser]
+version = "1.0.0"
+features = ["alloc"]
+optional = true
+default-features = false
+
+[dependencies.toml_writer]
+version = "1.0.0"
+optional = true
+
+[dependencies.winnow]
+version = "0.7.10"
+optional = true
+default-features = false
+
+[dev-dependencies.itertools]
+version = "0.14.0"
 
 [dev-dependencies.serde]
 version = "1.0.199"
 features = ["derive"]
+
+[dev-dependencies.serde-untagged]
+version = "0.1.7"
 
 [dev-dependencies.serde_json]
 version = "1.0.116"
@@ -196,6 +259,7 @@ flat_map_option = "warn"
 float_cmp_const = "warn"
 fn_params_excessive_bools = "warn"
 from_iter_instead_of_collect = "warn"
+get_first = "allow"
 if_same_then_else = "allow"
 implicit_clone = "warn"
 imprecise_flops = "warn"
@@ -212,6 +276,7 @@ lossy_float_literal = "warn"
 macro_use_imports = "warn"
 mem_forget = "warn"
 mutex_integer = "warn"
+needless_bool = "allow"
 needless_continue = "allow"
 needless_for_each = "warn"
 negative_feature_names = "warn"
@@ -233,6 +298,7 @@ string_to_string = "warn"
 todo = "warn"
 trait_duplication_in_bounds = "warn"
 uninlined_format_args = "warn"
+use_self = "warn"
 verbose_file_reads = "warn"
 wildcard_imports = "warn"
 zero_sized_map_values = "warn"

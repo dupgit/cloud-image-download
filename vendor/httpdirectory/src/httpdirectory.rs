@@ -49,7 +49,7 @@ impl HttpDirectory {
     ///
     /// # Errors
     ///
-    /// Will retirn an error if:
+    /// Will return an error if:
     /// - the request engine has not been selected (a default one should
     ///   have been selected for you)
     /// - an error occurred while trying to retrieve data from the new
@@ -97,13 +97,12 @@ impl HttpDirectory {
     where
         F: FnMut(&HttpDirectoryEntry) -> bool,
     {
-        let mut entries = self.entries.clone();
-        entries.retain(|elem| f(elem));
+        let entries = self.entries.iter().filter(|entry| f(entry)).cloned().collect();
 
         HttpDirectory {
             entries,
-            url: self.url.clone(),
-            request: self.request.clone(),
+            url: Arc::clone(&self.url),
+            request: Arc::clone(&self.request),
         }
     }
 
@@ -182,6 +181,13 @@ impl HttpDirectory {
     pub fn entries(&self) -> &Vec<HttpDirectoryEntry> {
         &self.entries
     }
+
+    /// Returns the String that represents the url of
+    /// that `HttpDirectory`
+    #[must_use]
+    pub fn get_url(&self) -> Arc<String> {
+        self.url.clone()
+    }
 }
 
 impl fmt::Display for HttpDirectory {
@@ -216,10 +222,13 @@ fn get_entries_from_body(body: &str) -> Vec<HttpDirectoryEntry> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::{HttpDirectory, HttpDirectoryEntry, Request};
-    use crate::{httpdirectory::Sorting, httpdirectoryentry::EntryType, httpdirectoryentry::assert_entry};
-    use std::sync::Arc;
+    use {
+        super::{HttpDirectory, HttpDirectoryEntry, Request},
+        crate::{httpdirectory::Sorting, httpdirectoryentry::EntryType, httpdirectoryentry::assert_entry},
+        std::sync::Arc,
+    };
 
     #[test]
     fn test_httpdirectory_default() {

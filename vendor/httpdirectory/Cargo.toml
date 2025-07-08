@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "httpdirectory"
-version = "0.13.0"
+version = "0.15.0"
 authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
 build = false
 autolib = false
@@ -55,6 +55,11 @@ path = "examples/onedir.rs"
 name = "integration"
 path = "tests/integration.rs"
 
+[[bench]]
+name = "filtering_bench"
+path = "benches/filtering_bench.rs"
+harness = false
+
 [dependencies.chrono]
 version = "0.4.40"
 
@@ -89,6 +94,10 @@ features = [
 
 [dependencies.url]
 version = "2.5.4"
+
+[dev-dependencies.criterion]
+version = "0.6"
+features = ["html_reports"]
 
 [dev-dependencies.httpmock]
 version = "0.7.0-rc.1"

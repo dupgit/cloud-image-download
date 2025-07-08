@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.63"
 name = "hyper-util"
-version = "0.1.14"
+version = "0.1.15"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 autolib = false
@@ -74,6 +74,8 @@ default = []
 full = [
     "client",
     "client-legacy",
+    "client-proxy",
+    "client-proxy-system",
     "server",
     "server-auto",
     "server-graceful",

@@ -44,7 +44,8 @@
 
 use std::{
     borrow::Cow,
-    char, error,
+    char,
+    error,
     fmt::{self, Display},
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
@@ -58,7 +59,6 @@ use ordered_multimap::{
     list_ordered_multimap::{Entry, IntoIter, Iter, IterMut, OccupiedEntry, VacantEntry},
     ListOrderedMultimap,
 };
-use trim_in_place::TrimInPlace;
 #[cfg(feature = "case-insensitive")]
 use unicase::UniCase;
 
@@ -214,6 +214,26 @@ pub struct ParseOption {
     ///
     /// If `enabled_escape` is true, then the value of `Key` will become `C:Windows` (`\W` equals to `W`).
     pub enabled_escape: bool,
+
+    /// Enables values that span lines
+    /// ```ini
+    /// [Section]
+    /// foo=
+    ///   b
+    ///   c
+    /// ```
+    pub enabled_indented_mutiline_value: bool,
+
+    /// Preserve key leading whitespace
+    ///
+    /// ```ini
+    /// [services my-services]
+    /// dynamodb=
+    ///   endpoint_url=http://localhost:8000
+    /// ```
+    ///
+    /// The leading whitespace in key `  endpoint_url` will be preserved if `enabled_preserve_key_leading_whitespace` is set to `true`.
+    pub enabled_preserve_key_leading_whitespace: bool,
 }
 
 impl Default for ParseOption {
@@ -221,6 +241,8 @@ impl Default for ParseOption {
         ParseOption {
             enabled_quote: true,
             enabled_escape: true,
+            enabled_indented_mutiline_value: false,
+            enabled_preserve_key_leading_whitespace: false,
         }
     }
 }
@@ -426,14 +448,14 @@ impl Properties {
     }
 
     /// Get an iterator of the properties
-    pub fn iter(&self) -> PropertyIter {
+    pub fn iter(&self) -> PropertyIter<'_> {
         PropertyIter {
             inner: self.data.iter(),
         }
     }
 
     /// Get a mutable iterator of the properties
-    pub fn iter_mut(&mut self) -> PropertyIterMut {
+    pub fn iter_mut(&mut self) -> PropertyIterMut<'_> {
         PropertyIterMut {
             inner: self.data.iter_mut(),
         }
@@ -679,7 +701,7 @@ impl Ini {
     }
 
     /// Set with a specified section, `None` is for the general section
-    pub fn with_section<S>(&mut self, section: Option<S>) -> SectionSetter
+    pub fn with_section<S>(&mut self, section: Option<S>) -> SectionSetter<'_>
     where
         S: Into<String>,
     {
@@ -687,7 +709,7 @@ impl Ini {
     }
 
     /// Set with general section, a simple wrapper of `with_section(None::<String>)`
-    pub fn with_general_section(&mut self) -> SectionSetter {
+    pub fn with_general_section(&mut self) -> SectionSetter<'_> {
         self.with_section(None::<String>)
     }
 
@@ -1284,7 +1306,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Consume all the white space until the end of the line or a tab
+    /// Consume all whitespace including newlines, tabs, and spaces
+    ///
+    /// This function consumes all types of whitespace characters until it encounters
+    /// a non-whitespace character. Used for general whitespace cleanup between tokens.
     fn parse_whitespace(&mut self) {
         while let Some(c) = self.ch {
             if !c.is_whitespace() && c != '\n' && c != '\t' && c != '\r' {
@@ -1294,7 +1319,46 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Consume all the white space except line break
+    /// Consume whitespace but preserve leading spaces/tabs on lines (for key indentation)
+    ///
+    /// This function is designed to consume whitespace while preserving leading spaces
+    /// and tabs that might be part of indented keys. It consumes newlines and other
+    /// whitespace, but stops when it encounters spaces or tabs that could be the
+    /// beginning of an indented key.
+    fn parse_whitespace_preserve_line_leading(&mut self) {
+        while let Some(c) = self.ch {
+            match c {
+                // Always consume spaces and tabs that are not at the beginning of a line
+                ' ' | '\t' => {
+                    self.bump();
+                    // Continue consuming until we hit a non-space/tab character
+                    // If it's a comment character, let the caller handle it
+                    // If it's a newline, we'll handle it in the next iteration
+                }
+                '\n' | '\r' => {
+                    // Consume the newline
+                    self.bump();
+                    // Check if the next line starts with spaces/tabs (potential key indentation)
+                    if matches!(self.ch, Some(' ') | Some('\t')) {
+                        // Don't consume the leading spaces/tabs - they're part of the key
+                        break;
+                    }
+                    // Continue consuming other whitespace after the newline
+                }
+                c if c.is_whitespace() => {
+                    // Consume other whitespace (like form feed, vertical tab, etc.)
+                    self.bump();
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// Consume all whitespace except line breaks (newlines and carriage returns)
+    ///
+    /// This function consumes spaces, tabs, and other whitespace characters but
+    /// stops at newlines and carriage returns. Used when parsing values to avoid
+    /// consuming the line terminator.
     fn parse_whitespace_except_line_break(&mut self) {
         while let Some(c) = self.ch {
             if (c == '\n' || c == '\r' || !c.is_whitespace()) && c != '\t' {
@@ -1327,7 +1391,7 @@ impl<'a> Parser<'a> {
                 }
                 '[' => match self.parse_section() {
                     Ok(mut sec) => {
-                        sec.trim_in_place();
+                        trim_in_place(&mut sec);
                         cursec = Some(sec);
                         match result.entry(cursec.clone()) {
                             SectionEntry::Vacant(v) => {
@@ -1345,8 +1409,7 @@ impl<'a> Parser<'a> {
                         return self.error("missing key");
                     }
                     match self.parse_val() {
-                        Ok(mut mval) => {
-                            mval.trim_in_place();
+                        Ok(mval) => {
                             match result.entry(cursec.clone()) {
                                 SectionEntry::Vacant(v) => {
                                     // cursec must be None (the General Section)
@@ -1364,16 +1427,44 @@ impl<'a> Parser<'a> {
                         Err(e) => return Err(e),
                     }
                 }
+                ' ' | '\t' => {
+                    // Handle keys that start with leading whitespace (indented keys)
+                    // This preserves the leading spaces/tabs as part of the key name
+                    match self.parse_key_with_leading_whitespace() {
+                        Ok(mut mkey) => {
+                            // Only trim trailing whitespace, preserve leading whitespace
+                            if self.opt.enabled_preserve_key_leading_whitespace {
+                                trim_end_in_place(&mut mkey);
+                            } else {
+                                trim_in_place(&mut mkey);
+                            }
+                            curkey = mkey;
+                        }
+                        Err(_) => {
+                            // If parsing key with leading whitespace fails,
+                            // it's probably just trailing whitespace at EOF - skip it
+                            self.bump();
+                        }
+                    }
+                }
                 _ => match self.parse_key() {
                     Ok(mut mkey) => {
-                        mkey.trim_in_place();
+                        // For regular keys, only trim trailing whitespace to preserve
+                        // any leading whitespace that might be part of the key name
+                        if self.opt.enabled_preserve_key_leading_whitespace {
+                            trim_end_in_place(&mut mkey);
+                        } else {
+                            trim_in_place(&mut mkey);
+                        }
                         curkey = mkey;
                     }
                     Err(e) => return Err(e),
                 },
             }
 
-            self.parse_whitespace();
+            // Use specialized whitespace parsing that preserves leading spaces/tabs
+            // on new lines, which might be part of indented key names
+            self.parse_whitespace_preserve_line_leading();
         }
 
         Ok(result)
@@ -1391,72 +1482,97 @@ impl<'a> Parser<'a> {
     fn parse_str_until(&mut self, endpoint: &[Option<char>], check_inline_comment: bool) -> Result<String, ParseError> {
         let mut result: String = String::new();
 
+        let mut in_line_continuation = false;
+
         while !endpoint.contains(&self.ch) {
             match self.char_or_eof(endpoint)? {
                 #[cfg(feature = "inline-comment")]
-                space if check_inline_comment && (space == ' ' || space == '\t') => {
+                ch if check_inline_comment && (ch == ' ' || ch == '\t') => {
                     self.bump();
 
                     match self.ch {
                         Some('#') | Some(';') => {
                             // [space]#, [space]; starts an inline comment
-                            break;
+                            self.parse_comment();
+                            if in_line_continuation {
+                                result.push(ch);
+                                continue;
+                            } else {
+                                break;
+                            }
                         }
                         Some(_) => {
-                            result.push(space);
+                            result.push(ch);
                             continue;
                         }
                         None => {
-                            result.push(space);
+                            result.push(ch);
                         }
                     }
                 }
-                '\\' if self.opt.enabled_escape => {
+                #[cfg(feature = "inline-comment")]
+                ch if check_inline_comment && in_line_continuation && (ch == '#' || ch == ';') => {
+                    self.parse_comment();
+                    continue;
+                }
+                '\\' => {
                     self.bump();
-                    match self.char_or_eof(endpoint)? {
-                        '0' => result.push('\0'),
-                        'a' => result.push('\x07'),
-                        'b' => result.push('\x08'),
-                        't' => result.push('\t'),
-                        'r' => result.push('\r'),
-                        'n' => result.push('\n'),
-                        '\n' => (),
-                        'x' => {
-                            // Unicode 4 character
-                            let mut code: String = String::with_capacity(4);
-                            for _ in 0..4 {
-                                self.bump();
-                                let ch = self.char_or_eof(endpoint)?;
-                                if ch == '\\' {
-                                    self.bump();
-                                    if self.ch != Some('\n') {
-                                        return self.error(format!(
-                                            "expecting \"\\\\n\" but \
-                                             found \"{:?}\".",
-                                            self.ch
-                                        ));
-                                    }
-                                }
+                    let Some(ch) = self.ch else {
+                        result.push('\\');
+                        continue;
+                    };
 
-                                code.push(ch);
+                    if matches!(ch, '\n') {
+                        in_line_continuation = true;
+                    } else if self.opt.enabled_escape {
+                        match ch {
+                            '0' => result.push('\0'),
+                            'a' => result.push('\x07'),
+                            'b' => result.push('\x08'),
+                            't' => result.push('\t'),
+                            'r' => result.push('\r'),
+                            'n' => result.push('\n'),
+                            '\n' => self.bump(),
+                            'x' => {
+                                // Unicode 4 character
+                                let mut code: String = String::with_capacity(4);
+                                for _ in 0..4 {
+                                    self.bump();
+                                    let ch = self.char_or_eof(endpoint)?;
+                                    if ch == '\\' {
+                                        self.bump();
+                                        if self.ch != Some('\n') {
+                                            return self.error(format!(
+                                                "expecting \"\\\\n\" but \
+                                             found \"{:?}\".",
+                                                self.ch
+                                            ));
+                                        }
+                                    }
+
+                                    code.push(ch);
+                                }
+                                let r = u32::from_str_radix(&code[..], 16);
+                                match r.ok().and_then(char::from_u32) {
+                                    Some(ch) => result.push(ch),
+                                    None => return self.error("unknown character in \\xHH form"),
+                                }
                             }
-                            let r = u32::from_str_radix(&code[..], 16);
-                            match r.ok().and_then(char::from_u32) {
-                                Some(ch) => result.push(ch),
-                                None => return self.error("unknown character in \\xHH form"),
-                            }
+                            c => result.push(c),
                         }
-                        c => result.push(c),
+                    } else {
+                        result.push('\\');
+                        result.push(ch);
                     }
                 }
-                ch => {
-                    result.push(ch);
-                }
+                ch => result.push(ch),
             }
             self.bump();
         }
 
         let _ = check_inline_comment;
+        let _ = in_line_continuation;
+
         Ok(result)
     }
 
@@ -1466,10 +1582,7 @@ impl<'a> Parser<'a> {
                 // Skip [
                 self.bump();
 
-                let mut s = match self.parse_str_until(&[Some('\r'), Some('\n')], cfg!(feature = "inline-comment")) {
-                    Ok(r) => r,
-                    Err(err) => return Err(err)
-                };
+                let mut s = self.parse_str_until(&[Some('\r'), Some('\n')], cfg!(feature = "inline-comment"))?;
 
                 // Deal with inline comment
                 #[cfg(feature = "inline-comment")]
@@ -1477,7 +1590,7 @@ impl<'a> Parser<'a> {
                     self.parse_comment();
                 }
 
-                let tr = s.trim_end_matches(|c| c == ' ' || c == '\t');
+                let tr = s.trim_end_matches([' ', '\t']);
                 if !tr.ends_with(']') {
                     return self.error("section must be ended with ']'");
                 }
@@ -1503,8 +1616,43 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a key name until '=' or ':' delimiter
+    ///
+    /// This function parses characters until it encounters '=' or ':' which indicate
+    /// the start of a value. Used for regular keys without leading whitespace.
     fn parse_key(&mut self) -> Result<String, ParseError> {
         self.parse_str_until(&[Some('='), Some(':')], false)
+    }
+
+    /// Parse a key name that starts with leading whitespace (spaces or tabs)
+    ///
+    /// This function first captures any leading spaces or tabs, then parses the
+    /// rest of the key name until '=' or ':'. The leading whitespace is preserved
+    /// as part of the key name to support indented keys in configuration files.
+    ///
+    /// Used for keys like:
+    /// ```ini
+    /// [section]
+    ///   indented_key=value
+    ///     deeply_indented=value
+    /// ```
+    fn parse_key_with_leading_whitespace(&mut self) -> Result<String, ParseError> {
+        // Capture leading whitespace (spaces and tabs)
+        let mut leading_whitespace = String::new();
+        while let Some(c) = self.ch {
+            if c == ' ' || c == '\t' {
+                leading_whitespace.push(c);
+                self.bump();
+            } else {
+                break;
+            }
+        }
+
+        // Parse the rest of the key name
+        let key_part = self.parse_str_until(&[Some('='), Some(':')], false)?;
+
+        // Combine leading whitespace with key name
+        Ok(leading_whitespace + &key_part)
     }
 
     fn parse_val(&mut self) -> Result<String, ParseError> {
@@ -1512,41 +1660,134 @@ impl<'a> Parser<'a> {
         // Issue #35: Allow empty value
         self.parse_whitespace_except_line_break();
 
-        match self.ch {
-            None => Ok(String::new()),
-            Some('"') if self.opt.enabled_quote => {
-                self.bump();
-                self.parse_str_until(&[Some('"')], false).and_then(|s| {
-                    self.bump(); // Eats the last "
-                                 // Parse until EOL
-                    self.parse_str_until_eol(cfg!(feature = "inline-comment"))
-                        .map(|x| s + &x)
-                })
+        let mut val = String::new();
+        let mut val_first_part = true;
+        // Parse the first line of value
+        'parse_value_line_loop: loop {
+            match self.ch {
+                // EOF. Just break
+                None => break,
+
+                // Double Quoted
+                Some('"') if self.opt.enabled_quote => {
+                    // Bump the current "
+                    self.bump();
+                    // Parse until the next "
+                    let quoted_val = self.parse_str_until(&[Some('"')], false)?;
+                    val.push_str(&quoted_val);
+
+                    // Eats the "
+                    self.bump();
+
+                    // characters after " are still part of the value line
+                    val_first_part = false;
+                    continue;
+                }
+
+                // Single Quoted
+                Some('\'') if self.opt.enabled_quote => {
+                    // Bump the current '
+                    self.bump();
+                    // Parse until the next '
+                    let quoted_val = self.parse_str_until(&[Some('\'')], false)?;
+                    val.push_str(&quoted_val);
+
+                    // Eats the '
+                    self.bump();
+
+                    // characters after ' are still part of the value line
+                    val_first_part = false;
+                    continue;
+                }
+
+                // Standard value string
+                _ => {
+                    // Parse until EOL. White spaces are trimmed (both start and end)
+                    let standard_val = self.parse_str_until_eol(cfg!(feature = "inline-comment"))?;
+
+                    let trimmed_value = if val_first_part {
+                        // If it is the first part of the value, just trim all of them
+                        standard_val.trim()
+                    } else {
+                        // Otherwise, trim the ends
+                        standard_val.trim_end()
+                    };
+                    val_first_part = false;
+
+                    val.push_str(trimmed_value);
+
+                    if self.opt.enabled_indented_mutiline_value {
+                        // Multiline value is supported. We now check whether the next line is started with ' ' or '\t'.
+                        self.bump();
+
+                        loop {
+                            match self.ch {
+                                Some(' ') | Some('\t') => {
+                                    // Multiline value
+                                    // Eats the leading spaces
+                                    self.parse_whitespace_except_line_break();
+                                    // Push a line-break to the current value
+                                    val.push('\n');
+                                    // continue. Let read the whole value line
+                                    continue 'parse_value_line_loop;
+                                }
+
+                                Some('\r') => {
+                                    // Probably \r\n, try to eat one more
+                                    self.bump();
+                                    if self.ch == Some('\n') {
+                                        self.bump();
+                                        val.push('\n');
+                                    } else {
+                                        // \r with a character?
+                                        return self.error("\\r is not followed by \\n");
+                                    }
+                                }
+
+                                Some('\n') => {
+                                    // New-line, just push and continue
+                                    self.bump();
+                                    val.push('\n');
+                                }
+
+                                // Not part of the multiline value
+                                _ => break 'parse_value_line_loop,
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
             }
-            Some('\'') if self.opt.enabled_quote => {
-                self.bump();
-                self.parse_str_until(&[Some('\'')], false).and_then(|s| {
-                    self.bump(); // Eats the last '
-                                 // Parse until EOL
-                    self.parse_str_until_eol(cfg!(feature = "inline-comment"))
-                        .map(|x| s + &x)
-                })
-            }
-            _ => self.parse_str_until_eol(cfg!(feature = "inline-comment")),
         }
+
+        if self.opt.enabled_indented_mutiline_value {
+            // multiline value, trims line-breaks
+            trim_line_feeds(&mut val);
+        }
+
+        Ok(val)
     }
 
     #[inline]
     fn parse_str_until_eol(&mut self, check_inline_comment: bool) -> Result<String, ParseError> {
-        let r = self.parse_str_until(&[Some('\n'), Some('\r'), None], check_inline_comment)?;
-
-        #[cfg(feature = "inline-comment")]
-        if check_inline_comment && matches!(self.ch, Some('#') | Some(';')) {
-            self.parse_comment();
-        }
-
-        Ok(r)
+        self.parse_str_until(&[Some('\n'), Some('\r'), None], check_inline_comment)
     }
+}
+
+fn trim_in_place(string: &mut String) {
+    string.truncate(string.trim_end().len());
+    string.drain(..(string.len() - string.trim_start().len()));
+}
+
+fn trim_end_in_place(string: &mut String) {
+    string.truncate(string.trim_end().len());
+}
+
+fn trim_line_feeds(string: &mut String) {
+    const LF: char = '\n';
+    string.truncate(string.trim_end_matches(LF).len());
+    string.drain(..(string.len() - string.trim_start_matches(LF).len()));
 }
 
 // ------------------------------------------------------------------------------
@@ -1829,6 +2070,48 @@ Otherline\"
     }
 
     #[test]
+    fn string_multiline_escape() {
+        let input = r"
+[section name]
+# This is a comment
+Key = Value \
+Otherline
+";
+        let ini = Ini::load_from_str_opt(
+            input,
+            ParseOption {
+                enabled_escape: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(ini.get_from(Some("section name"), "Key").unwrap(), "Value Otherline");
+    }
+
+    #[cfg(feature = "inline-comment")]
+    #[test]
+    fn string_multiline_inline_comment() {
+        let input = r"
+[section name]
+# This is a comment
+Key = Value \
+# This is also a comment
+; This is also a comment
+   # This is also a comment
+Otherline
+";
+        let ini = Ini::load_from_str_opt(
+            input,
+            ParseOption {
+                enabled_escape: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(ini.get_from(Some("section name"), "Key").unwrap(), "Value    Otherline");
+    }
+
+    #[test]
     fn string_comment() {
         let input = "
 [section name]
@@ -2035,10 +2318,7 @@ Key = 'Value   # This is not a comment ; at all'
     #[test]
     fn load_from_str_noescape() {
         let input = "path=C:\\Windows\\Some\\Folder\\";
-        let opt = Ini::load_from_str_noescape(input);
-        assert!(opt.is_ok());
-
-        let output = opt.unwrap();
+        let output = Ini::load_from_str_noescape(input).unwrap();
         assert_eq!(output.len(), 1);
         let sec = output.section(None::<String>).unwrap();
         assert_eq!(sec.len(), 1);
@@ -2668,5 +2948,162 @@ x3 = nb
         assert!(section_setter.get("a").is_none());
         assert!(section_setter.get("b").is_none());
         assert!(section_setter.get("c").is_none());
+    }
+
+    #[test]
+    fn parse_enabled_indented_mutiline_value() {
+        let input = "
+[Foo]
+bar =
+    u
+    v
+
+baz = w
+  x # intentional trailing whitespace below
+   y 
+
+ z #2
+bla = a
+";
+
+        let opt = Ini::load_from_str_opt(
+            input,
+            ParseOption {
+                enabled_indented_mutiline_value: true,
+                ..ParseOption::default()
+            },
+        )
+        .unwrap();
+        let sec = opt.section(Some("Foo")).unwrap();
+        let mut iterator = sec.iter();
+        let bar = iterator.next().unwrap().1;
+        let baz = iterator.next().unwrap().1;
+        let bla = iterator.next().unwrap().1;
+        assert!(iterator.next().is_none());
+        assert_eq!(bar, "u\nv");
+        if cfg!(feature = "inline-comment") {
+            assert_eq!(baz, "w\nx\ny\n\nz");
+        } else {
+            assert_eq!(baz, "w\nx # intentional trailing whitespace below\ny\n\nz #2");
+        }
+        assert_eq!(bla, "a");
+    }
+
+    #[test]
+    fn whitespace_inside_quoted_value_should_not_be_trimed() {
+        let input = r#"
+[Foo]
+Key=   "  quoted with whitespace "  
+        "#;
+
+        let opt = Ini::load_from_str_opt(
+            input,
+            ParseOption {
+                enabled_quote: true,
+                ..ParseOption::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!("  quoted with whitespace ", opt.get_from(Some("Foo"), "Key").unwrap());
+    }
+
+    #[test]
+    fn preserve_leading_whitespace_in_keys() {
+        // Test this particular case in AWS Config files
+        // https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html#cli-config-endpoint_url
+        let input = r"[profile dev]
+services=my-services
+
+[services my-services]
+dynamodb=
+  endpoint_url=http://localhost:8000
+";
+
+        let mut opts = ParseOption::default();
+        opts.enabled_preserve_key_leading_whitespace = true;
+
+        let data = Ini::load_from_str_opt(input, opts).unwrap();
+        let mut w = Vec::new();
+        data.write_to(&mut w).ok();
+        let output = String::from_utf8(w).ok().unwrap();
+
+        // Normalize line endings for cross-platform compatibility
+        let normalized_input = input.replace('\r', "");
+        let normalized_output = output.replace('\r', "");
+        assert_eq!(normalized_input, normalized_output);
+    }
+
+    #[test]
+    fn preserve_leading_whitespace_mixed_indentation() {
+        let input = r"[section]
+key1=value1
+  key2=value2
+    key3=value3
+";
+        let mut opts = ParseOption::default();
+        opts.enabled_preserve_key_leading_whitespace = true;
+
+        let data = Ini::load_from_str_opt(input, opts).unwrap();
+        let section = data.section(Some("section")).unwrap();
+
+        // Check that leading whitespace is preserved
+        assert!(section.contains_key("key1"));
+        assert!(section.contains_key("  key2"));
+        assert!(section.contains_key("    key3"));
+
+        // Check round-trip preservation with normalized line endings
+        let mut w = Vec::new();
+        data.write_to(&mut w).ok();
+        let output = String::from_utf8(w).ok().unwrap();
+        let normalized_input = input.replace('\r', "");
+        let normalized_output = output.replace('\r', "");
+        assert_eq!(normalized_input, normalized_output);
+    }
+
+    #[test]
+    fn preserve_leading_whitespace_tabs_get_escaped() {
+        // This test documents the current behavior: tabs in keys get escaped
+        let input = r"[section]
+	key1=value1
+";
+        let mut opts = ParseOption::default();
+        opts.enabled_preserve_key_leading_whitespace = true;
+
+        let data = Ini::load_from_str_opt(input, opts).unwrap();
+        let section = data.section(Some("section")).unwrap();
+
+        // The tab is preserved during parsing
+        assert!(section.contains_key("\tkey1"));
+        assert_eq!(section.get("\tkey1"), Some("value1"));
+
+        // But tabs get escaped during writing (this is expected INI behavior)
+        let mut w = Vec::new();
+        data.write_to(&mut w).ok();
+        let output = String::from_utf8(w).ok().unwrap();
+
+        // Normalize line endings and check that tab is escaped
+        let normalized_output = output.replace('\r', "");
+        let expected = "[section]\n\\tkey1=value1\n";
+        assert_eq!(normalized_output, expected);
+    }
+
+    #[test]
+    fn preserve_leading_whitespace_with_trailing_spaces() {
+        let input = r"[section]
+  key1  =value1
+    key2	=value2
+";
+        let mut opts = ParseOption::default();
+        opts.enabled_preserve_key_leading_whitespace = true;
+
+        let data = Ini::load_from_str_opt(input, opts).unwrap();
+        let section = data.section(Some("section")).unwrap();
+
+        // Leading whitespace should be preserved, trailing whitespace in keys should be trimmed
+        assert!(section.contains_key("  key1"));
+        assert!(section.contains_key("    key2"));
+        assert_eq!(section.get("  key1"), Some("value1"));
+        assert_eq!(section.get("    key2"), Some("value2"));
     }
 }

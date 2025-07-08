@@ -13,9 +13,10 @@
 edition = "2018"
 rust-version = "1.64"
 name = "rust-ini"
-version = "0.21.1"
+version = "0.21.2"
 authors = ["Y. T. Chung <zonyitoo@gmail.com>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -32,6 +33,12 @@ keywords = [
 license = "MIT"
 repository = "https://github.com/zonyitoo/rust-ini"
 
+[features]
+brackets-in-section-names = []
+case-insensitive = ["unicase"]
+default = []
+inline-comment = []
+
 [lib]
 name = "ini"
 path = "src/lib.rs"
@@ -47,15 +54,6 @@ version = "1.0"
 [dependencies.ordered-multimap]
 version = "0.7"
 
-[dependencies.trim-in-place]
-version = "0.1.7"
-
 [dependencies.unicase]
 version = "2.6"
 optional = true
-
-[features]
-brackets-in-section-names = []
-case-insensitive = ["unicase"]
-default = []
-inline-comment = []

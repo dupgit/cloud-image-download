@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.74"
 name = "windows-registry"
-version = "0.5.2"
+version = "0.5.3"
 authors = ["Microsoft"]
 build = false
 autolib = false
@@ -43,15 +43,15 @@ name = "windows_registry"
 path = "src/lib.rs"
 
 [dependencies.windows-link]
-version = "0.1.1"
+version = "0.1.3"
 default-features = false
 
 [dependencies.windows-result]
-version = "0.3.3"
+version = "0.3.4"
 default-features = false
 
 [dependencies.windows-strings]
-version = "0.4.1"
+version = "0.4.2"
 default-features = false
 
 [lints.rust]
