@@ -44,7 +44,7 @@ impl Settings {
             }
         };
 
-        // to give the command line option the latest word
+        // To give the command line option the latest word
         if let Some(db_path) = &cli.db_path {
             settings.db_path = Some(db_path.to_string());
         }
@@ -53,6 +53,7 @@ impl Settings {
     }
 }
 
+// Tests that the test configuration has been correctly parsed
 #[test]
 fn test_settings_from_config() {
     use clap_verbosity_flag::Verbosity;
@@ -71,6 +72,7 @@ fn test_settings_from_config() {
     assert_eq!(settings.db_path, Some("~/.cache/cid".to_string()));
 }
 
+// Tests cli precedence
 #[test]
 fn test_db_path_settings_from_config() {
     use clap_verbosity_flag::Verbosity;
