@@ -1,6 +1,6 @@
 [package]
 name = "cloud-image-download"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
 description = "Downloads cloud images to a directory"
