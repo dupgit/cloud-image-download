@@ -6,10 +6,10 @@ name := "cid"
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
-    cargo install cargo-release cargo-sbom cargo-tarpaulin
+    cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli
 
 # Bumps {patch} (major, minor or patch) version number and does a release
-bump patch:
+bump patch: check-typos
     # Ensures that the source code is correctly formatted -> it should not modify anything
     cargo fmt
 
@@ -58,3 +58,7 @@ publish: git-publish rust-publish
 coverage:
     cargo tarpaulin --frozen -o Html
     open tarpaulin-report.html
+
+# Check for typos in source tree, README.md, test_data  and .justfile
+check-typos:
+    typos src/ README.md  test_data/ .justfile
