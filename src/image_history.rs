@@ -57,10 +57,10 @@ impl DbImageHistory {
     /// does not already exists.
     pub fn create_db_image_history(&self) {
         info!("Creating 'cid_images' table if necessary");
-        match self
-            .conn
-            .execute("CREATE TABLE IF NOT EXISTS cid_images (name TEXT NOT NULL, checksum TEXT NOT NULL)", ())
-        {
+        match self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS cid_images (name TEXT NOT NULL, checksum TEXT NOT NULL, date TEXT NOT NULL)",
+            (),
+        ) {
             Ok(_) => info!("Table 'cid_images' exists"),
             Err(e) => {
                 error!("Error while creating 'cid_images': {e}");
@@ -69,13 +69,10 @@ impl DbImageHistory {
         };
 
         info!("Creating 'index_name_checksum' index if necessary");
-        match self
-            .conn
-            .execute("CREATE UNIQUE INDEX IF NOT EXISTS index_name_checksum ON cid_images(name, checksum)", ())
-        {
-            Ok(_) => info!("Index index_name_checksum exists"),
+        match self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS index_ncd ON cid_images(name, checksum, date)", ()) {
+            Ok(_) => info!("Index index_ncd exists"),
             Err(e) => {
-                error!("Error while creating index_name_checksum index: {e}");
+                error!("Error while creating index_ncd index: {e}");
                 exit(1);
             }
         }
@@ -83,25 +80,34 @@ impl DbImageHistory {
 
     pub fn is_image_in_db(&self, cloud_image: Option<&CloudImage>) -> Result<bool, Box<dyn Error>> {
         if let Some(cloud_image) = cloud_image {
-            // Checking the last part of the url: the filename itself
-            if let Some(image_name) = &cloud_image.url.split('/').next_back() {
-                let checksum = cloud_image.checksum.to_string();
+            let image_name = &cloud_image.name;
+            let checksum = cloud_image.checksum.to_string();
+            let date = cloud_image.date.format("%Y-%m-%d %H:%M:%S").to_string();
 
-                let mut stmt =
-                    self.conn.prepare("SELECT name, checksum FROM cid_images WHERE name=?1 AND checksum=?2")?;
-                debug!("SELECT name, checksum FROM cid_images WHERE name={image_name} AND checksum={checksum}");
-                match stmt.query(params![image_name, checksum]) {
-                    Ok(mut rows) => {
-                        while let Some(row) = rows.next()? {
-                            match (row.get::<usize, String>(0), row.get::<usize, String>(1)) {
-                                (Ok(name), Ok(sum)) => return Ok(image_name == &name && checksum == sum),
-                                (Err(e), Ok(_)) | (Ok(_), Err(e)) => warn!("Error while getting parameter: {e}"),
-                                (Err(e), Err(f)) => warn!("Error while getting parameters: {e} and {f}"),
+            let mut stmt = self
+                .conn
+                .prepare("SELECT name, checksum, date FROM cid_images WHERE name=?1 AND checksum=?2 AND date=?3")?;
+            debug!(
+                "SELECT name, checksum, date FROM cid_images WHERE name={image_name} AND checksum={checksum} and date={date}"
+            );
+            match stmt.query(params![image_name, checksum, date]) {
+                Ok(mut rows) => {
+                    while let Some(row) = rows.next()? {
+                        match (row.get::<usize, String>(0), row.get::<usize, String>(1), row.get::<usize, String>(2)) {
+                            (Ok(name), Ok(sum), Ok(d)) => {
+                                return Ok(image_name == &name && checksum == sum && date == d);
                             }
+                            (Err(e), Ok(_), Ok(_)) | (Ok(_), Err(e), Ok(_)) | (Ok(_), Ok(_), Err(e)) => {
+                                warn!("Error while getting parameter: {e}")
+                            }
+                            (Err(e), Err(f), Ok(_)) | (Err(e), Ok(_), Err(f)) | (Ok(_), Err(e), Err(f)) => {
+                                warn!("Error while getting parameters: {e} and {f}")
+                            }
+                            (Err(e), Err(f), Err(g)) => warn!("Error while getting parameters: {e}, {f} and {g}"),
                         }
                     }
-                    Err(e) => warn!("Error while executing the query: {e}"),
                 }
+                Err(e) => warn!("Error while executing the query: {e}"),
             }
         }
 
@@ -109,27 +115,24 @@ impl DbImageHistory {
     }
 
     pub fn save_image_in_db(&self, cloud_image: &CloudImage) {
-        // Saving only the last part of the url: the image name itself
-        if let Some(image_name) = cloud_image.url.split('/').next_back() {
-            let checksum = cloud_image.checksum.to_string();
+        let image_name = &cloud_image.name;
+        let checksum = cloud_image.checksum.to_string();
+        let date = cloud_image.date.format("%Y-%m-%d %H:%M:%S").to_string();
 
-            match self
-                .conn
-                .execute("INSERT INTO cid_images (name, checksum) VALUES (?1, ?2)", params![image_name, checksum])
-            {
-                Ok(inserted) => {
-                    if inserted == 1 {
-                        info!("Inserted {inserted} row successfully into the database");
-                    } else {
-                        warn!("Something strange happened: {inserted} row(s) has been inserted");
-                    }
-                }
-                Err(e) => {
-                    warn!("Error while inserting {image_name} and {checksum} into the database: {e}");
+        match self.conn.execute(
+            "INSERT INTO cid_images (name, checksum, date) VALUES (?1, ?2, ?3)",
+            params![image_name, checksum, date],
+        ) {
+            Ok(inserted) => {
+                if inserted == 1 {
+                    info!("Inserted {inserted} row successfully into the database");
+                } else {
+                    warn!("Something strange happened: {inserted} row(s) has been inserted");
                 }
             }
-        } else {
-            warn!("Failed to get image name from url {}", cloud_image.url);
+            Err(e) => {
+                warn!("Error while inserting {image_name} and {checksum} into the database: {e}");
+            }
         }
     }
 }
