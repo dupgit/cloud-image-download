@@ -13,8 +13,8 @@ pub mod settings;
 /// Image download history management
 pub mod image_history;
 
-/// Image list management
-pub mod image_list;
+/// Cloud image management
+pub mod cloud_image;
 
 /// Checksum extraction from downloaded files
 pub mod checksums;

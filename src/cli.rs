@@ -18,7 +18,7 @@ pub struct Cli {
     #[arg(long, default_value_t = CONCURRENT_REQUESTS)]
     pub concurrent_downloads: usize,
 
-    /// Forces verification of skipped downloads (useful to rebuild db)
+    /// Forces verification of skipped downloads
     #[arg(long, default_value_t = false)]
     pub verify_skipped: bool,
 

@@ -1,7 +1,7 @@
 use crate::CID_USER_AGENT;
-use crate::checksums::CheckSums;
+use crate::checksums::{CheckSums, are_all_checksums_in_one_file};
+use crate::cloud_image::CloudImage;
 use crate::image_history::DbImageHistory;
-use crate::image_list::CloudImage;
 use futures::{StreamExt, stream};
 use httpdirectory::error::HttpDirError;
 use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
@@ -30,17 +30,6 @@ pub struct WebSite {
 pub struct WSImageList {
     pub images_list: Vec<CloudImage>,
     pub website: Arc<WebSite>,
-}
-
-/// Tells if inner String indicates that we are
-/// in presence of a checksum files that contains
-/// all checksums for all downloadable images
-fn are_all_checksums_in_one_file(inner: &str) -> bool {
-    // -CHECKSUM is used in Fedora sites
-    // CHECKSUM is used in Centos sites
-    // SHA256SUMS is used in Ubuntu sites
-    // SHA512SUMS is used in Debian sites
-    inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
 }
 
 /// Retrieves the body of a get request to the specified
@@ -115,13 +104,13 @@ impl WebSite {
                             return Some(format!("{url}/"));
                         } else {
                             debug!("This url ({url}) has numbers in it:");
-                            return keep_latest_entry(list_of_numbers, url);
+                            return url_with_latest_directory_name(list_of_numbers, url);
                         }
                     }
                 } else {
                     debug!("This url ({url}) has dates in it:");
                     // Keep only the latest entry !
-                    return keep_latest_entry(list_of_dates, url);
+                    return url_with_latest_directory_name(list_of_dates, url);
                 }
             } else {
                 return Some(format!("{url}/"));
@@ -170,7 +159,6 @@ impl WebSite {
         client: &reqwest::Client,
         db: &DbImageHistory,
     ) -> Result<Option<CloudImage>, HttpDirError> {
-        //let mut images_list: Vec<CloudImage> = vec![];
         let mut option_cloud_image: Option<CloudImage> = None;
 
         // Getting all files whose name matches the regex self.image_name_filter and
@@ -300,34 +288,13 @@ impl WSImageList {
         }
     }
 
-    /// Retains only images that have been effectively downloaded
-    /// and not skipped, in error state or in "not started" state
-    /// using `Vec<Summary>` to know their state
-    /*
-        pub fn only_effectively_downloaded(
-            all_ws_image_lists: &mut Vec<WSImageList>,
-            downloaded_summary: &Vec<Summary>,
-            verify_skipped: bool,
-        ) {
-            for ws_image in all_ws_image_lists {
-                let normalize = ws_image.website.get_normalize();
-                ws_image.images_list.into_iter().filter(|cloud_image| {
-                    image_has_been_downloaded(
-                        downloaded_summary,
-                        &cloud_image.url,
-                        &ws_image.website.destination,
-                        verify_skipped,
-                        normalize,
-                    )
-                });
-            }
-        }
-    */
     pub fn is_empty(&self) -> bool {
         self.images_list.is_empty()
     }
 }
 
+/// Returns true only if all WSImageList contained in the vector
+/// `all_ws_image_list` are empty. Returns false otherwise
 pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> bool {
     let mut is_empty = true;
     for ws_image in all_ws_image_lists {
@@ -336,7 +303,9 @@ pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> boo
     is_empty
 }
 
-fn keep_latest_entry(list_of_entries: HttpDirectory, url: &str) -> Option<String> {
+/// Returns an url formed with the last directory name found
+/// in the `list_of_entries` if any.
+fn url_with_latest_directory_name(list_of_entries: HttpDirectory, url: &str) -> Option<String> {
     if let Some(entry) = list_of_entries.sort_by_date(Sorting::Descending).first() {
         if let Some(dirname) = entry.dirname() {
             debug!("Adding {dirname}");

@@ -1,5 +1,5 @@
+use crate::cloud_image::CloudImage;
 use crate::image_history::DbImageHistory;
-use crate::image_list::CloudImage;
 use crate::website::WSImageList;
 use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use chrono::NaiveDateTime;
@@ -19,7 +19,11 @@ use trauma::{
     downloader::{Downloader, DownloaderBuilder},
 };
 
-// Creates a directory if it does not exists. Returns Ok unless create_dir_all() fails.
+/// Creates a directory if it does not exists. Returns Ok unless create_dir_all() fails.
+///
+/// # Errors
+/// returned errors are the ones that `std::fs::create_dir_all()` method
+/// returns
 fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     if !path.exists() {
         create_dir_all(path)?;
@@ -27,6 +31,11 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// With `image_name` as a filename and `file_destination` as a Path
+/// returns the absolute file name. If `normalized` is true then
+/// uses `image_date` to format the name of the file with the date
+/// inserted right before the dot (ie for `example.qcow2` you will
+/// get `example-20250710.qcow2` when normalized)
 pub fn get_filename_destination(
     image_name: &str,
     file_destination: &Path,
@@ -48,6 +57,14 @@ pub fn get_filename_destination(
     }
 }
 
+/// Download images:
+/// - first creates all destination directories if needed and
+///   adds every file to a `download_image_list` with `Download`
+///   entries for trauma
+/// - Builds the downloader with some options such as the number
+///   of concurrent downloads, if we may display progress bar or
+///   not
+/// - At last downloads effectively the image files
 pub async fn download_images(
     all_ws_image_lists: &Vec<WSImageList>,
     verbose: &Verbosity,
@@ -145,6 +162,8 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 }
 
 /// This will tell if an image has effectively been downloaded
+/// using the summary that trauma gives at the end of the
+/// process
 pub fn image_has_been_downloaded(
     downloaded_summary: &Vec<Summary>,
     cloud_image: &CloudImage,

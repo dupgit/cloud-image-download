@@ -6,6 +6,7 @@ use log::error;
 use serde::Deserialize;
 use std::process::exit;
 
+/// Stores settings read from a configuration file.
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub db_path: Option<String>,

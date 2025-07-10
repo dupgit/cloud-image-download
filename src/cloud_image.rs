@@ -5,13 +5,12 @@ use crate::image_history::DbImageHistory;
 use chrono::NaiveDateTime;
 use colored::Colorize;
 use log::{error, info, warn};
-use regex::Regex;
 use sha2::{Digest, Sha256, Sha512};
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::{cmp::Ordering, path::Path};
+use std::path::Path;
 
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
@@ -29,10 +28,6 @@ impl CloudImage {
             checksum,
             date,
         }
-    }
-
-    pub fn compare_dates_in_names(&self, other: &Self) -> Ordering {
-        compare_str_by_date(&self.url, &other.url)
     }
 
     /// @todo: simplify and get it shorter
@@ -151,21 +146,5 @@ impl fmt::Display for CloudImage {
                 writeln!(f, "\t-> {} with checksum {}", self.url, checksum)
             }
         }
-    }
-}
-
-fn get_date_from_string(name: &str) -> Option<String> {
-    let re = Regex::new(r"(?<name>[2][0-9]{3}[0-1][0-9][0-3][0-9])").unwrap();
-    re.captures(name).map(|capture| capture["name"].to_string())
-}
-
-pub fn compare_str_by_date(a: &str, b: &str) -> Ordering {
-    let date1 = get_date_from_string(a);
-    let date2 = get_date_from_string(b);
-    match (date1, date2) {
-        (Some(d1), Some(d2)) => d1.cmp(&d2),
-        (None, Some(_)) => Ordering::Less,
-        (Some(_), None) => Ordering::Greater,
-        (None, None) => a.cmp(b),
     }
 }

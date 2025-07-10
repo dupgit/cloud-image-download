@@ -1,5 +1,4 @@
-use crate::image_list::CloudImage;
-/* Image download history management */
+use crate::cloud_image::CloudImage;
 use log::{debug, error, info, warn};
 use rusqlite::{Connection, params};
 use std::error::Error;
@@ -78,6 +77,7 @@ impl DbImageHistory {
         }
     }
 
+    /// Tells whether the image is already in the database (ie: it already has been downloaded)
     pub fn is_image_in_db(&self, cloud_image: Option<&CloudImage>) -> Result<bool, Box<dyn Error>> {
         if let Some(cloud_image) = cloud_image {
             let image_name = &cloud_image.name;
@@ -114,6 +114,9 @@ impl DbImageHistory {
         Ok(false)
     }
 
+    /// The image has been downloaded and verified correctly so
+    /// we can save the image name, it's checksum and date to
+    /// the database so that we won't download it again
     pub fn save_image_in_db(&self, cloud_image: &CloudImage) {
         let image_name = &cloud_image.name;
         let checksum = cloud_image.checksum.to_string();

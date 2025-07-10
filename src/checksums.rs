@@ -2,6 +2,9 @@ use log::{debug, info, trace};
 use regex::Regex;
 use std::fmt;
 
+/// An enum to allow different checksum types
+/// For now there is only sha256 and sha512
+/// all other cases is a `CheckSums::None`
 #[derive(PartialEq, Default, Debug)]
 pub enum CheckSums {
     Sha256(String),
@@ -31,16 +34,14 @@ impl CheckSums {
             info!("found sha256 checksum '{chksum}'");
             CheckSums::Sha256(chksum)
         } else {
-            info!("no checksum found");
+            info!("no checksum found (not a SHA256 or SHA512 ?)");
             CheckSums::None
         }
     }
 
-    // @todo: rename this to something more explicit
-    // @todo: split in small parts / closure with the buffer.lines() ?
     /// retrieves the checksum of the image named `name` in the buffer
     /// `checksums` that is the content of a file containing at least
-    /// one checksum. filename is the filename of that file containing
+    /// one checksum. `filename` is the filename of that file containing
     /// all checksums. We decide with its name the kind of checksums
     /// it contains (sha256 or sha512) along with the content of the
     /// line that may also be helpful
@@ -62,7 +63,7 @@ impl CheckSums {
                 }
                 info!("no checksum found");
             }
-            None => info!("no checksum found"),
+            None => info!("no checksum buffer to analyze"),
         }
         CheckSums::None
     }
@@ -77,4 +78,15 @@ impl fmt::Display for CheckSums {
             }
         }
     }
+}
+
+/// Tells if inner String indicates that we are
+/// in presence of a checksum files that contains
+/// all checksums for all downloadable images
+pub fn are_all_checksums_in_one_file(inner: &str) -> bool {
+    // -CHECKSUM is used in Fedora sites
+    // CHECKSUM is used in Centos sites
+    // SHA256SUMS is used in Ubuntu sites
+    // SHA512SUMS is used in Debian sites
+    inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
 }
