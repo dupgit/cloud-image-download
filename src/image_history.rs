@@ -2,6 +2,7 @@ use crate::cloud_image::CloudImage;
 use log::{debug, error, info, warn};
 use rusqlite::{Connection, params};
 use std::error::Error;
+use std::marker::{Send, Sync};
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -10,6 +11,9 @@ use std::process::exit;
 pub struct DbImageHistory {
     pub conn: Connection,
 }
+
+unsafe impl Send for DbImageHistory {}
+unsafe impl Sync for DbImageHistory {}
 
 impl DbImageHistory {
     /// Opens the Sqlite database if possible and returns a
