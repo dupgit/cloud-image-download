@@ -13,12 +13,12 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls-webpki"
-version = "0.103.3"
+version = "0.103.4"
 build = false
 include = [
     "Cargo.toml",
     "/LICENSE",
-    "README.md",
+    "/README.md",
     "src/aws_lc_rs_algs.rs",
     "src/calendar.rs",
     "src/cert.rs",
@@ -59,6 +59,9 @@ categories = [
 license = "ISC"
 repository = "https://github.com/rustls/webpki"
 
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_marked_deprecated = "warn"
+
 [package.metadata.cargo_check_external_types]
 allowed_external_types = [
     "rustls_pki_types::*",
@@ -86,6 +89,10 @@ aws-lc-rs-fips = [
     "dep:aws-lc-rs",
     "aws-lc-rs/fips",
 ]
+aws-lc-rs-unstable = [
+    "aws-lc-rs",
+    "aws-lc-rs/unstable",
+]
 default = ["std"]
 ring = ["dep:ring"]
 std = [
@@ -103,7 +110,7 @@ optional = true
 default-features = false
 
 [dependencies.pki-types]
-version = "1.11"
+version = "1.12"
 default-features = false
 package = "rustls-pki-types"
 
@@ -122,13 +129,13 @@ version = "0.22"
 version = "0.1.5"
 
 [dev-dependencies.bzip2]
-version = "0.5"
+version = "0.6"
 
 [dev-dependencies.once_cell]
 version = "1.17.2"
 
 [dev-dependencies.rcgen]
-version = "0.13"
+version = "0.14"
 features = ["aws_lc_rs"]
 default-features = false
 

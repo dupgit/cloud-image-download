@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls"
-version = "0.23.28"
+version = "0.23.29"
 build = "build.rs"
 exclude = [
     "src/testdata",
@@ -148,7 +148,7 @@ features = [
 default-features = false
 
 [dependencies.pki-types]
-version = "1.11"
+version = "1.12"
 features = ["alloc"]
 package = "rustls-pki-types"
 
@@ -161,7 +161,7 @@ version = "2.5.0"
 default-features = false
 
 [dependencies.webpki]
-version = "0.103.2"
+version = "0.103.4"
 features = ["alloc"]
 default-features = false
 package = "rustls-webpki"
@@ -195,7 +195,7 @@ version = "0.2"
 version = "0.4.4"
 
 [dev-dependencies.rcgen]
-version = "0.13"
+version = "0.14"
 features = [
     "pem",
     "aws_lc_rs",
