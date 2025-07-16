@@ -4,9 +4,8 @@
 
 ### Program's goal
 
-Downloads cloud system images from web sites and keeps track of the images
-already downloaded and thus download only the latest ones. It should be
-used periodically (ie: weekly)
+Downloads cloud system images (basically qcow2 files) from web sites and keeps
+track of the images already downloaded and thus download only the latest ones. It is intended to be used periodically (ie: weekly)
 
 ### Target audience
 
@@ -19,8 +18,7 @@ available to their cloud users.
 This program has been written to download the images from a machine that has
 access to the internet and provide them onto a shared file system to an
 another program that uploads them to the local cloud where internet is not
-available.
-
+available. It will not upload files directly to the local cloud.
 
 ## Architectural overview
 
@@ -30,29 +28,25 @@ available.
 
 ### Component description
 
-- **Command line interface**: All options that a user can provide from the
-  command line.
-- **Settings reader and aggregator**: Reads configuration file and gives a
-  structure that aggregates all settings from command line, configuration
-  file, environment variable. Uses config crate.
-- **Image list**: manages images (name, date and checksum) and list of
-  images.
-- **Image history**: manages a structure with the history of all
-  files that were previously successfully downloaded. Loads and saves
-  image history from an sqlite DB. Uses crate rusqlite.
-- **Website qualifier**: guess from what type of website we need to
-  download the image from to be able to get the checksum file.
-- **Image list creator**: Creates a list of all images that are available
-  to download.
-- **Image list filtering**: Filters the list of images based on criteria.
-  Default criteria is that the file hasn't already been downloaded. This
-  may be changed upon with command line parameters.
-- **File downloader**:
-  Downloads effectively all the images that needs to be downloaded. Uses
-  crate trauma.
-- **File checksum verifier**:
-  Downloads the checskum files and verifies it. Uses crate sha2.
+- **Checksums** (`checksums.rs`) provides a structure and functions to deal
+  with different checksums (for now only SHA256 and SHA512)
+- **Command line interface** (`cli.rs`) defines all options that a user can
+  use from the command line.
+- **Settings reader and aggregator** (`settings.rs`) Reads configuration file
+  and gives a structure that aggregates all settings from command line,
+  configuration file, environment variable.
+- **Image history** (`image_history.rs`) manages a structure with the history
+  of all files that were previously successfully downloaded. Loads and saves
+  image history from an sqlite DB.
+- **File downloader** (`download.rs`) downloads the images, provides a
+  summary of what has been downloaded or not and verifies downloaded files. Images can be saved with a "normalized" filename. Uses crate trauma.
+- **Image manager** (`cloud_image.rs`) manages cloud images that are to be found (from the websites), downloaded and verified
+- **Website manager** (`website.rs`) with the settings loaded, uses
+  httpdirectory crate to get the latest images to be downloaded from a
+  website. Multiples latest images can be downloaded from one website (ie: x86_64 and aarch64 images for instance)
 
+- **The program itself** (`cid.rs`) glues everything to enable downloading
+  only latest verified images to a destination path.
 
 ## Component overview
 
@@ -60,12 +54,16 @@ available.
 
 #### Command line interface
 
-Options a user can provide to the program. These option will only affect
-the program's behavior:
+Options a user can provide to the program. These option will the program's behavior:
 
 - verbosity level,
-- configuration file,
-- Database path,
+- configuration file definition (allows other than default configuration
+  files),
+- database path (allows to change the default place where the database
+  is stored),
+- limit the maximum downloads at a time,
+- enabling a file verification even if the file has been skipped from
+  downloading (files exists in the path but doesn't exist in the database),
 
 The command line will not collect parameters to download images from a
 specific web site.
@@ -75,86 +73,91 @@ specific web site.
 Reads configuration file and aggregates it with parameters from the
 command line, variable environment. These settings may be:
 
-- Program settings
-  - Proxy settings
-  - Database path
 - Web sites list
   - Name of the web site
   - Base url where to find the images
   - List of versions (of the images to download)
-  - Web site type (Normal, WithDate)
   - List of complementary url (one may want more than one architecture
     for instance)
-  - Image name (regular expression to be able to find it's name)
-  - Destination path (where a downloaded image will be saved)
+  - Image name filter is a regular expression to be able to find the image
+    name we need
+  - Image name cleanse is a list of regular expressions that we need not
+    to be in the image name (ie removes from the downlodable list all names
+    that contains any of these regular expressions)
+  - Destination path where a downloaded image will be saved
+  - Normalize that will tell the program to save the downloaded files in a
+    "normalized" way (ie with a date in it's name)
 
 #### Image history
 
 Keeps names of successfully downloaded images in a database:
 
 - The database should be created if it does not exist already,
-- This module provides a filter in order to tell if an image,
-  is or isn't already in the database. To be able to build a
-  list of images to be downloaded from a list of potential images,
+- This module provides a function to tell if an image is already
+  in the database (this means same name, checksum and date).
+  A function to save a downloaded image to the database.
 - When a downloaded image has been successfully verified (with its
   checksum) the image name with its date and checksum is saved into
-  the database. The checksum verification is left to the checksum
-  verifier module.
-
-#### Website qualifier
-
-Guesses what type of checksum file we might download to get the
-checksum of the file (looking at SHA256 checksums). It should return
-a type:
-
-- OneFile if all checksums are in one checksum file
-- EveryFile if each image file as an associated checksum file
-
-#### Image list creator
-
-Gets from each web site a list of all files that may be downloaded.
-
-#### Image list filtering
-
-Filters the image list with the help of the database
+  the database.
 
 #### File downloader
 
 Downloads all files that are to be downloaded into it's final
-destination configuration.
+destination configuration. Checksum files are downloaded into
+memory, checksum is inserted into the `CloudImage` structure
+and used to verify the downloaded file.
 
-Downloads the checksum files into a temporary destination.
+#### Checksums
 
-#### File checksum verifier
+Deals with different checksum types SHA256 and SHA512 for now.
+Checksum computation and verification is done in the image manager
+module (.verify() method of `CloudImage`)
 
-Calculates the checksum of a downloaded file and checks it against
-the one from the downloaded checksum file.
+#### Image manager
 
-#### Proxy settings
+Provides `CloudImage` structure and a method to verify the checksum
+of an image and a method that will tell whether or not the file is in
+the database (uses the method of image history module)
 
-Get proxy settings from environment variables. Uses serde and
-Deserialize derive functionality to retrieve parameters from
-the configuration file
+#### Website manager
+
+Uses the settings to scrape defined websites to try to get the latest
+cloud image to download among all the downloadable ones. When an url
+lists directories whose names are formatted as dates (ie: YYYYMMDD)
+or with numbers (ie: 41, 42, ...) the latest one is added to the
+search list instead of the original one.
 
 
 ### Dependencies
 
+- **base16ct**: Used to encode binary checksums to human readable
+  base 16 strings
+- **chrono**: Date and time manipulation library
 - **clap**: The defacto standard for command line parsing argument
 - **clap-verbosity**: Manages -v (--verbose) or -q (--quiet) options along
   with the log system.
+- **colored**: To add some colors in log messages
 - **config**: Reading configuration from files and environment variables
-- **directories**: to get user directories from XDG specifications \[1\]
+- **const_format**: Formats `CID_USER_AGENT` const string at compile time
+- **directories**: To get user directories from XDG specifications \[1\]
+- **env_logger**: Logger
+- **futures**: Enable iterating in parallel over vectors
+- **httpdirectory**: Parses HTML directories urls and returns a structured
+  vector filled with directories and files
+- **log**: Log system
+- **regex**: Regular expression engine
 - **reqwest**: Interface to http requests helps revrieving web pages
 - **rusqlite**: Gives access to an sqlite database and is used to store the
   download history
-- **scraper**: Parses HTML. Used to extract all links from a web page
 - **serde**: Serialization / Deserialization library used to read the
   configuration file into a dedicated structure.
 - **sha2**: Widely use library to process sha checksums and all checksums out
   there for cloud images are SHA-256 ones.
 - **shellexpand**: expands paths filenames with `~` or variables such as
   `${USER}` or `${HOME}`.
+- **tokio**: Used to spawn task to verify file's checksum
 - **trauma**: Downloads files and seems more maintained than downloader crate.
+
 
 ## Error management
 
