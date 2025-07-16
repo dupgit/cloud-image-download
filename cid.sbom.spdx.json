@@ -1,20 +1,20 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2025-07-10T20:47:41Z",
+    "created": "2025-07-16T21:08:41Z",
     "creators": [
       "Tool: cargo-sbom-v0.10.0"
     ]
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-633fc8f0-43f0-404a-a9a8-3424b5146c0a",
+  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-745f17d9-581d-4dd7-b613-f2b5e24f99b7",
   "files": [
     {
       "SPDXID": "SPDXRef-File-cid",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "735a75b2c354d3cb1656f43dafd20dfce0621b95"
+          "checksumValue": "ba5d73bf2cc9829576785613cfa19f5cd1a1ce4b"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -28,7 +28,7 @@
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "735a75b2c354d3cb1656f43dafd20dfce0621b95"
+          "checksumValue": "ba5d73bf2cc9829576785613cfa19f5cd1a1ce4b"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -562,13 +562,13 @@
       "versionInfo": "3.0.3"
     },
     {
-      "SPDXID": "SPDXRef-Package-cloud-image-download-0.3.1",
+      "SPDXID": "SPDXRef-Package-cloud-image-download-0.3.2",
       "description": "Downloads cloud images to a directory",
       "downloadLocation": "NONE",
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "cloud-image-download",
-      "versionInfo": "0.3.1"
+      "versionInfo": "0.3.2"
     },
     {
       "SPDXID": "SPDXRef-Package-colorchoice-1.0.4",
@@ -1612,22 +1612,6 @@
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "heck",
       "versionInfo": "0.5.0"
-    },
-    {
-      "SPDXID": "SPDXRef-Package-hex-literal-1.0.0",
-      "description": "Macro for converting hexadecimal string to a byte array at compile time",
-      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
-      "externalRefs": [
-        {
-          "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/hex-literal@1.0.0",
-          "referenceType": "purl"
-        }
-      ],
-      "licenseConcluded": "MIT OR Apache-2.0",
-      "licenseDeclared": "MIT OR Apache-2.0",
-      "name": "hex-literal",
-      "versionInfo": "1.0.0"
     },
     {
       "SPDXID": "SPDXRef-Package-html5ever-0.29.1",
@@ -3526,20 +3510,20 @@
       "versionInfo": "0.1.25"
     },
     {
-      "SPDXID": "SPDXRef-Package-rustix-1.0.7",
+      "SPDXID": "SPDXRef-Package-rustix-1.0.8",
       "description": "Safe Rust bindings to POSIX/Unix/Linux/Winsock-like syscalls",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/rustix@1.0.7",
+          "referenceLocator": "pkg:cargo/rustix@1.0.8",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "Apache-2.0 OR Apache-2.0 OR MIT",
       "licenseDeclared": "Apache-2.0 OR Apache-2.0 OR MIT",
       "name": "rustix",
-      "versionInfo": "1.0.7"
+      "versionInfo": "1.0.8"
     },
     {
       "SPDXID": "SPDXRef-Package-rustls-0.23.29",
@@ -4361,36 +4345,36 @@
       "versionInfo": "0.7.0"
     },
     {
-      "SPDXID": "SPDXRef-Package-toml--parser-1.0.0",
+      "SPDXID": "SPDXRef-Package-toml--parser-1.0.1",
       "description": "Yet another format-preserving TOML parser.",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/toml_parser@1.0.0",
+          "referenceLocator": "pkg:cargo/toml_parser@1.0.1",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "toml_parser",
-      "versionInfo": "1.0.0"
+      "versionInfo": "1.0.1"
     },
     {
-      "SPDXID": "SPDXRef-Package-toml-0.9.1",
+      "SPDXID": "SPDXRef-Package-toml-0.9.2",
       "description": "A native Rust encoder and decoder of TOML-formatted files and streams. Provides\nimplementations of the standard Serialize/Deserialize traits for TOML data to\nfacilitate deserializing and serializing Rust structures.\n",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/toml@0.9.1",
+          "referenceLocator": "pkg:cargo/toml@0.9.2",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "toml",
-      "versionInfo": "0.9.1"
+      "versionInfo": "0.9.2"
     },
     {
       "SPDXID": "SPDXRef-Package-tower-0.5.2",
@@ -5539,20 +5523,20 @@
       "versionInfo": "0.53.2"
     },
     {
-      "SPDXID": "SPDXRef-Package-winnow-0.7.11",
+      "SPDXID": "SPDXRef-Package-winnow-0.7.12",
       "description": "A byte-oriented, zero-copy, parser combinators library",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/winnow@0.7.11",
+          "referenceLocator": "pkg:cargo/winnow@0.7.12",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "name": "winnow",
-      "versionInfo": "0.7.11"
+      "versionInfo": "0.7.12"
     },
     {
       "SPDXID": "SPDXRef-Package-wit-bindgen-rt-0.39.0",
@@ -5777,12 +5761,12 @@
       "spdxElementId": "SPDXRef-DOCUMENT"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.3.1",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.3.2",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cid"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.3.1",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.3.2",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cloud_image_download"
     },
@@ -6029,117 +6013,102 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-base16ct-0.2.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-chrono-0.4.41",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-4.5.41",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-verbosity-flag-3.0.3",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-colored-3.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-config-0.15.13",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-const--format-0.2.34",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-directories-6.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-env--logger-0.11.8",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-futures-util-0.3.31",
-      "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-hex-literal-1.0.0",
-      "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-httpdirectory-0.15.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-log-0.4.27",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-regex-1.11.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-reqwest-0.12.22",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-rusqlite-0.36.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-scraper-0.23.1",
-      "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde-1.0.219",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-sha2-0.10.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-shellexpand-3.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.46.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-trauma-2.3.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.3.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.59.0",
@@ -6187,12 +6156,12 @@
       "spdxElementId": "SPDXRef-Package-config-0.15.13"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-toml-0.9.1",
+      "relatedSpdxElement": "SPDXRef-Package-toml-0.9.2",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-config-0.15.13"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.11",
+      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.12",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-config-0.15.13"
     },
@@ -8574,27 +8543,27 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-bitflags-2.9.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-rustix-1.0.7"
+      "spdxElementId": "SPDXRef-Package-rustix-1.0.8"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-errno-0.3.13",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-rustix-1.0.7"
+      "spdxElementId": "SPDXRef-Package-rustix-1.0.8"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-libc-0.2.174",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-rustix-1.0.7"
+      "spdxElementId": "SPDXRef-Package-rustix-1.0.8"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-linux-raw-sys-0.9.4",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-rustix-1.0.7"
+      "spdxElementId": "SPDXRef-Package-rustix-1.0.8"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.59.0",
+      "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.60.2",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-rustix-1.0.7"
+      "spdxElementId": "SPDXRef-Package-rustix-1.0.8"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-once--cell-1.21.3",
@@ -8992,7 +8961,7 @@
       "spdxElementId": "SPDXRef-Package-tempfile-3.20.0"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-rustix-1.0.7",
+      "relatedSpdxElement": "SPDXRef-Package-rustix-1.0.8",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-tempfile-3.20.0"
     },
@@ -9202,34 +9171,34 @@
       "spdxElementId": "SPDXRef-Package-toml--datetime-0.7.0"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.11",
+      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.12",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml--parser-1.0.0"
+      "spdxElementId": "SPDXRef-Package-toml--parser-1.0.1"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde--spanned-1.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml-0.9.1"
+      "spdxElementId": "SPDXRef-Package-toml-0.9.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde-1.0.219",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml-0.9.1"
+      "spdxElementId": "SPDXRef-Package-toml-0.9.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-toml--datetime-0.7.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml-0.9.1"
+      "spdxElementId": "SPDXRef-Package-toml-0.9.2"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-toml--parser-1.0.0",
+      "relatedSpdxElement": "SPDXRef-Package-toml--parser-1.0.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml-0.9.1"
+      "spdxElementId": "SPDXRef-Package-toml-0.9.2"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.11",
+      "relatedSpdxElement": "SPDXRef-Package-winnow-0.7.12",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-toml-0.9.1"
+      "spdxElementId": "SPDXRef-Package-toml-0.9.2"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-core-0.3.31",
@@ -9974,7 +9943,7 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-memchr-2.7.5",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-winnow-0.7.11"
+      "spdxElementId": "SPDXRef-Package-winnow-0.7.12"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-bitflags-2.9.1",
