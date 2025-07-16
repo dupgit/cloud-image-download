@@ -2,6 +2,7 @@
 use crate::checksums::CheckSums;
 use crate::download::get_filename_destination;
 use crate::image_history::DbImageHistory;
+use base16ct::lower;
 use chrono::NaiveDateTime;
 use colored::Colorize;
 use log::{error, info, warn};
@@ -102,7 +103,7 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
                 }
                 hasher.finalize()
             };
-            if base16ct::lower::encode_string(&digest) == *hash {
+            if lower::encode_string(&digest) == *hash {
                 Ok(Some(true))
             } else {
                 Ok(Some(false))
@@ -129,7 +130,7 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
                 }
                 hasher.finalize()
             };
-            if base16ct::lower::encode_string(&digest) == *hash {
+            if lower::encode_string(&digest) == *hash {
                 Ok(Some(true))
             } else {
                 Ok(Some(false))
