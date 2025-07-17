@@ -18,7 +18,8 @@ impl CheckSums {
     /// the line
     fn build_checksums_from_line(line: &str, filename: &str) -> CheckSums {
         if filename.contains("SHA512SUMS") || line.contains("SHA512") {
-            let re = Regex::new(r".*([a-f0-9]{128}+).*").unwrap();
+            let re = Regex::new(r".*([a-f0-9]{128}+).*")
+                .expect("Something went wrong because '.*([a-f0-9]{128}+).*' is a valid regex");
             let chksum: String = match re.captures(line) {
                 Some(value) => value[1].to_string(),
                 None => return CheckSums::None,
@@ -26,7 +27,8 @@ impl CheckSums {
             info!("found sha512 checksum '{chksum}'");
             CheckSums::Sha512(chksum)
         } else if filename.contains("SHA256SUMS") || line.contains("SHA256") {
-            let re = Regex::new(r".*([a-f0-9]{64}+).*").unwrap();
+            let re = Regex::new(r".*([a-f0-9]{64}+).*")
+                .expect("Something went wrong because '.*([a-f0-9]{64}+).*' is a valid regex");
             let chksum: String = match re.captures(line) {
                 Some(value) => value[1].to_string(),
                 None => return CheckSums::None,

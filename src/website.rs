@@ -173,7 +173,11 @@ impl WebSite {
                 if let Some(date) = image.date() {
                     // Trying to find if we have a file that contains all checksums for
                     // the files to be downloaded
-                    let one_file = url_httpdir.files().filtering(|e| are_all_checksums_in_one_file(e.name().unwrap()));
+                    let one_file = url_httpdir.files().filtering(|e| {
+                        are_all_checksums_in_one_file(e.name().expect(
+                            ".files() filter should return only files with names and thus .name() should never be None",
+                        ))
+                    });
                     let one_file_count = one_file.len();
                     debug!("Checksum guess: all in one file: {one_file_count}");
                     // We choose to download only one file if possible: we test onefile
@@ -203,7 +207,10 @@ impl WebSite {
                     } else {
                         // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
                         // return an Error here
-                        let everyfile = url_httpdir.files().filter_by_name(".SHA256SUM").unwrap().len();
+                        let everyfile = url_httpdir.files()
+                            .filter_by_name(".SHA256SUM")
+                            .expect(".files() filter should return only files with names and thus .name() should never be None")
+                            .len();
                         if everyfile >= 1 {
                             // Downloading a checksum file that contains only the checksums of the image file
                             let url = format!("{url}/{image_name}");

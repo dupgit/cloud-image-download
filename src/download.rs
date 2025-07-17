@@ -105,7 +105,8 @@ pub async fn download_images(
 
     let downloader: Downloader;
     let retry = 3;
-    let user_agent = HeaderValue::from_str(CID_USER_AGENT).unwrap();
+    let user_agent =
+        HeaderValue::from_str(CID_USER_AGENT).expect("Converting CID_USER_AGENT to HeaderValue should not fail");
 
     // Defines the maximum simultaneous downloads at a time
     let max: usize = if concurrent_download > 0 {
