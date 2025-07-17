@@ -66,4 +66,8 @@ coverage:
 
 # Check for typos in source tree, README.md, test_data  and .justfile
 check-typos:
-    typos src/ README.md  test_data/ .justfile
+    typos src/ README.md  test_data/ .justfile docs/ --exclude *.excalidraw
+
+# Invoke clippy in pedantic mode
+clippy:
+    cargo clippy -- -W clippy::pedantic
