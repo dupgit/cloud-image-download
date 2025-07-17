@@ -16,6 +16,7 @@ pub struct Settings {
 impl Settings {
     /// Deserializes (if possible) the whole configuration file that
     /// may have been specified in the command line
+    #[must_use]
     pub fn from_config(cli: &Cli) -> Self {
         let config_filename = match shellexpand::full(&cli.config) {
             Ok(conf) => conf,

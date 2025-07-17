@@ -17,18 +17,16 @@ unsafe impl Sync for DbImageHistory {}
 
 impl DbImageHistory {
     /// Opens the Sqlite database if possible and returns a
-    /// DbImageHistory with a connection on success (exits
+    /// `DbImageHistory` with a connection on success (exits
     /// the program otherwise).
+    #[must_use]
     pub fn open(path: PathBuf) -> Self {
         info!("Opening the database");
         // Converts PathBuf to &str for shellexpand's call
         let path_os_string = path.into_os_string();
-        let db_str = match path_os_string.as_os_str().to_str() {
-            Some(s) => s,
-            None => {
-                error!("Failed to convert {path_os_string:?} into a valid UTF-8 string");
-                exit(1);
-            }
+        let Some(db_str) = path_os_string.as_os_str().to_str() else {
+            error!("Failed to convert {} into a valid UTF-8 string", path_os_string.display());
+            exit(1);
         };
 
         // expands path taking into account tilde (~) and
@@ -69,7 +67,7 @@ impl DbImageHistory {
                 error!("Error while creating 'cid_images': {e}");
                 exit(1);
             }
-        };
+        }
 
         info!("Creating 'index_name_checksum' index if necessary");
         match self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS index_ncd ON cid_images(name, checksum, date)", ()) {
@@ -81,7 +79,14 @@ impl DbImageHistory {
         }
     }
 
-    /// Tells whether the image is already in the database (ie: it already has been downloaded)
+    /// Tells whether the image is already in the database (ie: it already
+    /// has been downloaded)
+    ///
+    /// # Errors
+    ///
+    /// Will return an error when calling rusqlite `prepare()` method and
+    /// sql cannot be converted to a C-compatible string or if the underlying
+    /// `SQLite` call fails.
     pub fn is_image_in_db(&self, cloud_image: Option<&CloudImage>) -> Result<bool, Box<dyn Error>> {
         if let Some(cloud_image) = cloud_image {
             let image_name = &cloud_image.name;
@@ -102,10 +107,10 @@ impl DbImageHistory {
                                 return Ok(image_name == &name && checksum == sum && date == d);
                             }
                             (Err(e), Ok(_), Ok(_)) | (Ok(_), Err(e), Ok(_)) | (Ok(_), Ok(_), Err(e)) => {
-                                warn!("Error while getting parameter: {e}")
+                                warn!("Error while getting parameter: {e}");
                             }
                             (Err(e), Err(f), Ok(_)) | (Err(e), Ok(_), Err(f)) | (Ok(_), Err(e), Err(f)) => {
-                                warn!("Error while getting parameters: {e} and {f}")
+                                warn!("Error while getting parameters: {e} and {f}");
                             }
                             (Err(e), Err(f), Err(g)) => warn!("Error while getting parameters: {e}, {f} and {g}"),
                         }

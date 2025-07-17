@@ -14,7 +14,7 @@ pub enum CheckSums {
 }
 
 impl CheckSums {
-    /// Builds a CheckSums structure with the checksum found in
+    /// Builds a `CheckSums` structure with the checksum found in
     /// the line
     fn build_checksums_from_line(line: &str, filename: &str) -> CheckSums {
         if filename.contains("SHA512SUMS") || line.contains("SHA512") {
@@ -47,6 +47,7 @@ impl CheckSums {
     /// all checksums. We decide with its name the kind of checksums
     /// it contains (sha256 or sha512) along with the content of the
     /// line that may also be helpful
+    #[must_use]
     pub fn get_image_checksum_from_checksums_buffer(
         name: &str,
         checksums: &Option<String>,
@@ -55,7 +56,7 @@ impl CheckSums {
         match checksums {
             Some(buffer) => {
                 for line in buffer.lines() {
-                    if !line.is_empty() && !line.starts_with("#") {
+                    if !line.is_empty() && !line.starts_with('#') {
                         trace!("line: {line}");
                         if line.contains(name) {
                             debug!("line: {line}");
@@ -76,7 +77,7 @@ impl fmt::Display for CheckSums {
         match &self {
             CheckSums::None => writeln!(f),
             CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
-                writeln!(f, "{}", checksum)
+                writeln!(f, "{checksum}")
             }
         }
     }
@@ -85,6 +86,7 @@ impl fmt::Display for CheckSums {
 /// Tells if inner String indicates that we are
 /// in presence of a checksum files that contains
 /// all checksums for all downloadable images
+#[must_use]
 pub fn are_all_checksums_in_one_file(inner: &str) -> bool {
     // -CHECKSUM is used in Fedora sites
     // CHECKSUM is used in Centos sites

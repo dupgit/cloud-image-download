@@ -43,7 +43,7 @@ available. It will not upload files directly to the local cloud.
 - **Image manager** (`cloud_image.rs`) manages cloud images that are to be found (from the websites), downloaded and verified
 - **Website manager** (`website.rs`) with the settings loaded, uses
   httpdirectory crate to get the latest images to be downloaded from a
-  website. Multiples latest images can be downloaded from one website (ie: x86_64 and aarch64 images for instance)
+  website. Multiples latest images can be downloaded from one website (ie: `x86_64` and `aarch64` images for instance)
 
 - **The program itself** (`cid.rs`) glues everything to enable downloading
   only latest verified images to a destination path.
@@ -111,7 +111,7 @@ and used to verify the downloaded file.
 
 Deals with different checksum types SHA256 and SHA512 for now.
 Checksum computation and verification is done in the image manager
-module (.verify() method of `CloudImage`)
+module (`verify()` method of `CloudImage`)
 
 #### Image manager
 
@@ -130,33 +130,33 @@ search list instead of the original one.
 
 ### Dependencies
 
-- **base16ct**: Used to encode binary checksums to human readable
+- **`base16ct`**: Used to encode binary checksums to human readable
   base 16 strings
-- **chrono**: Date and time manipulation library
-- **clap**: The defacto standard for command line parsing argument
-- **clap-verbosity**: Manages -v (--verbose) or -q (--quiet) options along
+- **`chrono`**: Date and time manipulation library
+- **`clap`**: The defacto standard for command line parsing argument
+- **`clap-verbosity`**: Manages -v (--verbose) or -q (--quiet) options along
   with the log system.
-- **colored**: To add some colors in log messages
-- **config**: Reading configuration from files and environment variables
-- **const_format**: Formats `CID_USER_AGENT` const string at compile time
-- **directories**: To get user directories from XDG specifications \[1\]
-- **env_logger**: Logger
-- **futures**: Enable iterating in parallel over vectors
-- **httpdirectory**: Parses HTML directories urls and returns a structured
+- **`colored`**: To add some colors in log messages
+- **`config`**: Reading configuration from files and environment variables
+- **`const_format`**: Formats `CID_USER_AGENT` const string at compile time
+- **`directories`**: To get user directories from XDG specifications \[1\]
+- **`env_logger`**: Logger
+- **`futures`**: Enable iterating in parallel over vectors
+- **`httpdirectory`**: Parses HTML directories urls and returns a structured
   vector filled with directories and files
-- **log**: Log system
-- **regex**: Regular expression engine
-- **reqwest**: Interface to http requests helps revrieving web pages
-- **rusqlite**: Gives access to an sqlite database and is used to store the
+- **`log`**: Log system
+- **`regex`**: Regular expression engine
+- **`reqwest`**: Interface to http requests helps revrieving web pages
+- **`rusqlite`**: Gives access to an sqlite database and is used to store the
   download history
-- **serde**: Serialization / Deserialization library used to read the
+- **`serde`**: Serialization / Deserialization library used to read the
   configuration file into a dedicated structure.
-- **sha2**: Widely use library to process sha checksums and all checksums out
+- **`sha2`**: Widely use library to process sha checksums and all checksums out
   there for cloud images are SHA-256 ones.
-- **shellexpand**: expands paths filenames with `~` or variables such as
+- **`shellexpand`**: expands paths filenames with `~` or variables such as
   `${USER}` or `${HOME}`.
-- **tokio**: Used to spawn task to verify file's checksum
-- **trauma**: Downloads files and seems more maintained than downloader crate.
+- **`tokio`**: Used to spawn task to verify file's checksum
+- **`trauma`**: Downloads files and seems more maintained than downloader crate.
 
 
 ## Error management

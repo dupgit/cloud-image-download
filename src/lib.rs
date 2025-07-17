@@ -26,7 +26,7 @@ pub mod download;
 /// Maximum concurrent requests that can be made
 /// for a single website and maximum number of
 /// websites that can be fetched concurrently
-/// This can be set with --concurrent_downloads
+/// This can be set with `concurrent_downloads`
 /// command line option
 pub const CONCURRENT_REQUESTS: usize = 4;
 

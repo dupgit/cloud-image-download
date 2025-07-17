@@ -38,12 +38,9 @@ async fn main() {
     let settings = Settings::from_config(&cli);
     debug!("Settings: {settings:?}");
 
-    let base_dirs = match BaseDirs::new() {
-        Some(b) => b,
-        None => {
-            error!("Unable to get base directories");
-            exit(1);
-        }
+    let Some(base_dirs) = BaseDirs::new() else {
+        error!("Unable to get base directories");
+        exit(1);
     };
 
     let db = DbImageHistory::open(base_dirs.cache_dir().join("cid.sqlite"));
@@ -60,7 +57,9 @@ async fn main() {
 
     let all_ws_image_lists = ws_image_list.collect::<Vec<WSImageList>>().await;
 
-    if !vec_ws_image_lists_is_empty(&all_ws_image_lists) {
+    if vec_ws_image_lists_is_empty(&all_ws_image_lists) {
+        info!("Nothing to do");
+    } else {
         // Downloads images
         let downloaded_summary = download_images(&all_ws_image_lists, &cli.verbose, cli.concurrent_downloads).await;
 
@@ -68,7 +67,5 @@ async fn main() {
         display_download_status_summary(&downloaded_summary, &cli.verbose);
 
         verify_downloaded_file(all_ws_image_lists, db, &downloaded_summary, cli.verify_skipped).await;
-    } else {
-        info!("Nothing to do");
     }
 }

@@ -73,7 +73,7 @@ impl WebSite {
                 if let Some(after) = &self.after_version_url {
                     for after_version in after {
                         // valid url_checked has a trailing /
-                        let url = format!("{}{}", url_checked, after_version);
+                        let url = format!("{url_checked}{after_version}");
                         info!("Adding url '{url}' to list of url for {}", self.name);
                         url_list.push(url);
                     }
@@ -139,6 +139,7 @@ impl WebSite {
 
     /// Returns normalize parameter value for this website.
     /// By default, when not set (None), the value is false.
+    #[must_use]
     pub fn get_normalize(&self) -> bool {
         self.normalize.unwrap_or_default()
     }
@@ -248,12 +249,11 @@ impl WebSite {
 }
 
 impl WSImageList {
-    /// Retrieves for this website all downloadable images and makes an ImageList
-    /// (ie an image url and an associated checksum).
+    /// Retrieves for this website all downloadable images and makes an
+    /// `ImageList` (ie an image url and an associated checksum).
     /// Returns a `WSImageList` formed with the website itself and a vector of
     /// `CloudImage`
     pub async fn get_images_list(website: Arc<WebSite>, concurrent_downloads: usize, db: Arc<DbImageHistory>) -> Self {
-        let mut images_list: Vec<CloudImage> = vec![];
         // Creates a reqwest client to fetch url with.
         let client = reqwest::Client::new();
 
@@ -282,26 +282,30 @@ impl WSImageList {
             .buffered(concurrent_downloads);
 
         let all_cloud_images: Vec<Option<CloudImage>> = lists.collect().await;
+        let images_list: Vec<CloudImage> = all_cloud_images.into_iter().flatten().collect();
 
-        for option_cloud_image in all_cloud_images {
-            if let Some(cloud_image) = option_cloud_image {
-                images_list.push(cloud_image);
-            }
-        }
-
+        /*
+                for option_cloud_image in all_cloud_images {
+                    if let Some(cloud_image) = option_cloud_image {
+                        images_list.push(cloud_image);
+                    }
+                }
+        */
         WSImageList {
-            website,
             images_list,
+            website,
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.images_list.is_empty()
     }
 }
 
-/// Returns true only if all WSImageList contained in the vector
+/// Returns true only if all `WSImageList` contained in the vector
 /// `all_ws_image_list` are empty. Returns false otherwise
+#[must_use]
 pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> bool {
     let mut is_empty = true;
     for ws_image in all_ws_image_lists {

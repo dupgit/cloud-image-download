@@ -22,6 +22,9 @@ pub struct CloudImage {
 }
 
 impl CloudImage {
+    /// Creates a new `CloudImage` structure with `url`,
+    /// `checksum`, `name` and `date` fields
+    #[must_use]
     pub fn new(url: String, checksum: CheckSums, name: String, date: NaiveDateTime) -> Self {
         CloudImage {
             url,
@@ -31,7 +34,10 @@ impl CloudImage {
         }
     }
 
-    /// @todo: simplify and get it shorter
+    /// Normalizes its filename before verifying
+    /// itself that its checsum it correct.
+    //@todo: simplify and get it shorter
+    #[must_use]
     pub fn verify(&self, destination: &Path, normalize: bool) -> bool {
         if let Some(filename) = get_filename_destination(&self.name, destination, normalize, self.date) {
             match verify_file(&filename, &self.checksum) {
@@ -62,10 +68,20 @@ impl CloudImage {
     }
 
     pub fn is_in_db(&self, db: &DbImageHistory) -> bool {
+        // We do not want to fail here and a Result that
+        // is an Err means false by default
         db.is_image_in_db(Some(self)).unwrap_or_default()
     }
 }
 
+/// Verifies a file's (named `filename`) checksum (contained in `checksum`)
+///
+/// # Errors
+///
+/// It will return errors when
+///  - the file can not be opened
+///  - the file can not be read
+// @todo: remove similar code for hashing
 pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>, Box<dyn Error>> {
     let input = match File::open(filename) {
         Ok(input) => input,

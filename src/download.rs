@@ -19,10 +19,11 @@ use trauma::{
     downloader::{Downloader, DownloaderBuilder},
 };
 
-/// Creates a directory if it does not exists. Returns Ok unless create_dir_all() fails.
+/// Creates a directory if it does not exists. Returns Ok unless `create_dir_all()` fails.
 ///
 /// # Errors
-/// returned errors are the ones that `std::fs::create_dir_all()` method
+///
+/// Returned errors are the ones that `std::fs::create_dir_all()` method
 /// returns
 fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     if !path.exists() {
@@ -36,6 +37,7 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
 /// uses `image_date` to format the name of the file with the date
 /// inserted right before the dot (ie for `example.qcow2` you will
 /// get `example-20250710.qcow2` when normalized)
+#[must_use]
 pub fn get_filename_destination(
     image_name: &str,
     file_destination: &Path,
@@ -50,7 +52,7 @@ pub fn get_filename_destination(
         }
     }
     if let Some(filename) = file_destination.join(normalized_image_name).to_str() {
-        return Some(filename.to_string());
+        Some(filename.to_string())
     } else {
         warn!("{image_name} is not a valid UTF-8 string");
         None
@@ -65,6 +67,12 @@ pub fn get_filename_destination(
 ///   of concurrent downloads, if we may display progress bar or
 ///   not
 /// - At last downloads effectively the image files
+///
+/// # Panics
+///
+/// Only if the converted `CARGO_PKG_VERSION` can not be converted
+/// into a `HeaderValue` (`CID_USER_AGENT`) and this should never
+/// happen.
 pub async fn download_images(
     all_ws_image_lists: &Vec<WSImageList>,
     verbose: &Verbosity,
@@ -76,7 +84,7 @@ pub async fn download_images(
     for ws_image in all_ws_image_lists {
         for cloud_image in &ws_image.images_list {
             match create_dir_if_needed(&ws_image.website.destination) {
-                Ok(_) => {
+                Ok(()) => {
                     let normalize = ws_image.website.get_normalize();
                     if let Some(filename) = get_filename_destination(
                         &cloud_image.name,
@@ -97,7 +105,10 @@ pub async fn download_images(
                     }
                 }
                 Err(e) => {
-                    warn!("Error '{e}' while creating destination {:?} directory", &ws_image.website.destination);
+                    warn!(
+                        "Error '{e}' while creating destination {} directory",
+                        &ws_image.website.destination.display()
+                    );
                 }
             }
         }
@@ -143,7 +154,7 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
                     println!("{} Successfully downloaded {}", "🗸".green(), download.filename);
                 }
                 Status::Fail(e) => {
-                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename)
+                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename);
                 }
                 Status::Skipped(e) => {
                     // Probably already downloaded
@@ -152,10 +163,15 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
                         "🗸".green(),
                         download.filename,
                         download.url
-                    )
+                    );
                 }
                 Status::NotStarted => {
-                    println!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url, download.filename)
+                    println!(
+                        "{} Downloading {} to {} has not been started",
+                        "𐄂".red(),
+                        download.url,
+                        download.filename
+                    );
                 }
             }
         }
@@ -165,10 +181,11 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 /// This will tell if an image has effectively been downloaded
 /// using the summary that trauma gives at the end of the
 /// process
+#[must_use]
 pub fn image_has_been_downloaded(
     downloaded_summary: &Vec<Summary>,
     cloud_image: &CloudImage,
-    destination: &PathBuf,
+    destination: &Path,
     verify_skipped: bool,
     normalize: bool,
 ) -> bool {
@@ -190,7 +207,7 @@ pub fn image_has_been_downloaded(
                                 return verify_skipped;
                             }
                         }
-                    };
+                    }
                 }
                 Err(e) => {
                     error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url);
@@ -202,7 +219,7 @@ pub fn image_has_been_downloaded(
 }
 
 /// @todo: Does not limits itself to the numbers of tasks corresponding to
-/// concurrent_downloads command line option
+/// `concurrent_downloads` command line option
 pub async fn verify_downloaded_file(
     all_ws_image_lists: Vec<WSImageList>,
     db: Arc<DbImageHistory>,
@@ -240,7 +257,7 @@ pub async fn verify_downloaded_file(
         match join_handle.await {
             Ok(option_cloud_image) => {
                 if let Some(cloud_image) = option_cloud_image {
-                    db.save_image_in_db(&cloud_image)
+                    db.save_image_in_db(&cloud_image);
                 }
             }
             Err(e) => error!("Error in task: {e}"),
