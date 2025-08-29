@@ -28,7 +28,7 @@ normalize = true
 
 [[sites]]
 name = "Debian"
-version_list = ["bookworm"]
+version_list = ["bookworm", "trixie"]
 base_url = "https://cloud.debian.org/images/cloud/"
-image_name_filter = "debian-12-genericcloud-amd64.*.qcow2"
+image_name_filter = "genericcloud-amd64.*.qcow"
 destination = "/dev/shm/debian"
