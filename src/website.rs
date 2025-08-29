@@ -317,7 +317,7 @@ pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> boo
 /// Returns an url formed with the last directory name found
 /// in the `list_of_entries` if any.
 fn url_with_latest_directory_name(list_of_entries: HttpDirectory, url: &str) -> Option<String> {
-    if let Some(entry) = list_of_entries.sort_by_date(Sorting::Descending).first() {
+    if let Some(entry) = list_of_entries.sort_by_name(Sorting::Descending).first() {
         if let Some(dirname) = entry.dirname() {
             debug!("Adding {dirname}");
             Some(format!("{url}/{dirname}"))
