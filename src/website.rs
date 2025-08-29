@@ -74,15 +74,15 @@ impl WebSite {
                     for after_version in after {
                         // valid url_checked has a trailing /
                         let url = format!("{url_checked}{after_version}");
-                        info!("Adding url '{url}' to list of url for {}", self.name);
+                        info!("[{}] Adding url '{url}' to the list of url", self.name);
                         url_list.push(url);
                     }
                 } else {
-                    info!("Adding url '{url_checked}' to list of url for {}", self.name);
+                    info!("[{}] Adding url '{url_checked}' to the list of url", self.name);
                     url_list.push(url_checked);
                 }
             } else {
-                info!("Adding url '{url}' to list of url for {}", self.name);
+                info!("[{}] Adding url '{url}' to the list of url", self.name);
                 url_list.push(url);
             }
         }
@@ -123,7 +123,7 @@ impl WebSite {
     /// does NOT match with any of the regular expressions found
     /// in `image_name_cleanse` field
     fn clean_httpdir_from_image_name_cleanse_regex(&self, image_list: HttpDirectory) -> HttpDirectory {
-        debug!("Cleaning: {image_list}");
+        debug!("[{}] Cleaning (length: {}): {image_list}", self.name, image_list.len());
         let mut filtered_image_list = image_list;
         if let Some(regex_list_to_remove) = &self.image_name_cleanse {
             for regex_to_remove in regex_list_to_remove {
@@ -133,7 +133,7 @@ impl WebSite {
                 }
             }
         }
-        debug!("Cleaned: {filtered_image_list}");
+        debug!("[{}] Cleaned (length: {}): {filtered_image_list}", self.name, filtered_image_list.len());
         filtered_image_list
     }
 
@@ -166,6 +166,13 @@ impl WebSite {
         // that does not matches *any* of the cimage_name_cleanse regex vector entry
         let url_httpdir = HttpDirectory::new(url).await?;
         let http_image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
+        debug!(
+            "[{}] Retrieved {} files filtered with '{}' filter from {}",
+            self.name,
+            http_image_list.len(),
+            self.image_name_filter,
+            url
+        );
         let http_image_list = self.clean_httpdir_from_image_name_cleanse_regex(http_image_list);
 
         // Keeping only the newest entry from that list
@@ -273,7 +280,7 @@ impl WSImageList {
                     match website.get_latest_image_to_download_from_url(&url, client, &db).await {
                         Ok(cloud_image) => cloud_image,
                         Err(error) => {
-                            error!("Error with url ({url}) retrieving image list: {error}");
+                            error!("[{}] Error with url ({url}) retrieving image list: {error}", website.name);
                             None
                         }
                     }
@@ -282,6 +289,7 @@ impl WSImageList {
             .buffered(concurrent_downloads);
 
         let all_cloud_images: Vec<Option<CloudImage>> = lists.collect().await;
+        debug!("[{}] Number of images: {}", website.name, all_cloud_images.len());
         let images_list: Vec<CloudImage> = all_cloud_images.into_iter().flatten().collect();
 
         /*

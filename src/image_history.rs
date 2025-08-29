@@ -21,7 +21,7 @@ impl DbImageHistory {
     /// the program otherwise).
     #[must_use]
     pub fn open(path: PathBuf) -> Self {
-        info!("Opening the database");
+        info!("Opening the database ({path:?})");
         // Converts PathBuf to &str for shellexpand's call
         let path_os_string = path.into_os_string();
         let Some(db_str) = path_os_string.as_os_str().to_str() else {
