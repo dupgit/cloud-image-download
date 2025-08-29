@@ -90,3 +90,20 @@ fn test_db_path_settings_from_config() {
     let settings = Settings::from_config(&cli);
     assert_eq!(settings.db_path, Some("/var/lib/cid".to_string()));
 }
+
+// Tests default
+#[test]
+fn test_db_path_settings_default() {
+    use clap_verbosity_flag::Verbosity;
+
+    let cli = Cli {
+        db_path: None,
+        config: "test_data/no_db_path.toml".to_string(),
+        verbose: Verbosity::new(0, 0),
+        concurrent_downloads: 2,
+        verify_skipped: false,
+    };
+
+    let settings = Settings::from_config(&cli);
+    assert_eq!(settings.db_path, None);
+}

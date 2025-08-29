@@ -1,0 +1,32 @@
+[[sites]]
+name = "Centos"
+version_list = ["9-stream", "10-stream"]
+base_url = "http://cloud.centos.org/centos"
+after_version_url = ["x86_64/images"]
+image_name_filter = "CentOS-Stream-GenericCloud"
+image_name_cleanse = ["latest", "-x86_64"]
+destination = "/dev/shm/centos"
+
+[[sites]]
+name = "Ubuntu"
+version_list = ["focal", "jammy", "noble"]
+base_url = "https://cloud-images.ubuntu.com"
+image_name_filter = "server-cloudimg-amd64.img"
+destination = "/dev/shm/ubuntu"
+normalize = true
+
+[[sites]]
+name = "Fedora"
+version_list = ["releases"]
+base_url = "https://mirrors.ircam.fr/pub/fedora/linux"
+after_version_url = ["Cloud/x86_64/images", "Cloud/aarch64/images"]
+image_name_filter = "Fedora-Cloud-Base-Generic"
+destination = "/dev/shm/fedora"
+normalize = true
+
+[[sites]]
+name = "Debian"
+version_list = ["bookworm", "trixie"]
+base_url = "https://cloud.debian.org/images/cloud/"
+image_name_filter = "genericcloud-amd64.*.qcow"
+destination = "/dev/shm/debian"
