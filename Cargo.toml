@@ -24,7 +24,7 @@ httpdirectory = "0.15.0"
 log = "0.4.22"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["stream"] }
-rusqlite = { version = "0.36.0", features = ["bundled"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { version = "1.0.217", features = ["derive"] }
 sha2 = "0.10.8"
 shellexpand = { version = "3.1.0", features = ["full"] }
