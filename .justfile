@@ -53,11 +53,11 @@ git-publish:
     git push --tags
 
 # Publishing to crates.io
-rust-publish:
-    cargo publish
+#rust-publish:
+#    cargo publish
 
 # Publishing to git and then to crates.io
-publish: git-publish rust-publish
+publish: git-publish # rust-publish
 
 # Runs a coverage test and open it's result in a web browser
 coverage:
