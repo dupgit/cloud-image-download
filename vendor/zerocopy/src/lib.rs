@@ -821,7 +821,7 @@ pub unsafe trait KnownLayout {
         let meta = Self::pointer_to_metadata(ptr.as_ptr());
         // SAFETY: `size_for_metadata` promises to only return `None` if the
         // resulting size would not fit in a `usize`.
-        meta.size_for_metadata(Self::LAYOUT)
+        Self::size_for_metadata(meta)
     }
 
     #[doc(hidden)]
@@ -830,6 +830,37 @@ pub unsafe trait KnownLayout {
     fn raw_dangling() -> NonNull<Self> {
         let meta = Self::PointerMetadata::from_elem_count(0);
         Self::raw_from_ptr_len(NonNull::dangling(), meta)
+    }
+
+    /// Computes the size of an object of type `Self` with the given pointer
+    /// metadata.
+    ///
+    /// # Safety
+    ///
+    /// `size_for_metadata` promises to return `None` if and only if the
+    /// resulting size would not fit in a `usize`. Note that the returned size
+    /// could exceed the actual maximum valid size of an allocated object,
+    /// `isize::MAX`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zerocopy::KnownLayout;
+    ///
+    /// assert_eq!(u8::size_for_metadata(()), Some(1));
+    /// assert_eq!(u16::size_for_metadata(()), Some(2));
+    /// assert_eq!(<[u8]>::size_for_metadata(42), Some(42));
+    /// assert_eq!(<[u16]>::size_for_metadata(42), Some(84));
+    ///
+    /// // This size exceeds the maximum valid object size (`isize::MAX`):
+    /// assert_eq!(<[u8]>::size_for_metadata(usize::MAX), Some(usize::MAX));
+    ///
+    /// // This size, if computed, would exceed `usize::MAX`:
+    /// assert_eq!(<[u16]>::size_for_metadata(usize::MAX), None);
+    /// ```
+    #[inline(always)]
+    fn size_for_metadata(meta: Self::PointerMetadata) -> Option<usize> {
+        meta.size_for_metadata(Self::LAYOUT)
     }
 }
 
@@ -3367,11 +3398,10 @@ pub unsafe trait FromZeros: TryFromBytes {
 ///
 /// - If the type is a struct, all of its fields must be `FromBytes`.
 /// - If the type is an enum:
-///   - It must have a defined representation (`repr`s `u8`, `u16`, `u32`,
-///     `u64`, `usize`, `i8`, `i16`, `i32`, `i64`, or `isize`).
+///   - It must have a defined representation which is one of `u8`, `u16`, `i8`,
+///     or `i16`.
 ///   - The maximum number of discriminants must be used (so that every possible
-///     bit pattern is a valid one). Be very careful when using the `usize` or
-///     `isize` representations, as their size is platform-dependent.
+///     bit pattern is a valid one).
 ///   - Its fields must be `FromBytes`.
 ///
 /// This analysis is subject to change. Unsafe code may *only* rely on the
@@ -5722,26 +5752,30 @@ mod tests {
             };
         }
 
-        let layout = |offset, align, _trailing_slice_elem_size| DstLayout {
-            align: NonZeroUsize::new(align).unwrap(),
-            size_info: match _trailing_slice_elem_size {
-                None => SizeInfo::Sized { size: offset },
-                Some(elem_size) => SizeInfo::SliceDst(TrailingSliceLayout { offset, elem_size }),
-            },
-        };
+        let layout =
+            |offset, align, trailing_slice_elem_size, statically_shallow_unpadded| DstLayout {
+                align: NonZeroUsize::new(align).unwrap(),
+                size_info: match trailing_slice_elem_size {
+                    None => SizeInfo::Sized { size: offset },
+                    Some(elem_size) => {
+                        SizeInfo::SliceDst(TrailingSliceLayout { offset, elem_size })
+                    }
+                },
+                statically_shallow_unpadded,
+            };
 
-        test!((), layout(0, 1, None));
-        test!(u8, layout(1, 1, None));
+        test!((), layout(0, 1, None, false));
+        test!(u8, layout(1, 1, None, false));
         // Use `align_of` because `u64` alignment may be smaller than 8 on some
         // platforms.
-        test!(u64, layout(8, mem::align_of::<u64>(), None));
-        test!(AU64, layout(8, 8, None));
+        test!(u64, layout(8, mem::align_of::<u64>(), None, false));
+        test!(AU64, layout(8, 8, None, false));
 
         test!(Option<&'static ()>, usize::LAYOUT);
 
-        test!([()], layout(0, 1, Some(0)));
-        test!([u8], layout(0, 1, Some(1)));
-        test!(str, layout(0, 1, Some(1)));
+        test!([()], layout(0, 1, Some(0), true));
+        test!([u8], layout(0, 1, Some(1), true));
+        test!(str, layout(0, 1, Some(1), true));
     }
 
     #[cfg(feature = "derive")]
@@ -5796,11 +5830,13 @@ mod tests {
         let sized_layout = |align, size| DstLayout {
             align: NonZeroUsize::new(align).unwrap(),
             size_info: SizeInfo::Sized { size },
+            statically_shallow_unpadded: false,
         };
 
-        let unsized_layout = |align, elem_size, offset| DstLayout {
+        let unsized_layout = |align, elem_size, offset, statically_shallow_unpadded| DstLayout {
             align: NonZeroUsize::new(align).unwrap(),
             size_info: SizeInfo::SliceDst(TrailingSliceLayout { offset, elem_size }),
+            statically_shallow_unpadded,
         };
 
         // | `repr(C)`? | generic? | `KnownLayout`? | `Sized`? | Type Name |
@@ -5928,7 +5964,7 @@ mod tests {
             .pad_to_align();
 
         assert_eq!(<KL10 as KnownLayout>::LAYOUT, expected);
-        assert_eq!(<KL10 as KnownLayout>::LAYOUT, unsized_layout(4, 1, 4));
+        assert_eq!(<KL10 as KnownLayout>::LAYOUT, unsized_layout(4, 1, 4, false));
 
         // ...with `align(N)`:
         #[allow(dead_code)]
@@ -5944,7 +5980,7 @@ mod tests {
             .pad_to_align();
 
         assert_eq!(<KL10Align as KnownLayout>::LAYOUT, expected);
-        assert_eq!(<KL10Align as KnownLayout>::LAYOUT, unsized_layout(64, 1, 4));
+        assert_eq!(<KL10Align as KnownLayout>::LAYOUT, unsized_layout(64, 1, 4, false));
 
         // ...with `packed`:
         #[allow(dead_code)]
@@ -5960,7 +5996,7 @@ mod tests {
             .pad_to_align();
 
         assert_eq!(<KL10Packed as KnownLayout>::LAYOUT, expected);
-        assert_eq!(<KL10Packed as KnownLayout>::LAYOUT, unsized_layout(1, 1, 4));
+        assert_eq!(<KL10Packed as KnownLayout>::LAYOUT, unsized_layout(1, 1, 4, false));
 
         // ...with `packed(N)`:
         #[allow(dead_code)]
@@ -5976,7 +6012,7 @@ mod tests {
             .pad_to_align();
 
         assert_eq!(<KL10PackedN as KnownLayout>::LAYOUT, expected);
-        assert_eq!(<KL10PackedN as KnownLayout>::LAYOUT, unsized_layout(2, 1, 4));
+        assert_eq!(<KL10PackedN as KnownLayout>::LAYOUT, unsized_layout(2, 1, 4, false));
 
         // | `repr(C)`? | generic? | `KnownLayout`? | `Sized`? | Type Name |
         // |          Y |        N |              Y |        Y |      KL11 |
@@ -6082,11 +6118,11 @@ mod tests {
 
         assert_eq!(<KLTU<(), AU16> as KnownLayout>::LAYOUT, sized_layout(2, 2));
 
-        assert_eq!(<KLTU<(), [()]> as KnownLayout>::LAYOUT, unsized_layout(1, 0, 0));
+        assert_eq!(<KLTU<(), [()]> as KnownLayout>::LAYOUT, unsized_layout(1, 0, 0, false));
 
-        assert_eq!(<KLTU<(), [u8]> as KnownLayout>::LAYOUT, unsized_layout(1, 1, 0));
+        assert_eq!(<KLTU<(), [u8]> as KnownLayout>::LAYOUT, unsized_layout(1, 1, 0, false));
 
-        assert_eq!(<KLTU<(), [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 0));
+        assert_eq!(<KLTU<(), [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 0, false));
 
         assert_eq!(<KLTU<u8, ()> as KnownLayout>::LAYOUT, sized_layout(1, 1));
 
@@ -6094,11 +6130,11 @@ mod tests {
 
         assert_eq!(<KLTU<u8, AU16> as KnownLayout>::LAYOUT, sized_layout(2, 4));
 
-        assert_eq!(<KLTU<u8, [()]> as KnownLayout>::LAYOUT, unsized_layout(1, 0, 1));
+        assert_eq!(<KLTU<u8, [()]> as KnownLayout>::LAYOUT, unsized_layout(1, 0, 1, false));
 
-        assert_eq!(<KLTU<u8, [u8]> as KnownLayout>::LAYOUT, unsized_layout(1, 1, 1));
+        assert_eq!(<KLTU<u8, [u8]> as KnownLayout>::LAYOUT, unsized_layout(1, 1, 1, false));
 
-        assert_eq!(<KLTU<u8, [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 2));
+        assert_eq!(<KLTU<u8, [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 2, false));
 
         assert_eq!(<KLTU<AU16, ()> as KnownLayout>::LAYOUT, sized_layout(2, 2));
 
@@ -6106,11 +6142,11 @@ mod tests {
 
         assert_eq!(<KLTU<AU16, AU16> as KnownLayout>::LAYOUT, sized_layout(2, 4));
 
-        assert_eq!(<KLTU<AU16, [()]> as KnownLayout>::LAYOUT, unsized_layout(2, 0, 2));
+        assert_eq!(<KLTU<AU16, [()]> as KnownLayout>::LAYOUT, unsized_layout(2, 0, 2, false));
 
-        assert_eq!(<KLTU<AU16, [u8]> as KnownLayout>::LAYOUT, unsized_layout(2, 1, 2));
+        assert_eq!(<KLTU<AU16, [u8]> as KnownLayout>::LAYOUT, unsized_layout(2, 1, 2, false));
 
-        assert_eq!(<KLTU<AU16, [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 2));
+        assert_eq!(<KLTU<AU16, [AU16]> as KnownLayout>::LAYOUT, unsized_layout(2, 2, 2, false));
 
         // Test a variety of field counts.
 
@@ -6124,25 +6160,25 @@ mod tests {
         #[repr(C)]
         struct KLF1([u8]);
 
-        assert_eq!(<KLF1 as KnownLayout>::LAYOUT, unsized_layout(1, 1, 0));
+        assert_eq!(<KLF1 as KnownLayout>::LAYOUT, unsized_layout(1, 1, 0, true));
 
         #[derive(KnownLayout)]
         #[repr(C)]
         struct KLF2(NotKnownLayout<u8>, [u8]);
 
-        assert_eq!(<KLF2 as KnownLayout>::LAYOUT, unsized_layout(1, 1, 1));
+        assert_eq!(<KLF2 as KnownLayout>::LAYOUT, unsized_layout(1, 1, 1, false));
 
         #[derive(KnownLayout)]
         #[repr(C)]
         struct KLF3(NotKnownLayout<u8>, NotKnownLayout<AU16>, [u8]);
 
-        assert_eq!(<KLF3 as KnownLayout>::LAYOUT, unsized_layout(2, 1, 4));
+        assert_eq!(<KLF3 as KnownLayout>::LAYOUT, unsized_layout(2, 1, 4, false));
 
         #[derive(KnownLayout)]
         #[repr(C)]
         struct KLF4(NotKnownLayout<u8>, NotKnownLayout<AU16>, NotKnownLayout<AU32>, [u8]);
 
-        assert_eq!(<KLF4 as KnownLayout>::LAYOUT, unsized_layout(4, 1, 8));
+        assert_eq!(<KLF4 as KnownLayout>::LAYOUT, unsized_layout(4, 1, 8, false));
     }
 
     #[test]

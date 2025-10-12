@@ -2,8 +2,8 @@ use std::error::Error;
 use std::fmt;
 use std::result;
 
-use serde::de;
-use serde::ser;
+use serde_core::de;
+use serde_core::ser;
 
 #[allow(unnameable_types)] // Unsure if/how to expose this
 #[derive(Debug)]
@@ -230,7 +230,7 @@ impl fmt::Display for ConfigError {
             ConfigError::Foreign(ref cause) => write!(f, "{cause}"),
 
             ConfigError::NotFound(ref key) => {
-                write!(f, "configuration property {key:?} not found")
+                write!(f, "missing configuration field {key:?}")
             }
 
             ConfigError::Type {
@@ -288,6 +288,10 @@ impl Error for ConfigError {}
 impl de::Error for ConfigError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Self::Message(msg.to_string())
+    }
+
+    fn missing_field(field: &'static str) -> Self {
+        Self::NotFound(field.into())
     }
 }
 

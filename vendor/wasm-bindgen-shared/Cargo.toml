@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.57"
 name = "wasm-bindgen-shared"
-version = "0.2.100"
+version = "0.2.104"
 authors = ["The wasm-bindgen Developers"]
 build = "build.rs"
 links = "wasm_bindgen"
@@ -31,11 +31,11 @@ description = """
 Shared support between wasm-bindgen and wasm-bindgen cli, an internal
 dependency.
 """
-homepage = "https://rustwasm.github.io/wasm-bindgen/"
+homepage = "https://wasm-bindgen.github.io/wasm-bindgen/"
 documentation = "https://docs.rs/wasm-bindgen-shared"
 readme = false
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/shared"
+repository = "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared"
 
 [lib]
 name = "wasm_bindgen_shared"
@@ -50,3 +50,11 @@ new_without_default = "allow"
 overly_complex_bool_expr = "allow"
 too_many_arguments = "allow"
 type_complexity = "allow"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = [
+    "cfg(wasm_bindgen_unstable_test_coverage)",
+    "cfg(xxx_debug_only_print_generated_code)",
+]

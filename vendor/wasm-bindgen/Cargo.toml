@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.57"
 name = "wasm-bindgen"
-version = "0.2.100"
+version = "0.2.104"
 authors = ["The wasm-bindgen Developers"]
 build = "build.rs"
 include = [
@@ -29,15 +29,31 @@ autobenches = false
 description = """
 Easy support for interacting between JS and Rust.
 """
-homepage = "https://rustwasm.github.io/"
+homepage = "https://wasm-bindgen.github.io/wasm-bindgen"
 documentation = "https://docs.rs/wasm-bindgen"
 readme = "README.md"
 categories = ["wasm"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/rustwasm/wasm-bindgen"
+repository = "https://github.com/wasm-bindgen/wasm-bindgen"
 
 [package.metadata.docs.rs]
 features = ["serde-serialize"]
+
+[features]
+default = ["std"]
+enable-interning = ["std"]
+gg-alloc = []
+msrv = []
+rustversion = []
+serde-serialize = [
+    "serde",
+    "serde_json",
+    "std",
+]
+spans = []
+std = []
+strict-macro = ["wasm-bindgen-macro/strict-macro"]
+xxx_debug_only_print_generated_code = []
 
 [lib]
 name = "wasm_bindgen"
@@ -51,10 +67,6 @@ version = "1.0.0"
 version = "1.12"
 default-features = false
 
-[dependencies.rustversion]
-version = "1.0"
-optional = true
-
 [dependencies.serde]
 version = "1.0"
 optional = true
@@ -64,28 +76,17 @@ version = "1.0"
 optional = true
 
 [dependencies.wasm-bindgen-macro]
-version = "=0.2.100"
+version = "=0.2.104"
+
+[dependencies.wasm-bindgen-shared]
+version = "=0.2.104"
 
 [dev-dependencies.once_cell]
 version = "1"
 
-[features]
-default = [
-    "std",
-    "msrv",
-]
-enable-interning = ["std"]
-gg-alloc = []
-msrv = ["rustversion"]
-serde-serialize = [
-    "serde",
-    "serde_json",
-    "std",
-]
-spans = []
-std = []
-strict-macro = ["wasm-bindgen-macro/strict-macro"]
-xxx_debug_only_print_generated_code = ["wasm-bindgen-macro/xxx_debug_only_print_generated_code"]
+[build-dependencies.rustversion-compat]
+version = "1.0"
+package = "rustversion"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.paste]
 version = "1"
@@ -103,4 +104,7 @@ type_complexity = "allow"
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(wasm_bindgen_unstable_test_coverage)"]
+check-cfg = [
+    "cfg(wasm_bindgen_unstable_test_coverage)",
+    "cfg(xxx_debug_only_print_generated_code)",
+]

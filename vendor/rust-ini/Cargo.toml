@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.64"
 name = "rust-ini"
-version = "0.21.2"
+version = "0.21.3"
 authors = ["Y. T. Chung <zonyitoo@gmail.com>"]
 build = false
 autolib = false

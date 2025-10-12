@@ -323,7 +323,7 @@ pub(crate) unsafe fn new_box<T>(
 where
     T: ?Sized + crate::KnownLayout,
 {
-    let size = match meta.size_for_metadata(T::LAYOUT) {
+    let size = match T::size_for_metadata(meta) {
         Some(size) => size,
         None => return Err(AllocError),
     };
@@ -370,7 +370,8 @@ where
         //
         // SAFETY: any initialized bit sequence is a bit-valid `*mut u8`. All
         // bits of a `usize` are initialized.
-        #[allow(clippy::useless_transmute)]
+        #[allow(unknown_lints)] // For `integer_to_ptr_transmutes`
+        #[allow(clippy::useless_transmute, integer_to_ptr_transmutes)]
         let dangling = unsafe { mem::transmute::<usize, *mut u8>(align) };
         // SAFETY: `dangling` is constructed from `T::LAYOUT.align`, which is a
         // `NonZeroUsize`, which is guaranteed to be non-zero.
@@ -515,11 +516,15 @@ mod len_of {
                 // This can return `None` if the metadata describes an object
                 // which can't fit in an `isize`.
                 Some(meta) => {
-                    let size = match meta.size_for_metadata(T::LAYOUT) {
+                    let size = match T::size_for_metadata(meta) {
                         Some(size) => size,
                         None => return Err(MetadataCastError::Size),
                     };
-                    DstLayout { align: T::LAYOUT.align, size_info: crate::SizeInfo::Sized { size } }
+                    DstLayout {
+                        align: T::LAYOUT.align,
+                        size_info: crate::SizeInfo::Sized { size },
+                        statically_shallow_unpadded: false,
+                    }
                 }
             };
             // Lemma 0: By contract on `validate_cast_and_convert_metadata`, if
@@ -789,13 +794,6 @@ pub(crate) mod testutil {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             Display::fmt(&self.0, f)
         }
-    }
-
-    #[derive(Immutable, FromBytes, Eq, PartialEq, Ord, PartialOrd, Default, Debug, Copy, Clone)]
-    #[repr(C)]
-    pub(crate) struct Nested<T, U: ?Sized> {
-        _t: T,
-        _u: U,
     }
 }
 

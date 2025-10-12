@@ -35,6 +35,10 @@ fn main() {
     // enable the libc backend even if rustix is depended on transitively.
     let cfg_use_libc = var("CARGO_CFG_RUSTIX_USE_LIBC").is_ok();
 
+    // Check for `RUSTFLAGS=--cfg=rustix_no_linux_raw`. This allows Linux users to
+    // enable the libc backend without the linux raw dependency.
+    let cfg_no_linux_raw = var("CARGO_CFG_RUSTIX_NO_LINUX_RAW").is_ok();
+
     // Check for `--features=rustc-dep-of-std`.
     let rustc_dep_of_std = var("CARGO_FEATURE_RUSTC_DEP_OF_STD").is_ok();
 
@@ -79,6 +83,15 @@ fn main() {
         use_feature("static_assertions");
     }
 
+    // `LowerExp`/`UpperExp` for `NonZeroI32` etc.
+    if has_lower_upper_exp_for_non_zero() {
+        use_feature("lower_upper_exp_for_non_zero");
+    }
+
+    if can_compile("#[diagnostic::on_unimplemented()] trait Foo {}") {
+        use_feature("rustc_diagnostics")
+    }
+
     // WASI support can utilize wasi_ext if present.
     if os == "wasi" {
         use_feature_or_nothing("wasi_ext");
@@ -103,10 +116,15 @@ fn main() {
             || arch.starts_with("mips"))
             && !rustix_use_experimental_asm);
     if libc {
+        if os != "android" && os == "linux" && !cfg_no_linux_raw {
+            use_feature("linux_raw_dep");
+        }
+
         // Use the libc backend.
         use_feature("libc");
     } else {
         // Use the linux_raw backend.
+        use_feature("linux_raw_dep");
         use_feature("linux_raw");
         if rustix_use_experimental_asm {
             use_feature("asm_experimental_arch");
@@ -188,6 +206,12 @@ fn use_thumb_mode() -> bool {
     !can_compile("pub unsafe fn f() { core::arch::asm!(\"udf #16\", in(\"r7\") 0); }")
 }
 
+fn has_lower_upper_exp_for_non_zero() -> bool {
+    // LowerExp/UpperExp for NonZero* were added in Rust 1.84.
+    // <https://doc.rust-lang.org/stable/std/fmt/trait.LowerExp.html#impl-LowerExp-for-NonZero%3CT%3E>
+    can_compile("fn a(x: &core::num::NonZeroI32, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { core::fmt::LowerExp::fmt(x, f) }")
+}
+
 fn use_feature_or_nothing(feature: &str) {
     if has_feature(feature) {
         use_feature(feature);
@@ -234,7 +258,7 @@ fn can_compile<T: AsRef<str>>(test: T) -> bool {
         .arg("--target")
         .arg(target)
         .arg("-o")
-        .arg("-")
+        .arg(std::env::temp_dir().join("rustix_test_can_compile"))
         .stdout(Stdio::null()); // We don't care about the output (only whether it builds or not)
 
     // If Cargo wants to set RUSTFLAGS, use that.

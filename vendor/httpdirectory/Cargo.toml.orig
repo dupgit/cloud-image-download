@@ -1,0 +1,33 @@
+[package]
+name = "httpdirectory"
+version = "0.15.2"
+edition = "2024"
+authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
+description = "Crawls directory webpage (HTTP index) into a structure"
+repository = "https://github.com/dupgit/httpdirectory"
+license = "MIT OR Apache-2.0"
+keywords = ["http", "directory", "file", "autoindex"]
+categories = ["web-programming", "parsing"]
+
+[dependencies]
+chrono = "0.4.40"
+colored = { version = "3.0.0" }
+const_format = "0.2.34"
+env_logger = "0.11.8"
+log = "0.4.27"
+regex = "1.11.1"
+reqwest = { version = "0.12.15", features = ["charset"] }
+scraper = "0.24.0"
+tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
+url = "2.5.4"
+
+[dev-dependencies]
+httpmock = "0.8.1"
+criterion = { version = "0.7", features = ["html_reports"] }
+
+[[bench]]
+name = "filtering_bench"
+harness = false
+
+[lints.clippy]
+pedantic = "warn"

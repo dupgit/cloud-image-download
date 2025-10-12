@@ -1,6 +1,7 @@
-#![allow(dead_code)]
-#[macro_use]
-extern crate derive_more;
+#![cfg_attr(not(feature = "std"), no_std)]
+#![allow(dead_code)] // some code is tested for type checking only
+
+use derive_more::Mul;
 
 #[derive(Mul)]
 struct MyInt(i32);

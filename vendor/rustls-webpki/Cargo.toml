@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls-webpki"
-version = "0.103.4"
+version = "0.103.7"
 build = false
 include = [
     "Cargo.toml",
@@ -72,7 +72,7 @@ allowed_external_types = [
 all-features = true
 rustdoc-args = [
     "--cfg",
-    "docsrs",
+    "webpki_docsrs",
 ]
 
 [features]
@@ -105,7 +105,7 @@ name = "webpki"
 path = "src/lib.rs"
 
 [dependencies.aws-lc-rs]
-version = "1.9"
+version = "1.14"
 optional = true
 default-features = false
 
@@ -135,7 +135,7 @@ version = "0.6"
 version = "1.17.2"
 
 [dev-dependencies.rcgen]
-version = "0.14"
+version = "0.14.2"
 features = ["aws_lc_rs"]
 default-features = false
 
@@ -145,6 +145,11 @@ features = ["derive"]
 
 [dev-dependencies.serde_json]
 version = "1.0"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(webpki_docsrs)"]
 
 [profile.bench]
 opt-level = 3

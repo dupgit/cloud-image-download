@@ -1,9 +1,32 @@
+use regex::Regex;
+
 /// Site type enumeration.
 #[derive(Debug, PartialEq, Eq)]
 pub enum SiteType {
+    NotNamed(PureHtml),
+    None,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PureHtml {
     Table,
     Pre,
-    None,
+}
+
+// <table> detection is considered valid if
+// we can match a column name "Modified",
+// "Last Modified" or "Date" within the table
+fn detect_table(body: &str) -> bool {
+    // Some websites prints "Modified" instead of "Last modified"
+    let re = Regex::new(r"(?msi)<table(.+?<th.+?(Last )?modified.+?</th.+?)</table").unwrap();
+
+    if re.is_match(body) {
+        true
+    } else {
+        // Some websites prints "Date" instead of "Last modified"
+        let re = Regex::new(r"(?msi)<table(.+?<th.+?Date.+?</th.+?)</table").unwrap();
+        re.is_match(body)
+    }
 }
 
 impl SiteType {
@@ -14,10 +37,10 @@ impl SiteType {
         // `<table>` tag may contain attributes such as
         // `id="indexlist"` for instance so we need to
         // search without the closing `>` tag sign
-        if body.contains("<table") {
-            SiteType::Table
+        if detect_table(body) {
+            SiteType::NotNamed(PureHtml::Table)
         } else if body.contains("<pre>") {
-            SiteType::Pre
+            SiteType::NotNamed(PureHtml::Pre)
         } else {
             SiteType::None
         }
@@ -26,7 +49,7 @@ impl SiteType {
 
 #[cfg(test)]
 mod tests {
-    use crate::detect::SiteType;
+    use crate::detect::{PureHtml, SiteType};
 
     #[test]
     fn test_empty_body() {
@@ -44,7 +67,7 @@ mod tests {
               </table>
             "#;
 
-        assert_eq!(SiteType::detect(body), SiteType::Table);
+        assert_eq!(SiteType::detect(body), SiteType::NotNamed(PureHtml::Table));
     }
 
     #[test]
@@ -75,6 +98,6 @@ mod tests {
             </pre><hr>
             "##;
 
-        assert_eq!(SiteType::detect(body), SiteType::Pre);
+        assert_eq!(SiteType::detect(body), SiteType::NotNamed(PureHtml::Pre));
     }
 }

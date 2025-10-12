@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.63"
 name = "hyper-util"
-version = "0.1.15"
+version = "0.1.17"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 autolib = false
@@ -49,6 +49,7 @@ rustdoc-args = [
 __internal_happy_eyeballs_tests = []
 client = [
     "hyper/client",
+    "tokio/net",
     "dep:tracing",
     "dep:futures-channel",
     "dep:tower-service",
@@ -100,7 +101,6 @@ server-graceful = [
 service = ["dep:tower-service"]
 tokio = [
     "dep:tokio",
-    "tokio/net",
     "tokio/rt",
     "tokio/time",
 ]
@@ -189,7 +189,7 @@ optional = true
 version = "0.2.4"
 
 [dependencies.socket2]
-version = "0.5.9"
+version = ">=0.5.9, <0.7"
 features = ["all"]
 optional = true
 

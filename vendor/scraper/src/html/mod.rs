@@ -89,6 +89,7 @@ impl Html {
             Default::default(),
             QualName::new(None, ns!(html), local_name!("body")),
             Vec::new(),
+            false,
         );
         parser.one(fragment)
     }
@@ -103,7 +104,7 @@ impl Html {
     }
 
     /// Returns the root `<html>` element.
-    pub fn root_element(&self) -> ElementRef {
+    pub fn root_element(&self) -> ElementRef<'_> {
         let root_node = self
             .tree
             .root()

@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "rusqlite"
-version = "0.36.0"
+version = "0.37.0"
 authors = ["The rusqlite developers"]
 build = false
 exclude = [
@@ -251,7 +251,7 @@ optional = true
 default-features = false
 
 [dependencies.libsqlite3-sys]
-version = "0.34.0"
+version = "0.35.0"
 
 [dependencies.rusqlite-macros]
 version = "0.4.1"

@@ -13,10 +13,11 @@
 edition = "2018"
 rust-version = "1.51"
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 authors = ["Carl Lerche <me@carllerche.com>"]
 build = false
 exclude = ["/.*"]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -35,6 +36,10 @@ categories = [
 ]
 license = "MIT"
 repository = "https://github.com/tokio-rs/slab"
+
+[features]
+default = ["std"]
+std = []
 
 [lib]
 name = "slab"
@@ -60,7 +65,3 @@ features = ["derive"]
 
 [dev-dependencies.serde_test]
 version = "1"
-
-[features]
-default = ["std"]
-std = []

@@ -7,51 +7,70 @@ pub(crate) struct KeySerializer<'d> {
     pub(crate) dst: &'d mut String,
 }
 
-impl serde::ser::Serializer for KeySerializer<'_> {
+impl serde_core::ser::Serializer for KeySerializer<'_> {
     type Ok = ();
     type Error = Error;
-    type SerializeSeq = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeTuple = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeTupleStruct = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeTupleVariant = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeMap = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeStruct = serde::ser::Impossible<Self::Ok, Error>;
-    type SerializeStructVariant = serde::ser::Impossible<Self::Ok, Error>;
+    type SerializeSeq = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeTuple = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeTupleStruct = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeTupleVariant = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeMap = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeStruct = serde_core::ser::Impossible<Self::Ok, Error>;
+    type SerializeStructVariant = serde_core::ser::Impossible<Self::Ok, Error>;
 
-    fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_i16(self, _v: i16) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_i32(self, _v: i32) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_u16(self, _v: u16) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_u32(self, _v: u32) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
-    fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
+    }
+
+    fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
+    }
+
+    fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
+        self.dst.key(v.to_string())?;
+        Ok(())
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
@@ -62,8 +81,11 @@ impl serde::ser::Serializer for KeySerializer<'_> {
         Err(Error::key_not_string())
     }
 
-    fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(Error::key_not_string())
+    fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
+        let mut b = [0; 4];
+        let result = v.encode_utf8(&mut b);
+        self.dst.key(&*result)?;
+        Ok(())
     }
 
     fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
@@ -81,7 +103,7 @@ impl serde::ser::Serializer for KeySerializer<'_> {
 
     fn serialize_some<T>(self, _value: &T) -> Result<Self::Ok, Self::Error>
     where
-        T: serde::ser::Serialize + ?Sized,
+        T: serde_core::ser::Serialize + ?Sized,
     {
         Err(Error::key_not_string())
     }
@@ -110,7 +132,7 @@ impl serde::ser::Serializer for KeySerializer<'_> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
-        T: serde::ser::Serialize + ?Sized,
+        T: serde_core::ser::Serialize + ?Sized,
     {
         value.serialize(self)
     }
@@ -123,7 +145,7 @@ impl serde::ser::Serializer for KeySerializer<'_> {
         _value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
-        T: serde::ser::Serialize + ?Sized,
+        T: serde_core::ser::Serialize + ?Sized,
     {
         Err(Error::key_not_string())
     }

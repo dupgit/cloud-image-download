@@ -13,9 +13,16 @@
 edition = "2021"
 rust-version = "1.64.0"
 name = "reqwest"
-version = "0.12.22"
+version = "0.12.23"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
+include = [
+    "README.md",
+    "Cargo.toml",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "src/**/*.rs",
+]
 autolib = false
 autobins = false
 autoexamples = false
@@ -198,133 +205,6 @@ zstd = [
 name = "reqwest"
 path = "src/lib.rs"
 
-[[example]]
-name = "blocking"
-path = "examples/blocking.rs"
-required-features = ["blocking"]
-
-[[example]]
-name = "connect_via_lower_priority_tokio_runtime"
-path = "examples/connect_via_lower_priority_tokio_runtime.rs"
-
-[[example]]
-name = "form"
-path = "examples/form.rs"
-
-[[example]]
-name = "h3_simple"
-path = "examples/h3_simple.rs"
-required-features = [
-    "http3",
-    "rustls-tls",
-]
-
-[[example]]
-name = "json_dynamic"
-path = "examples/json_dynamic.rs"
-required-features = ["json"]
-
-[[example]]
-name = "json_typed"
-path = "examples/json_typed.rs"
-required-features = ["json"]
-
-[[example]]
-name = "simple"
-path = "examples/simple.rs"
-
-[[example]]
-name = "tor_socks"
-path = "examples/tor_socks.rs"
-required-features = ["socks"]
-
-[[test]]
-name = "badssl"
-path = "tests/badssl.rs"
-
-[[test]]
-name = "blocking"
-path = "tests/blocking.rs"
-required-features = ["blocking"]
-
-[[test]]
-name = "brotli"
-path = "tests/brotli.rs"
-required-features = [
-    "brotli",
-    "stream",
-]
-
-[[test]]
-name = "ci"
-path = "tests/ci.rs"
-
-[[test]]
-name = "client"
-path = "tests/client.rs"
-
-[[test]]
-name = "connector_layers"
-path = "tests/connector_layers.rs"
-
-[[test]]
-name = "cookie"
-path = "tests/cookie.rs"
-required-features = ["cookies"]
-
-[[test]]
-name = "deflate"
-path = "tests/deflate.rs"
-required-features = [
-    "deflate",
-    "stream",
-]
-
-[[test]]
-name = "gzip"
-path = "tests/gzip.rs"
-required-features = [
-    "gzip",
-    "stream",
-]
-
-[[test]]
-name = "http3"
-path = "tests/http3.rs"
-
-[[test]]
-name = "multipart"
-path = "tests/multipart.rs"
-required-features = ["multipart"]
-
-[[test]]
-name = "proxy"
-path = "tests/proxy.rs"
-
-[[test]]
-name = "redirect"
-path = "tests/redirect.rs"
-
-[[test]]
-name = "timeouts"
-path = "tests/timeouts.rs"
-
-[[test]]
-name = "upgrade"
-path = "tests/upgrade.rs"
-
-[[test]]
-name = "wasm_simple"
-path = "tests/wasm_simple.rs"
-
-[[test]]
-name = "zstd"
-path = "tests/zstd.rs"
-required-features = [
-    "zstd",
-    "stream",
-]
-
 [dependencies.base64]
 version = "0.22"
 
@@ -415,8 +295,8 @@ version = "0.0.10"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.hickory-resolver]
-version = "0.24"
-features = ["tokio-runtime"]
+version = "0.25"
+features = ["tokio"]
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.http-body]
@@ -534,6 +414,7 @@ default-features = false
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tower]
 version = "0.5.2"
 features = [
+    "retry",
     "timeout",
     "util",
 ]
@@ -549,7 +430,7 @@ version = "1"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.brotli_crate]
-version = "7.0.0"
+version = "8"
 package = "brotli"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.doc-comment]
@@ -641,6 +522,7 @@ features = [
     "RequestCredentials",
     "File",
     "ReadableStream",
+    "RequestCache",
 ]
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.wasm-bindgen]

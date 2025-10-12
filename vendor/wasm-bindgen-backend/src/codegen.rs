@@ -452,13 +452,6 @@ impl ToTokens for ast::Struct {
                     #wasm_bindgen::convert::js_value_vector_from_abi(js)
                 }
             }
-
-            #[automatically_derived]
-            impl #wasm_bindgen::__rt::VectorIntoJsValue for #name {
-                fn vector_into_jsvalue(vector: #wasm_bindgen::__rt::alloc::boxed::Box<[#name]>) -> #wasm_bindgen::JsValue {
-                    #wasm_bindgen::__rt::js_value_vector_into_jsvalue(vector)
-                }
-            }
         })
         .to_tokens(tokens);
 
@@ -488,7 +481,7 @@ impl ToTokens for ast::StructField {
         // If we don't do this, it might end up being unable to reference `js`
         // properly because it doesn't have the same span.
         //
-        // See https://github.com/rustwasm/wasm-bindgen/pull/3725.
+        // See https://github.com/wasm-bindgen/wasm-bindgen/pull/3725.
         let js_token = quote! { js };
         let mut val = quote_spanned!(self.rust_name.span()=> (*#js_token).borrow().#rust_name);
         if let Some(span) = self.getter_with_clone {
@@ -811,6 +804,18 @@ impl TryToTokens for ast::Export {
                     add_check(quote! {
                         let _: #wasm_bindgen::__rt::marker::CheckSupportsConstructor<#class>;
                     });
+
+                    if self.function.r#async {
+                        (quote_spanned! {
+                            self.function.name_span =>
+                            const _: () = {
+                                #[deprecated(note = "async constructors produce invalid TS code and support will be removed in the future")]
+                                const fn constructor() {}
+                                constructor();
+                            };
+                        })
+                        .to_tokens(into);
+                    }
                 }
                 ast::MethodKind::Operation(operation) => match operation.kind {
                     ast::OperationKind::Getter(_) | ast::OperationKind::Setter(_) => {
@@ -988,7 +993,7 @@ impl ToTokens for ast::ImportType {
                 use #wasm_bindgen::convert::{OptionIntoWasmAbi, OptionFromWasmAbi};
                 use #wasm_bindgen::convert::{RefFromWasmAbi, LongRefFromWasmAbi};
                 use #wasm_bindgen::describe::WasmDescribe;
-                use #wasm_bindgen::{JsValue, JsCast, JsObject};
+                use #wasm_bindgen::{JsValue, JsCast};
                 use #wasm_bindgen::__rt::core;
 
                 #[automatically_derived]
@@ -1140,8 +1145,6 @@ impl ToTokens for ast::ImportType {
                         unsafe { &*(val as *const JsValue as *const #rust_name) }
                     }
                 }
-
-                impl JsObject for #rust_name {}
             };
         })
         .to_tokens(tokens);
@@ -1149,7 +1152,7 @@ impl ToTokens for ast::ImportType {
         if !no_deref {
             (quote! {
                 #[automatically_derived]
-                impl core::ops::Deref for #rust_name {
+                impl #wasm_bindgen::__rt::core::ops::Deref for #rust_name {
                     type Target = #internal_obj;
 
                     #[inline]
@@ -1701,13 +1704,6 @@ impl ToTokens for ast::Enum {
                     js: Self::Abi
                 ) -> #wasm_bindgen::__rt::alloc::boxed::Box<[#enum_name]> {
                     #wasm_bindgen::convert::js_value_vector_from_abi(js)
-                }
-            }
-
-            #[automatically_derived]
-            impl #wasm_bindgen::__rt::VectorIntoJsValue for #enum_name {
-                fn vector_into_jsvalue(vector: #wasm_bindgen::__rt::alloc::boxed::Box<[#enum_name]>) -> #wasm_bindgen::JsValue {
-                    #wasm_bindgen::__rt::js_value_vector_into_jsvalue(vector)
                 }
             }
         })

@@ -1,6 +1,8 @@
-#![allow(dead_code)]
-#[macro_use]
-extern crate derive_more;
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(nightly, feature(never_type))]
+#![allow(dead_code)] // some code is tested for type checking only
+
+use derive_more::Not;
 
 #[derive(Not)]
 struct MyInts(i32, i32);
@@ -25,4 +27,34 @@ enum MixedInts {
 enum EnumWithUnit {
     SmallInt(i32),
     Unit,
+}
+
+#[cfg(nightly)]
+mod never {
+    use super::*;
+
+    #[derive(Not)]
+    struct Tuple(!);
+
+    #[derive(Not)]
+    struct Struct {
+        field: !,
+    }
+
+    #[derive(Not)]
+    struct TupleMulti(i32, !);
+
+    #[derive(Not)]
+    struct StructMulti {
+        field: !,
+        other: i32,
+    }
+
+    #[derive(Not)]
+    enum Enum {
+        Tuple(!),
+        Struct { field: ! },
+        TupleMulti(i32, !),
+        StructMulti { field: !, other: i32 },
+    }
 }

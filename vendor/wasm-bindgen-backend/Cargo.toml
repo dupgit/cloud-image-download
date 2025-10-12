@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.57"
 name = "wasm-bindgen-backend"
-version = "0.2.100"
+version = "0.2.104"
 authors = ["The wasm-bindgen Developers"]
 build = false
 include = [
@@ -28,11 +28,14 @@ autobenches = false
 description = """
 Backend code generation of the wasm-bindgen tool
 """
-homepage = "https://rustwasm.github.io/wasm-bindgen/"
+homepage = "https://wasm-bindgen.github.io/wasm-bindgen/"
 documentation = "https://docs.rs/wasm-bindgen-backend"
 readme = false
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/backend"
+repository = "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/backend"
+
+[features]
+extra-traits = ["syn/extra-traits"]
 
 [lib]
 name = "wasm_bindgen_backend"
@@ -55,10 +58,7 @@ version = "2.0"
 features = ["full"]
 
 [dependencies.wasm-bindgen-shared]
-version = "=0.2.100"
-
-[features]
-extra-traits = ["syn/extra-traits"]
+version = "=0.2.104"
 
 [lints.clippy]
 large_enum_variant = "allow"
@@ -66,3 +66,11 @@ new_without_default = "allow"
 overly_complex_bool_expr = "allow"
 too_many_arguments = "allow"
 type_complexity = "allow"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = [
+    "cfg(wasm_bindgen_unstable_test_coverage)",
+    "cfg(xxx_debug_only_print_generated_code)",
+]

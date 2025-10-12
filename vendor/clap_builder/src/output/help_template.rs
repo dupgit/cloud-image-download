@@ -635,18 +635,19 @@ impl HelpTemplate<'_, '_> {
         let trailing_indent = self.get_spaces(trailing_indent);
 
         let mut help = about.clone();
+        let mut help_is_empty = help.is_empty();
         help.replace_newline_var();
-        if !spec_vals.is_empty() {
-            if !help.is_empty() {
-                let sep = if self.use_long && arg.is_some() {
-                    "\n\n"
-                } else {
-                    " "
-                };
+
+        let next_line_specs = self.use_long && arg.is_some();
+        if !spec_vals.is_empty() && !next_line_specs {
+            if !help_is_empty {
+                let sep = " ";
                 help.push_str(sep);
             }
             help.push_str(spec_vals);
+            help_is_empty = help.is_empty();
         }
+
         let avail_chars = self.term_w.saturating_sub(spaces);
         debug!(
             "HelpTemplate::help: help_width={}, spaces={}, avail={}",
@@ -656,8 +657,8 @@ impl HelpTemplate<'_, '_> {
         );
         help.wrap(avail_chars);
         help.indent("", &trailing_indent);
-        let help_is_empty = help.is_empty();
         self.writer.push_styled(&help);
+
         if let Some(arg) = arg {
             if !arg.is_hide_possible_values_set() && self.use_long_pv(arg) {
                 const DASH_SPACE: usize = "- ".len();
@@ -706,6 +707,19 @@ impl HelpTemplate<'_, '_> {
                     }
                 }
             }
+        }
+
+        if !spec_vals.is_empty() && next_line_specs {
+            let mut help = StyledStr::new();
+            if !help_is_empty {
+                let sep = "\n\n";
+                help.push_str(sep);
+            }
+            help.push_str(spec_vals);
+
+            help.wrap(avail_chars);
+            help.indent("", &trailing_indent);
+            self.writer.push_styled(&help);
         }
     }
 
@@ -1003,8 +1017,12 @@ impl HelpTemplate<'_, '_> {
 
         let mut short_als = a
             .get_visible_short_flag_aliases()
-            .map(|a| format!("{ctx_val}-{a}{ctx_val:#}"))
+            .map(|s| format!("{ctx_val}-{s}{ctx_val:#}"))
             .collect::<Vec<_>>();
+        let long_als = a
+            .get_visible_long_flag_aliases()
+            .map(|s| format!("{ctx_val}--{s}{ctx_val:#}"));
+        short_als.extend(long_als);
         let als = a
             .get_visible_aliases()
             .map(|s| format!("{ctx_val}{s}{ctx_val:#}"));
@@ -1018,6 +1036,10 @@ impl HelpTemplate<'_, '_> {
             debug!(
                 "HelpTemplate::spec_vals: Found short flag aliases...{:?}",
                 a.get_all_short_flag_aliases().collect::<Vec<_>>()
+            );
+            debug!(
+                "HelpTemplate::spec_vals: Found long flag aliases...{:?}",
+                a.get_all_long_flag_aliases().collect::<Vec<_>>()
             );
             spec_vals.push(format!("{ctx}[aliases: {ctx:#}{all_als}{ctx}]{ctx:#}"));
         }

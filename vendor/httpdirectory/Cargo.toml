@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "httpdirectory"
-version = "0.15.0"
+version = "0.15.2"
 authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
 build = false
 autolib = false
@@ -83,7 +83,7 @@ version = "0.12.15"
 features = ["charset"]
 
 [dependencies.scraper]
-version = "0.23.1"
+version = "0.24.0"
 
 [dependencies.tokio]
 version = "1.44.2"
@@ -96,11 +96,11 @@ features = [
 version = "2.5.4"
 
 [dev-dependencies.criterion]
-version = "0.6"
+version = "0.7"
 features = ["html_reports"]
 
 [dev-dependencies.httpmock]
-version = "0.7.0-rc.1"
+version = "0.8.1"
 
 [lints.clippy]
 pedantic = "warn"

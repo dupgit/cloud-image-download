@@ -1,6 +1,14 @@
-#![allow(dead_code, unused_imports)]
-#[macro_use]
-extern crate derive_more;
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(nightly, feature(never_type))]
+#![allow(dead_code)] // some code is tested for type checking only
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use ::alloc::{boxed::Box, vec::Vec};
+
+use derive_more::Deref;
 
 #[derive(Deref)]
 #[deref(forward)]
@@ -65,4 +73,17 @@ struct GenericBox<T>(#[deref(forward)] Box<T>);
 fn deref_generic_forward() {
     let boxed = GenericBox(Box::new(1i32));
     assert_eq!(*boxed, 1i32);
+}
+
+#[cfg(nightly)]
+mod never {
+    use super::*;
+
+    #[derive(Deref)]
+    struct Tuple(!);
+
+    #[derive(Deref)]
+    struct Struct {
+        field: !,
+    }
 }

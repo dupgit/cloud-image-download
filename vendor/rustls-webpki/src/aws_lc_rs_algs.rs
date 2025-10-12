@@ -62,7 +62,7 @@ impl SignatureVerificationAlgorithm for AwsLcRsAlgorithm {
 pub static ML_DSA_44: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
     public_key_alg_id: alg_id::ML_DSA_44,
     signature_alg_id: alg_id::ML_DSA_44,
-    verification_alg: &unstable::signature::MLDSA_44,
+    verification_alg: &unstable::signature::ML_DSA_44,
     // Not included in AWS-LC-FIPS 3.0 FIPS scope
     in_fips_submission: false,
 };
@@ -72,7 +72,7 @@ pub static ML_DSA_44: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
 pub static ML_DSA_65: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
     public_key_alg_id: alg_id::ML_DSA_65,
     signature_alg_id: alg_id::ML_DSA_65,
-    verification_alg: &unstable::signature::MLDSA_65,
+    verification_alg: &unstable::signature::ML_DSA_65,
     // Not included in AWS-LC-FIPS 3.0 FIPS scope
     in_fips_submission: false,
 };
@@ -82,7 +82,7 @@ pub static ML_DSA_65: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
 pub static ML_DSA_87: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
     public_key_alg_id: alg_id::ML_DSA_87,
     signature_alg_id: alg_id::ML_DSA_87,
-    verification_alg: &unstable::signature::MLDSA_87,
+    verification_alg: &unstable::signature::ML_DSA_87,
     // Not included in AWS-LC-FIPS 3.0 FIPS scope
     in_fips_submission: false,
 };
@@ -103,6 +103,14 @@ pub static ECDSA_P256_SHA384: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgo
     in_fips_submission: true,
 };
 
+/// ECDSA signatures using the P-256 curve and SHA-512. Deprecated.
+pub static ECDSA_P256_SHA512: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
+    public_key_alg_id: alg_id::ECDSA_P256,
+    signature_alg_id: alg_id::ECDSA_SHA512,
+    verification_alg: &signature::ECDSA_P256_SHA512_ASN1,
+    in_fips_submission: true,
+};
+
 /// ECDSA signatures using the P-384 curve and SHA-256. Deprecated.
 pub static ECDSA_P384_SHA256: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
     public_key_alg_id: alg_id::ECDSA_P384,
@@ -116,6 +124,14 @@ pub static ECDSA_P384_SHA384: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgo
     public_key_alg_id: alg_id::ECDSA_P384,
     signature_alg_id: alg_id::ECDSA_SHA384,
     verification_alg: &signature::ECDSA_P384_SHA384_ASN1,
+    in_fips_submission: true,
+};
+
+/// ECDSA signatures using the P-384 curve and SHA-512. Deprecated.
+pub static ECDSA_P384_SHA512: &dyn SignatureVerificationAlgorithm = &AwsLcRsAlgorithm {
+    public_key_alg_id: alg_id::ECDSA_P384,
+    signature_alg_id: alg_id::ECDSA_SHA512,
+    verification_alg: &signature::ECDSA_P384_SHA512_ASN1,
     in_fips_submission: true,
 };
 

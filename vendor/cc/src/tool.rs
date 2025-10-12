@@ -40,6 +40,23 @@ pub struct Tool {
 }
 
 impl Tool {
+    pub(crate) fn from_find_msvc_tools(tool: ::find_msvc_tools::Tool) -> Self {
+        let mut cc_tool = Self::with_family(
+            tool.path().into(),
+            ToolFamily::Msvc {
+                clang_cl: tool.is_clang_cl(),
+            },
+        );
+
+        cc_tool.env = tool
+            .env()
+            .into_iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        cc_tool
+    }
+
     pub(crate) fn new(
         path: PathBuf,
         cached_compiler_family: &RwLock<CompilerFamilyLookupCache>,
@@ -371,16 +388,12 @@ impl Tool {
         };
         cmd.args(&self.cc_wrapper_args);
 
-        let value = self
-            .args
-            .iter()
-            .filter(|a| !self.removed_args.contains(a))
-            .collect::<Vec<_>>();
-        cmd.args(&value);
+        cmd.args(self.args.iter().filter(|a| !self.removed_args.contains(a)));
 
         for (k, v) in self.env.iter() {
             cmd.env(k, v);
         }
+
         cmd
     }
 

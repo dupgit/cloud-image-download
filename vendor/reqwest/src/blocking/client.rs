@@ -20,6 +20,8 @@ use super::request::{Request, RequestBuilder};
 use super::response::Response;
 use super::wait;
 use crate::connect::sealed::{Conn, Unnameable};
+#[cfg(unix)]
+use crate::connect::uds::UnixSocketProvider;
 use crate::connect::BoxedConnectorService;
 use crate::dns::Resolve;
 use crate::error::BoxError;
@@ -340,6 +342,13 @@ impl ClientBuilder {
         self.with_inner(move |inner| inner.redirect(policy))
     }
 
+    /// Set a request retry policy.
+    ///
+    /// Default behavior is to retry protocol NACKs.
+    pub fn retry(self, policy: crate::retry::Builder) -> ClientBuilder {
+        self.with_inner(move |inner| inner.retry(policy))
+    }
+
     /// Enable or disable automatic setting of the `Referer` header.
     ///
     /// Default is `true`.
@@ -527,6 +536,105 @@ impl ClientBuilder {
         self.with_inner(|inner| inner.http3_prior_knowledge())
     }
 
+    /// Maximum duration of inactivity to accept before timing out the QUIC connection.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_max_idle_timeout(self, value: Duration) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_max_idle_timeout(value))
+    }
+
+    /// Maximum number of bytes the peer may transmit without acknowledgement on any one stream
+    /// before becoming blocked.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is over 2^62.
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_stream_receive_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_stream_receive_window(value))
+    }
+
+    /// Maximum number of bytes the peer may transmit across all streams of a connection before
+    /// becoming blocked.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is over 2^62.
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_conn_receive_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_conn_receive_window(value))
+    }
+
+    /// Maximum number of bytes to transmit to a peer without acknowledgment
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_send_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_send_window(value))
+    }
+
+    /// Override the default congestion control algorithm to use [BBR]
+    ///
+    /// The current default congestion control algorithm is [CUBIC]. This method overrides the
+    /// default.
+    ///
+    /// [BBR]: https://datatracker.ietf.org/doc/html/draft-ietf-ccwg-bbr
+    /// [CUBIC]: https://datatracker.ietf.org/doc/html/rfc8312
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_congestion_bbr(self) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_congestion_bbr())
+    }
+
+    /// Set the maximum HTTP/3 header size this client is willing to accept.
+    ///
+    /// See [header size constraints] section of the specification for details.
+    ///
+    /// [header size constraints]: https://www.rfc-editor.org/rfc/rfc9114.html#name-header-size-constraints
+    ///
+    /// Please see docs in [`Builder`] in [`h3`].
+    ///
+    /// [`Builder`]: https://docs.rs/h3/latest/h3/client/struct.Builder.html#method.max_field_section_size
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_max_field_section_size(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_max_field_section_size(value))
+    }
+
+    /// Enable whether to send HTTP/3 protocol grease on the connections.
+    ///
+    /// HTTP/3 uses the concept of "grease"
+    ///
+    /// to prevent potential interoperability issues in the future.
+    /// In HTTP/3, the concept of grease is used to ensure that the protocol can evolve
+    /// and accommodate future changes without breaking existing implementations.
+    ///
+    /// Please see docs in [`Builder`] in [`h3`].
+    ///
+    /// [`Builder`]: https://docs.rs/h3/latest/h3/client/struct.Builder.html#method.send_grease
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_send_grease(self, enabled: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_send_grease(enabled))
+    }
+
     // TCP options
 
     /// Set whether sockets have `TCP_NODELAY` enabled.
@@ -622,6 +730,24 @@ impl ClientBuilder {
         D: Into<Option<Duration>>,
     {
         self.with_inner(move |inner| inner.tcp_user_timeout(val))
+    }
+
+    // Alt Transports
+
+    /// Set that all connections will use this Unix socket.
+    ///
+    /// If a request URI uses the `https` scheme, TLS will still be used over
+    /// the Unix socket.
+    ///
+    /// # Note
+    ///
+    /// This option is not compatible with any of the TCP or Proxy options.
+    /// Setting this will ignore all those options previously set.
+    ///
+    /// Likewise, DNS resolution will not be done on the domain name.
+    #[cfg(unix)]
+    pub fn unix_socket(self, path: impl UnixSocketProvider) -> ClientBuilder {
+        self.with_inner(move |inner| inner.unix_socket(path))
     }
 
     // TLS options

@@ -123,7 +123,18 @@ impl<'a> Submitter<'a> {
         // the IORING_ENTER_SQ_WAKEUP bit is required in all paths where sqpoll
         // is setup when consolidating the reads.
 
-        if want > 0 || self.params.is_setup_iopoll() || self.sq_cq_overflow() {
+        let sq_cq_overflow = self.sq_cq_overflow();
+
+        // When IORING_FEAT_NODROP is enabled and CQ overflows, the kernel buffers
+        // completion events internally but doesn't automatically flush them when
+        // CQ space becomes available. We must explicitly call io_uring_enter()
+        // to flush these buffered events, even with SQPOLL enabled.
+        //
+        // Without this, completions remain stuck in kernel's internal buffer
+        // after draining CQ, causing missing completion notifications.
+        let need_syscall_for_overflow = sq_cq_overflow && self.params.is_feature_nodrop();
+
+        if want > 0 || self.params.is_setup_iopoll() || sq_cq_overflow {
             flags |= sys::IORING_ENTER_GETEVENTS;
         }
 
@@ -132,9 +143,12 @@ impl<'a> Submitter<'a> {
             atomic::fence(atomic::Ordering::SeqCst);
             if self.sq_need_wakeup() {
                 flags |= sys::IORING_ENTER_SQ_WAKEUP;
-            } else if want == 0 {
+            } else if want == 0 && !need_syscall_for_overflow {
                 // The kernel thread is polling and hasn't fallen asleep, so we don't need to tell
                 // it to process events or wake it up
+
+                // However, if the CQ ring is overflown, we need to tell the kernel to process events
+                // by calling io_uring_enter with the IORING_ENTER_GETEVENTS flag.
                 return Ok(len);
             }
         }
@@ -142,6 +156,11 @@ impl<'a> Submitter<'a> {
         unsafe { self.enter::<libc::sigset_t>(len as _, want as _, flags, None) }
     }
 
+    /// Submit all queued submission queue events to the kernel and wait for at least `want`
+    /// completion events to complete with additional options
+    ///
+    /// You can specify a set of signals to mask and a timeout for operation, see
+    /// [`SubmitArgs`](types::SubmitArgs) for more details
     pub fn submit_with_args(
         &self,
         want: usize,
@@ -150,7 +169,10 @@ impl<'a> Submitter<'a> {
         let len = self.sq_len();
         let mut flags = sys::IORING_ENTER_EXT_ARG;
 
-        if want > 0 || self.params.is_setup_iopoll() || self.sq_cq_overflow() {
+        let sq_cq_overflow = self.sq_cq_overflow();
+        let need_syscall = sq_cq_overflow & self.params.is_feature_nodrop();
+
+        if want > 0 || self.params.is_setup_iopoll() || sq_cq_overflow {
             flags |= sys::IORING_ENTER_GETEVENTS;
         }
 
@@ -159,7 +181,7 @@ impl<'a> Submitter<'a> {
             atomic::fence(atomic::Ordering::SeqCst);
             if self.sq_need_wakeup() {
                 flags |= sys::IORING_ENTER_SQ_WAKEUP;
-            } else if want == 0 {
+            } else if want == 0 && !need_syscall {
                 // The kernel thread is polling and hasn't fallen asleep, so we don't need to tell
                 // it to process events or wake it up
                 return Ok(len);
@@ -562,11 +584,36 @@ impl<'a> Submitter<'a> {
     /// Developers must ensure that the `ring_addr` and its length represented by `ring_entries`
     /// are valid and will be valid until the bgid is unregistered or the ring destroyed,
     /// otherwise undefined behaviour may occur.
+    #[deprecated(note = "please use `register_buf_ring_with_flags` instead")]
     pub unsafe fn register_buf_ring(
         &self,
         ring_addr: u64,
         ring_entries: u16,
         bgid: u16,
+    ) -> io::Result<()> {
+        self.register_buf_ring_with_flags(ring_addr, ring_entries, bgid, 0)
+    }
+
+    /// Register buffer ring for provided buffers.
+    ///
+    /// Details can be found in the io_uring_register_buf_ring.3 man page.
+    ///
+    /// If the register command is not supported, or the ring_entries value exceeds
+    /// 32768, the InvalidInput error is returned.
+    ///
+    /// Available since 5.19.
+    ///
+    /// # Safety
+    ///
+    /// Developers must ensure that the `ring_addr` and its length represented by `ring_entries`
+    /// are valid and will be valid until the bgid is unregistered or the ring destroyed,
+    /// otherwise undefined behaviour may occur.
+    pub unsafe fn register_buf_ring_with_flags(
+        &self,
+        ring_addr: u64,
+        ring_entries: u16,
+        bgid: u16,
+        flags: u16,
     ) -> io::Result<()> {
         // The interface type for ring_entries is u32 but the same interface only allows a u16 for
         // the tail to be specified, so to try and avoid further confusion, we limit the
@@ -576,6 +623,7 @@ impl<'a> Submitter<'a> {
             ring_addr,
             ring_entries: ring_entries as _,
             bgid,
+            flags,
             ..Default::default()
         };
         execute(
@@ -656,6 +704,19 @@ impl<'a> Submitter<'a> {
             self.fd.as_raw_fd(),
             sys::IORING_REGISTER_SYNC_CANCEL,
             cast_ptr::<sys::io_uring_sync_cancel_reg>(&arg).cast(),
+            1,
+        )
+        .map(drop)
+    }
+
+    /// Register a netdev hw rx queue for zerocopy.
+    ///
+    /// Available since 6.15.
+    pub fn register_ifq(&self, reg: &sys::io_uring_zcrx_ifq_reg) -> io::Result<()> {
+        execute(
+            self.fd.as_raw_fd(),
+            sys::IORING_REGISTER_ZCRX_IFQ,
+            cast_ptr::<sys::io_uring_zcrx_ifq_reg>(reg) as _,
             1,
         )
         .map(drop)

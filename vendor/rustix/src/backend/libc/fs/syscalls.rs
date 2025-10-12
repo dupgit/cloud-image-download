@@ -60,7 +60,7 @@ use crate::fs::Timestamps;
 )))]
 use crate::fs::{Dev, FileType};
 use crate::fs::{Mode, OFlags, SeekFrom, Stat};
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(target_os = "wasi"))]
 use crate::fs::{StatVfs, StatVfsMountFlags};
 use crate::io;
 #[cfg(all(target_env = "gnu", fix_y2038))]
@@ -271,7 +271,7 @@ pub(crate) fn statfs(filename: &CStr) -> io::Result<StatFs> {
     }
 }
 
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(target_os = "wasi"))]
 #[inline]
 pub(crate) fn statvfs(filename: &CStr) -> io::Result<StatVfs> {
     unsafe {
@@ -1591,7 +1591,7 @@ pub(crate) fn fstatfs(fd: BorrowedFd<'_>) -> io::Result<StatFs> {
     }
 }
 
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(target_os = "wasi"))]
 pub(crate) fn fstatvfs(fd: BorrowedFd<'_>) -> io::Result<StatVfs> {
     let mut statvfs = MaybeUninit::<c::statvfs>::uninit();
     unsafe {
@@ -1600,7 +1600,7 @@ pub(crate) fn fstatvfs(fd: BorrowedFd<'_>) -> io::Result<StatVfs> {
     }
 }
 
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(target_os = "wasi"))]
 fn libc_statvfs_to_statvfs(from: c::statvfs) -> StatVfs {
     StatVfs {
         f_bsize: from.f_bsize as u64,
@@ -1840,7 +1840,7 @@ pub(crate) fn memfd_create(name: &CStr, flags: MemfdFlags) -> io::Result<OwnedFd
     unsafe { ret_owned_fd(memfd_create(c_str(name), bitflags_bits!(flags))) }
 }
 
-#[cfg(linux_kernel)]
+#[cfg(linux_raw_dep)]
 pub(crate) fn openat2(
     dirfd: BorrowedFd<'_>,
     path: &CStr,
@@ -2053,9 +2053,9 @@ pub(crate) fn statx(
     // doesn't represent all the known flags.
     //
     // [it's deprecated]: https://patchwork.kernel.org/project/linux-fsdevel/patch/20200505095915.11275-7-mszeredi@redhat.com/
-    #[cfg(not(any(target_os = "android", target_env = "musl")))]
+    #[cfg(any(not(linux_raw_dep), not(target_env = "musl")))]
     const STATX__RESERVED: u32 = c::STATX__RESERVED as u32;
-    #[cfg(any(target_os = "android", target_env = "musl"))]
+    #[cfg(target_env = "musl")]
     const STATX__RESERVED: u32 = linux_raw_sys::general::STATX__RESERVED;
     if (mask.bits() & STATX__RESERVED) == STATX__RESERVED {
         return Err(io::Errno::INVAL);

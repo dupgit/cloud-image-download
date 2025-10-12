@@ -11,13 +11,15 @@ Start by adding the following to your Cargo.toml file:
 
 ```toml
 [dependencies.windows-sys]
-version = "0.60"
+version = ">=0.59, <=0.61"
 features = [
     "Win32_Security",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ]
 ```
+
+Using a range instead of the [default Caret requirements](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#caret-requirements) helps avoid duplicate versions in downstream graphs and improves resolver flexibility.
 
 Make use of any Windows APIs as needed:
 
@@ -26,15 +28,15 @@ use windows_sys::{
     core::*, Win32::Foundation::*, Win32::System::Threading::*, Win32::UI::WindowsAndMessaging::*,
 };
 
-fn main() {
-    unsafe {
-        let event = CreateEventW(std::ptr::null(), 1, 0, std::ptr::null());
-        SetEvent(event);
-        WaitForSingleObject(event, 0);
-        CloseHandle(event);
+unsafe {
+    let event = CreateEventW(std::ptr::null(), 1, 0, std::ptr::null());
+    SetEvent(event);
+    WaitForSingleObject(event, 0);
+    CloseHandle(event);
 
-        MessageBoxA(0 as _, s!("Ansi"), s!("Caption"), MB_OK);
-        MessageBoxW(0 as _, w!("Wide"), w!("Caption"), MB_OK);
-    }
+    MessageBoxA(0 as _, s!("Ansi"), s!("Caption"), MB_OK);
+    MessageBoxW(0 as _, w!("Wide"), w!("Caption"), MB_OK);
 }
 ```
+
+ 

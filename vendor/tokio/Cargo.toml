@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.70"
 name = "tokio"
-version = "1.46.1"
+version = "1.47.1"
 authors = ["Tokio Contributors <team@tokio.rs>"]
 build = false
 autolib = false
@@ -413,6 +413,10 @@ name = "process_issue_42"
 path = "tests/process_issue_42.rs"
 
 [[test]]
+name = "process_issue_7144"
+path = "tests/process_issue_7144.rs"
+
+[[test]]
 name = "process_kill_after_wait"
 path = "tests/process_kill_after_wait.rs"
 
@@ -557,6 +561,10 @@ name = "sync_notify"
 path = "tests/sync_notify.rs"
 
 [[test]]
+name = "sync_notify_owned"
+path = "tests/sync_notify_owned.rs"
+
+[[test]]
 name = "sync_once_cell"
 path = "tests/sync_once_cell.rs"
 
@@ -579,6 +587,10 @@ path = "tests/sync_semaphore.rs"
 [[test]]
 name = "sync_semaphore_owned"
 path = "tests/sync_semaphore_owned.rs"
+
+[[test]]
+name = "sync_set_once"
+path = "tests/sync_set_once.rs"
 
 [[test]]
 name = "sync_watch"
@@ -810,7 +822,7 @@ features = [
 version = "0.9"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies.socket2]
-version = "0.5.5"
+version = "0.6.0"
 features = ["all"]
 optional = true
 
@@ -818,7 +830,7 @@ optional = true
 version = "1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies.socket2]
-version = "0.5.5"
+version = "0.6.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies.tempfile]
 version = "3.1.0"
@@ -857,11 +869,11 @@ features = [
 default-features = false
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.52"
+version = "0.59"
 optional = true
 
 [target."cfg(windows)".dev-dependencies.windows-sys]
-version = "0.52"
+version = "0.59"
 features = [
     "Win32_Foundation",
     "Win32_Security_Authorization",

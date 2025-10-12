@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.81"
 name = "pest"
-version = "2.8.1"
+version = "2.8.3"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 build = false
 autobins = false
@@ -72,10 +72,6 @@ optional = true
 version = "1.0.85"
 optional = true
 
-[dependencies.thiserror]
-version = "2"
-optional = true
-
 [dependencies.ucd-trie]
 version = "0.1.5"
 default-features = false
@@ -98,13 +94,9 @@ miette-error = [
     "std",
     "pretty-print",
     "dep:miette",
-    "dep:thiserror",
 ]
 pretty-print = [
     "dep:serde",
     "dep:serde_json",
 ]
-std = [
-    "ucd-trie/std",
-    "dep:thiserror",
-]
+std = ["ucd-trie/std"]

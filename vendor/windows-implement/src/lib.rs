@@ -57,6 +57,7 @@ fn implement_core(
         original_ident: original_type.ident.clone(),
         interface_chains: convert_implements_to_interface_chains(attributes.implement),
         trust_level: attributes.trust_level,
+        agile: attributes.agile,
         impl_ident: quote::format_ident!("{}_Impl", &original_type.ident),
         constraints: {
             if let Some(where_clause) = &original_type.generics.where_clause {
@@ -98,6 +99,9 @@ struct ImplementInputs {
 
     /// The "trust level", which is returned by `IInspectable::GetTrustLevel`.
     trust_level: usize,
+
+    /// Determines whether `IAgileObject` and `IMarshal` are implemented automatically.
+    agile: bool,
 
     /// The identifier of the `Foo_Impl` type.
     impl_ident: syn::Ident,
@@ -152,11 +156,15 @@ impl ImplementType {
 struct ImplementAttributes {
     pub implement: Vec<ImplementType>,
     pub trust_level: usize,
+    pub agile: bool,
 }
 
 impl syn::parse::Parse for ImplementAttributes {
-    fn parse(cursor: syn::parse::ParseStream<'_>) -> syn::parse::Result<Self> {
-        let mut input = Self::default();
+    fn parse(cursor: syn::parse::ParseStream) -> syn::parse::Result<Self> {
+        let mut input = Self {
+            agile: true,
+            ..Default::default()
+        };
 
         while !cursor.is_empty() {
             input.parse_implement(cursor)?;
@@ -167,7 +175,7 @@ impl syn::parse::Parse for ImplementAttributes {
 }
 
 impl ImplementAttributes {
-    fn parse_implement(&mut self, cursor: syn::parse::ParseStream<'_>) -> syn::parse::Result<()> {
+    fn parse_implement(&mut self, cursor: syn::parse::ParseStream) -> syn::parse::Result<()> {
         let tree = cursor.parse::<UseTree2>()?;
         self.walk_implement(&tree, &mut String::new())?;
 
@@ -201,6 +209,7 @@ impl ImplementAttributes {
                 }
             }
             UseTree2::TrustLevel(input) => self.trust_level = *input,
+            UseTree2::Agile(agile) => self.agile = *agile,
         }
 
         Ok(())
@@ -212,12 +221,13 @@ enum UseTree2 {
     Name(UseName2),
     Group(UseGroup2),
     TrustLevel(usize),
+    Agile(bool),
 }
 
 impl UseTree2 {
     fn to_element_type(&self, namespace: &mut String) -> syn::parse::Result<ImplementType> {
         match self {
-            UseTree2::Path(input) => {
+            Self::Path(input) => {
                 if !namespace.is_empty() {
                     namespace.push_str("::");
                 }
@@ -225,7 +235,7 @@ impl UseTree2 {
                 namespace.push_str(&input.ident.to_string());
                 input.tree.to_element_type(namespace)
             }
-            UseTree2::Name(input) => {
+            Self::Name(input) => {
                 let mut type_name = input.ident.to_string();
                 let span = input.ident.span();
 
@@ -245,7 +255,7 @@ impl UseTree2 {
                     span,
                 })
             }
-            UseTree2::Group(input) => Err(syn::parse::Error::new(
+            Self::Group(input) => Err(syn::parse::Error::new(
                 input.brace_token.span.join(),
                 "Syntax not supported",
             )),
@@ -270,41 +280,54 @@ struct UseGroup2 {
 }
 
 impl syn::parse::Parse for UseTree2 {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::parse::Result<UseTree2> {
+    fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
         let lookahead = input.lookahead1();
         if lookahead.peek(syn::Ident) {
             use syn::ext::IdentExt;
             let ident = input.call(syn::Ident::parse_any)?;
             if input.peek(syn::Token![::]) {
                 input.parse::<syn::Token![::]>()?;
-                Ok(UseTree2::Path(UsePath2 {
+                Ok(Self::Path(UsePath2 {
                     ident,
                     tree: Box::new(input.parse()?),
                 }))
             } else if input.peek(syn::Token![=]) {
-                if ident != "TrustLevel" {
-                    return Err(syn::parse::Error::new(
+                if ident == "TrustLevel" {
+                    input.parse::<syn::Token![=]>()?;
+                    let span = input.span();
+                    let value = input.call(syn::Ident::parse_any)?;
+                    match value.to_string().as_str() {
+                        "Partial" => Ok(Self::TrustLevel(1)),
+                        "Full" => Ok(Self::TrustLevel(2)),
+                        _ => Err(syn::parse::Error::new(
+                            span,
+                            "`TrustLevel` must be `Partial` or `Full`",
+                        )),
+                    }
+                } else if ident == "Agile" {
+                    input.parse::<syn::Token![=]>()?;
+                    let span = input.span();
+                    let value = input.call(syn::Ident::parse_any)?;
+                    match value.to_string().as_str() {
+                        "true" => Ok(Self::Agile(true)),
+                        "false" => Ok(Self::Agile(false)),
+                        _ => Err(syn::parse::Error::new(
+                            span,
+                            "`Agile` must be `true` or `false`",
+                        )),
+                    }
+                } else {
+                    Err(syn::parse::Error::new(
                         ident.span(),
                         "Unrecognized key-value pair",
-                    ));
-                }
-                input.parse::<syn::Token![=]>()?;
-                let span = input.span();
-                let value = input.call(syn::Ident::parse_any)?;
-                match value.to_string().as_str() {
-                    "Partial" => Ok(UseTree2::TrustLevel(1)),
-                    "Full" => Ok(UseTree2::TrustLevel(2)),
-                    _ => Err(syn::parse::Error::new(
-                        span,
-                        "`TrustLevel` must be `Partial` or `Full`",
-                    )),
+                    ))
                 }
             } else {
                 let generics = if input.peek(syn::Token![<]) {
                     input.parse::<syn::Token![<]>()?;
                     let mut generics = Vec::new();
                     loop {
-                        generics.push(input.parse::<UseTree2>()?);
+                        generics.push(input.parse::<Self>()?);
 
                         if input.parse::<syn::Token![,]>().is_err() {
                             break;
@@ -316,14 +339,14 @@ impl syn::parse::Parse for UseTree2 {
                     Vec::new()
                 };
 
-                Ok(UseTree2::Name(UseName2 { ident, generics }))
+                Ok(Self::Name(UseName2 { ident, generics }))
             }
         } else if lookahead.peek(syn::token::Brace) {
             let content;
             let brace_token = syn::braced!(content in input);
-            let items = content.parse_terminated(UseTree2::parse, syn::Token![,])?;
+            let items = content.parse_terminated(Self::parse, syn::Token![,])?;
 
-            Ok(UseTree2::Group(UseGroup2 { brace_token, items }))
+            Ok(Self::Group(UseGroup2 { brace_token, items }))
         } else {
             Err(lookahead.error())
         }

@@ -1,3 +1,13 @@
+# 0.1.17 (2025-09-15)
+
+- Fix `legacy::Client` to allow absolute-form URIs when `Connected::proxy(true)` is passed and the scheme is `https`.
+
+# 0.1.16 (2025-07-22)
+
+- Add `impl Clone` for `proxy::Tunnel` service.
+- Fix `proxy::Matcher` to detect SOCKS4 schemes.
+- Fix `legacy::Client` pool idle checker to trigger less aggresively, saving CPU.
+
 # 0.1.15 (2025-07-07)
 
 - Add header casing options to `auto::Builder`.
