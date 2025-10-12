@@ -35,7 +35,7 @@ impl CloudImage {
     }
 
     /// Normalizes its filename before verifying
-    /// itself that its checsum it correct.
+    /// itself that its checksum it correct.
     //@todo: simplify and get it shorter
     #[must_use]
     pub fn verify(&self, destination: &Path, normalize: bool) -> bool {
