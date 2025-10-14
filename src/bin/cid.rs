@@ -8,6 +8,7 @@ use env_logger::{Env, WriteStyle};
 use futures::{StreamExt, stream};
 use log::{debug, error, info};
 use std::env::var;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 
@@ -43,7 +44,14 @@ async fn main() {
         exit(1);
     };
 
-    let db = DbImageHistory::open(base_dirs.cache_dir().join("cid.sqlite"));
+    let db_dir: PathBuf;
+    if let Some(db_path) = settings.db_path {
+        db_dir = PathBuf::from(db_path);
+    } else {
+        db_dir = base_dirs.cache_dir().to_path_buf();
+    }
+
+    let db = DbImageHistory::open(db_dir.join("cid.sqlite"));
     db.create_db_image_history();
     let db = Arc::new(db);
 
