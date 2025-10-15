@@ -46,10 +46,8 @@ pub fn get_filename_destination(
 ) -> Option<String> {
     let mut normalized_image_name: String = image_name.to_string();
 
-    if normalize {
-        if let Some((first_part, last_part)) = image_name.rsplit_once('.') {
-            normalized_image_name = format!("{first_part}-{}.{last_part}", image_date.format("%Y%m%d"));
-        }
+    if normalize && let Some((first_part, last_part)) = image_name.rsplit_once('.') {
+        normalized_image_name = format!("{first_part}-{}.{last_part}", image_date.format("%Y%m%d"));
     }
     if let Some(filename) = file_destination.join(normalized_image_name).to_str() {
         Some(filename.to_string())

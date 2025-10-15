@@ -46,10 +46,9 @@ impl CloudImage {
                         if success {
                             info!("{} Successfully verified {filename}", "🗸".green());
                             return true;
-                        } else {
-                            warn!("{} Verifying failed for {filename}", "𐄂".red());
-                            return false;
                         }
+                        warn!("{} Verifying failed for {filename}", "𐄂".red());
+                        return false;
                     }
                     None => {
                         // File has not been verified because it has not any associated hash

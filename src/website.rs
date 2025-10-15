@@ -102,10 +102,9 @@ impl WebSite {
                         if list_of_numbers.is_empty() {
                             debug!("This url ({url}) has no numbers in it");
                             return Some(format!("{url}/"));
-                        } else {
-                            debug!("This url ({url}) has numbers in it:");
-                            return url_with_latest_directory_name(list_of_numbers, url);
                         }
+                        debug!("This url ({url}) has numbers in it:");
+                        return url_with_latest_directory_name(list_of_numbers, url);
                     }
                 } else {
                     debug!("This url ({url}) has dates in it:");
@@ -176,67 +175,66 @@ impl WebSite {
         let http_image_list = self.clean_httpdir_from_image_name_cleanse_regex(http_image_list);
 
         // Keeping only the newest entry from that list
-        if let Some(image) = http_image_list.sort_by_date(Sorting::Descending).first() {
-            if let Some(image_name) = image.name() {
-                if let Some(date) = image.date() {
-                    // Trying to find if we have a file that contains all checksums for
-                    // the files to be downloaded
-                    let one_file = url_httpdir.files().filtering(|e| {
-                        are_all_checksums_in_one_file(e.name().expect(
-                            ".files() filter should return only files with names and thus .name() should never be None",
-                        ))
-                    });
-                    let one_file_count = one_file.len();
-                    debug!("Checksum guess: all in one file: {one_file_count}");
-                    // We choose to download only one file if possible: we test onefile
-                    // at first for this
+        if let Some(image) = http_image_list.sort_by_date(Sorting::Descending).first()
+            && let Some(image_name) = image.name()
+            && let Some(date) = image.date()
+        {
+            // Trying to find if we have a file that contains all checksums for
+            // the files to be downloaded
+            let one_file = url_httpdir.files().filtering(|e| {
+                are_all_checksums_in_one_file(e.name().expect(
+                    ".files() filter should return only files with names and thus .name() should never be None",
+                ))
+            });
+            let one_file_count = one_file.len();
+            debug!("Checksum guess: all in one file: {one_file_count}");
+            // We choose to download only one file if possible: we test onefile
+            // at first for this
 
-                    if one_file_count == 1 {
-                        // We only have one file with all checksums so get it:
-                        if let Some(checksum_entry) = one_file.first() {
-                            // Download the checksum file with filename (url/filename)
-                            // retrieving the image name's checksum from that file.
-                            if let Some(filename) = checksum_entry.name() {
-                                // downloading the checksum file
-                                let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
-                                trace!("checksums: {checksums:?}");
-                                // Finds the image_name in the checksum list and get it's checksum if any
-                                let checksum = CheckSums::get_image_checksum_from_checksums_buffer(
-                                    image_name, &checksums, filename,
-                                );
-                                option_cloud_image = Some(CloudImage::new(
-                                    format!("{url}/{image_name}"),
-                                    checksum,
-                                    image_name.to_string(),
-                                    date,
-                                ));
-                            }
-                        }
-                    } else {
-                        // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
-                        // return an Error here
-                        let everyfile = url_httpdir.files()
-                            .filter_by_name(".SHA256SUM")
-                            .expect(".files() filter should return only files with names and thus .name() should never be None")
-                            .len();
-                        if everyfile >= 1 {
-                            // Downloading a checksum file that contains only the checksums of the image file
-                            let url = format!("{url}/{image_name}");
-                            let checksum_filename = format!("{url}.SHA256SUM");
-                            let checksum_body = get_body_from_url(&checksum_filename, client).await;
-                            let checksum =
-                                CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url);
-
-                            option_cloud_image = Some(CloudImage::new(url, checksum, image_name.to_string(), date));
-                        } else {
-                            option_cloud_image = Some(CloudImage::new(
-                                format!("{url}/{image_name}"),
-                                CheckSums::None,
-                                image_name.to_string(),
-                                date,
-                            ));
-                        }
+            if one_file_count == 1 {
+                // We only have one file with all checksums so get it:
+                if let Some(checksum_entry) = one_file.first() {
+                    // Download the checksum file with filename (url/filename)
+                    // retrieving the image name's checksum from that file.
+                    if let Some(filename) = checksum_entry.name() {
+                        // downloading the checksum file
+                        let checksums = get_body_from_url(&format!("{url}/{filename}"), client).await;
+                        trace!("checksums: {checksums:?}");
+                        // Finds the image_name in the checksum list and get it's checksum if any
+                        let checksum =
+                            CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksums, filename);
+                        option_cloud_image = Some(CloudImage::new(
+                            format!("{url}/{image_name}"),
+                            checksum,
+                            image_name.to_string(),
+                            date,
+                        ));
                     }
+                }
+            } else {
+                // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
+                // return an Error here
+                let everyfile = url_httpdir
+                    .files()
+                    .filter_by_name(".SHA256SUM")
+                    .expect(".files() filter should return only files with names and thus .name() should never be None")
+                    .len();
+                if everyfile >= 1 {
+                    // Downloading a checksum file that contains only the checksums of the image file
+                    let url = format!("{url}/{image_name}");
+                    let checksum_filename = format!("{url}.SHA256SUM");
+                    let checksum_body = get_body_from_url(&checksum_filename, client).await;
+                    let checksum =
+                        CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url);
+
+                    option_cloud_image = Some(CloudImage::new(url, checksum, image_name.to_string(), date));
+                } else {
+                    option_cloud_image = Some(CloudImage::new(
+                        format!("{url}/{image_name}"),
+                        CheckSums::None,
+                        image_name.to_string(),
+                        date,
+                    ));
                 }
             }
         }

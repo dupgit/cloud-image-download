@@ -8,7 +8,7 @@ use env_logger::{Env, WriteStyle};
 use futures::{StreamExt, stream};
 use log::{debug, error, info};
 use std::env::var;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
 
