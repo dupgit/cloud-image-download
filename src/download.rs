@@ -2,7 +2,6 @@ use crate::cloud_image::CloudImage;
 use crate::image_history::DbImageHistory;
 use crate::website::WSImageList;
 use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
-use chrono::NaiveDateTime;
 use clap_verbosity_flag::Verbosity;
 use colored::Colorize;
 use log::{error, info, warn};
@@ -32,6 +31,7 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// @todo: rewrite this doc
 /// With `image_name` as a filename and `file_destination` as a Path
 /// returns the absolute file name. If `normalized` is true then
 /// uses `image_date` to format the name of the file with the date
@@ -39,20 +39,37 @@ fn create_dir_if_needed(path: &PathBuf) -> Result<(), Box<dyn Error>> {
 /// get `example-20250710.qcow2` when normalized)
 #[must_use]
 pub fn get_filename_destination(
-    image_name: &str,
+    cloud_image: &CloudImage,
     file_destination: &Path,
-    normalize: bool,
-    image_date: NaiveDateTime,
+    normalize: &Option<String>,
 ) -> Option<String> {
-    let mut normalized_image_name: String = image_name.to_string();
+    let image_date = cloud_image.date;
+    let image_name = &cloud_image.name;
+    let version = match &cloud_image.url.version {
+        Some(v) => v,
+        None => "",
+    };
+    let after_version = match &cloud_image.url.after_version {
+        Some(av) => av,
+        None => "",
+    };
 
-    if normalize && let Some((first_part, last_part)) = image_name.rsplit_once('.') {
-        normalized_image_name = format!("{first_part}-{}.{last_part}", image_date.format("%Y%m%d"));
+    let mut normalized_image_name: String;
+
+    if normalize.is_some()
+        && let Some(normalize_string) = normalize
+    {
+        normalized_image_name = normalize_string.replace("{date}", &image_date.format("%Y%m%d").to_string());
+        normalized_image_name = normalized_image_name.replace("{version}", version);
+        normalized_image_name = normalized_image_name.replace("{after_version}", after_version);
+    } else {
+        normalized_image_name = image_name.to_string();
     }
-    if let Some(filename) = file_destination.join(normalized_image_name).to_str() {
+
+    if let Some(filename) = file_destination.join(&normalized_image_name).to_str() {
         Some(filename.to_string())
     } else {
-        warn!("{image_name} is not a valid UTF-8 string");
+        warn!("{normalized_image_name} is not a valid UTF-8 string");
         None
     }
 }
@@ -83,20 +100,18 @@ pub async fn download_images(
         for cloud_image in &ws_image.images_list {
             match create_dir_if_needed(&ws_image.website.destination) {
                 Ok(()) => {
-                    let normalize = ws_image.website.get_normalize();
                     if let Some(filename) = get_filename_destination(
-                        &cloud_image.name,
+                        cloud_image,
                         &ws_image.website.destination,
-                        normalize,
-                        cloud_image.date,
+                        &ws_image.website.normalize,
                     ) {
-                        match Url::parse(&cloud_image.url) {
+                        match Url::parse(&cloud_image.url.url) {
                             Ok(url) => {
-                                info!("Will try to download '{}' to {filename}", cloud_image.url);
+                                info!("Will try to download '{}' to {filename}", cloud_image.url.url);
                                 download_image_list.push(Download::new(&url, &filename));
                             }
                             Err(e) => {
-                                error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url);
+                                error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url.url);
                                 info!("As a result {filename} will not be downloaded");
                             }
                         }
@@ -185,12 +200,12 @@ pub fn image_has_been_downloaded(
     cloud_image: &CloudImage,
     destination: &Path,
     verify_skipped: bool,
-    normalize: bool,
+    normalize: &Option<String>,
 ) -> bool {
     for summary in downloaded_summary {
         let download = summary.download();
-        if let Some(filename) = get_filename_destination(&cloud_image.name, destination, normalize, cloud_image.date) {
-            match Url::parse(&cloud_image.url) {
+        if let Some(filename) = get_filename_destination(cloud_image, destination, normalize) {
+            match Url::parse(&cloud_image.url.url) {
                 Ok(url) => {
                     if download.filename == filename && download.url == url {
                         match summary.status() {
@@ -208,7 +223,7 @@ pub fn image_has_been_downloaded(
                     }
                 }
                 Err(e) => {
-                    error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url);
+                    error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url.url);
                 }
             }
         }
@@ -230,17 +245,16 @@ pub async fn verify_downloaded_file(
         for cloud_image in ws_image.images_list {
             // Checks that the image has been downloaded effectively
             // before checking its checksum
-            let normalize = ws_image.website.get_normalize();
             if image_has_been_downloaded(
                 downloaded_summary,
                 &cloud_image,
                 &ws_image.website.destination,
                 verify_skipped,
-                normalize,
+                &ws_image.website.normalize,
             ) {
                 let website = ws_image.website.clone();
                 let join_handle = task::spawn(async move {
-                    if cloud_image.verify(&website.destination, normalize) {
+                    if cloud_image.verify(&website.destination, &website.normalize) {
                         Some(cloud_image)
                     } else {
                         None

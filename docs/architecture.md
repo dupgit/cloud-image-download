@@ -5,7 +5,8 @@
 ### Program's goal
 
 Downloads cloud system images (basically qcow2 files) from web sites and keeps
-track of the images already downloaded and thus download only the latest ones. It is intended to be used periodically (ie: weekly)
+track of the images already downloaded and thus download only the latest ones.
+It is intended to be used periodically (ie: weekly)
 
 ### Target audience
 
@@ -39,11 +40,14 @@ available. It will not upload files directly to the local cloud.
   of all files that were previously successfully downloaded. Loads and saves
   image history from an sqlite DB.
 - **File downloader** (`download.rs`) downloads the images, provides a
-  summary of what has been downloaded or not and verifies downloaded files. Images can be saved with a "normalized" filename. Uses crate trauma.
-- **Image manager** (`cloud_image.rs`) manages cloud images that are to be found (from the websites), downloaded and verified
+  summary of what has been downloaded or not and verifies downloaded files. Images
+  can be saved with a "normalized" filename. Uses crate trauma.
+- **Image manager** (`cloud_image.rs`) manages cloud images that are to be found
+  (from the websites), downloaded and verified
 - **Website manager** (`website.rs`) with the settings loaded, uses
   httpdirectory crate to get the latest images to be downloaded from a
-  website. Multiples latest images can be downloaded from one website (ie: `x86_64` and `aarch64` images for instance)
+  website. Multiples latest images can be downloaded from one website
+  (ie: `x86_64` and `aarch64` images for instance)
 
 - **The program itself** (`cid.rs`) glues everything to enable downloading
   only latest verified images to a destination path.
@@ -85,8 +89,9 @@ command line, variable environment. These settings may be:
     to be in the image name (ie removes from the downlodable list all names
     that contains any of these regular expressions)
   - Destination path where a downloaded image will be saved
-  - Normalize that will tell the program to save the downloaded files in a
-    "normalized" way (ie with a date in it's name)
+  - Normalize that is a template filename to save the downloaded files in a
+    "normalized" way (one can use date, version and after_version parameters
+    to customize the filename's template)
 
 #### Image history
 
@@ -95,7 +100,7 @@ Keeps names of successfully downloaded images in a database:
 - The database should be created if it does not exist already,
 - This module provides a function to tell if an image is already
   in the database (this means same name, checksum and date).
-  A function to save a downloaded image to the database.
+  A function to save metadata of a downloaded image to the database.
 - When a downloaded image has been successfully verified (with its
   checksum) the image name with its date and checksum is saved into
   the database.
@@ -115,9 +120,9 @@ module (`verify()` method of `CloudImage`)
 
 #### Image manager
 
-Provides `CloudImage` structure and a method to verify the checksum
-of an image and a method that will tell whether or not the file is in
-the database (uses the method of image history module)
+Provides `CloudImage` structure, a method to verify the checksum
+of an image and a method that will tell whether or not the file is
+in the database (uses the method of image history module)
 
 #### Website manager
 
@@ -146,13 +151,13 @@ search list instead of the original one.
   vector filled with directories and files
 - **`log`**: Log system
 - **`regex`**: Regular expression engine
-- **`reqwest`**: Interface to http requests helps revrieving web pages
+- **`reqwest`**: Interface to http requests helps retrieving web pages
 - **`rusqlite`**: Gives access to an sqlite database and is used to store the
   download history
 - **`serde`**: Serialization / Deserialization library used to read the
   configuration file into a dedicated structure.
-- **`sha2`**: Widely use library to process sha checksums and all checksums out
-  there for cloud images are SHA-256 ones.
+- **`sha2`**: Widely use library to process sha checksums and checksums out
+  there for cloud images are SHA256 or SHA512.
 - **`shellexpand`**: expands paths filenames with `~` or variables such as
   `${USER}` or `${HOME}`.
 - **`tokio`**: Used to spawn task to verify file's checksum

@@ -71,7 +71,7 @@ fn test_settings_from_config() {
     let settings = Settings::from_config(&cli);
 
     assert_eq!(settings.sites.len(), 4);
-    assert_eq!(settings.db_path, Some("~/.cache/cid".to_string()));
+    assert_eq!(settings.db_path, Some("~/.cache/".to_string()));
 }
 
 // Tests cli precedence

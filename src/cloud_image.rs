@@ -2,6 +2,7 @@
 use crate::checksums::CheckSums;
 use crate::download::get_filename_destination;
 use crate::image_history::DbImageHistory;
+use crate::website::Url;
 use base16ct::lower;
 use chrono::NaiveDateTime;
 use colored::Colorize;
@@ -15,7 +16,7 @@ use std::path::Path;
 
 #[derive(Default, PartialEq, Debug)]
 pub struct CloudImage {
-    pub url: String,
+    pub url: Url,
     pub name: String,
     pub checksum: CheckSums,
     pub date: NaiveDateTime,
@@ -25,7 +26,7 @@ impl CloudImage {
     /// Creates a new `CloudImage` structure with `url`,
     /// `checksum`, `name` and `date` fields
     #[must_use]
-    pub fn new(url: String, checksum: CheckSums, name: String, date: NaiveDateTime) -> Self {
+    pub fn new(url: Url, checksum: CheckSums, name: String, date: NaiveDateTime) -> Self {
         CloudImage {
             url,
             name,
@@ -38,8 +39,8 @@ impl CloudImage {
     /// itself that its checksum it correct.
     //@todo: simplify and get it shorter
     #[must_use]
-    pub fn verify(&self, destination: &Path, normalize: bool) -> bool {
-        if let Some(filename) = get_filename_destination(&self.name, destination, normalize, self.date) {
+    pub fn verify(&self, destination: &Path, normalize: &Option<String>) -> bool {
+        if let Some(filename) = get_filename_destination(self, destination, normalize) {
             match verify_file(&filename, &self.checksum) {
                 Ok(no_error) => match no_error {
                     Some(success) => {
@@ -157,9 +158,9 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
 impl fmt::Display for CloudImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.checksum {
-            CheckSums::None => writeln!(f, "\t-> {}", self.url),
+            CheckSums::None => writeln!(f, "\t-> {}", self.url.url),
             CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
-                writeln!(f, "\t-> {} with checksum {}", self.url, checksum)
+                writeln!(f, "\t-> {} with checksum {}", self.url.url, checksum)
             }
         }
     }
