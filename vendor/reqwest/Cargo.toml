@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.64.0"
 name = "reqwest"
-version = "0.12.23"
+version = "0.12.24"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 include = [
@@ -242,9 +242,6 @@ version = "0.7.1"
 version = "1.0"
 features = ["futures"]
 
-[dependencies.tower-service]
-version = "0.3"
-
 [dependencies.url]
 version = "2.4"
 
@@ -424,6 +421,9 @@ default-features = false
 version = "0.6.5"
 features = ["follow-redirect"]
 default-features = false
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tower-service]
+version = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.webpki-roots]
 version = "1"

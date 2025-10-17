@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.65"
 name = "regex"
-version = "1.12.1"
+version = "1.12.2"
 authors = [
     "The Rust Project Developers",
     "Andrew Gallant <jamslam@gmail.com>",
@@ -46,7 +46,7 @@ repository = "https://github.com/rust-lang/regex"
 all-features = true
 rustdoc-args = [
     "--cfg",
-    "docsrs",
+    "docsrs_regex",
 ]
 
 [features]
@@ -186,6 +186,11 @@ default-features = false
 
 [dev-dependencies.regex-test]
 version = "0.1.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+priority = 0
+check-cfg = ["cfg(docsrs_regex)"]
 
 [profile.bench]
 debug = 2

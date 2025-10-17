@@ -1,6 +1,6 @@
 [package]
 name = "env_filter"
-version = "0.1.3"
+version = "0.1.4"
 description = """
 Filter log events using environment variables
 """
@@ -14,7 +14,7 @@ include.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [package.metadata.release]
 pre-release-replacements = [
