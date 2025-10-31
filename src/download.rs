@@ -54,16 +54,17 @@ pub fn get_filename_destination(
         None => "",
     };
 
-    let mut normalized_image_name: String;
+    let normalized_image_name: String;
 
     if normalize.is_some()
         && let Some(normalize_string) = normalize
     {
-        normalized_image_name = normalize_string.replace("{date}", &image_date.format("%Y%m%d").to_string());
-        normalized_image_name = normalized_image_name.replace("{version}", version);
-        normalized_image_name = normalized_image_name.replace("{after_version}", after_version);
+        normalized_image_name = normalize_string
+            .replace("{date}", &image_date.format("%Y%m%d").to_string())
+            .replace("{version}", version)
+            .replace("{after_version}", after_version);
     } else {
-        normalized_image_name = image_name.to_string();
+        normalized_image_name = image_name.clone();
     }
 
     if let Some(filename) = file_destination.join(&normalized_image_name).to_str() {
