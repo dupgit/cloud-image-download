@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "httpdirectory"
-version = "0.15.2"
+version = "0.16.3"
 authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
 build = false
 autolib = false
@@ -27,6 +27,7 @@ keywords = [
     "directory",
     "file",
     "autoindex",
+    "httpdir",
 ]
 categories = [
     "web-programming",

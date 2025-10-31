@@ -3,7 +3,7 @@ use crate::httpdirectoryentry::{CompareField, HttpDirectoryEntry};
 use crate::requests::{Request, join_url};
 use crate::scrape::scrape_body;
 use crate::stats::Stats;
-use log::{debug, error};
+use log::{debug, error, trace};
 use regex::Regex;
 use std::fmt;
 use std::sync::Arc;
@@ -35,6 +35,7 @@ impl HttpDirectory {
     pub async fn new(url: &str) -> Result<Self, HttpDirError> {
         let client = Request::new()?;
         let response = client.get(url).await?;
+        trace!("Response to get '{url}': {response:?}");
 
         let entries = get_entries_from_body(&response.text().await?);
         Ok(HttpDirectory {
@@ -317,10 +318,10 @@ mod tests {
         assert_eq!(
             output,
             r##"
-DIR         -  2025-01-26 12:54  dir1
-DIR         -  2025-02-16 13:37  test2
-DIR         -  2025-03-01 07:11  debian3
-DIR         -  2025-01-02 12:32  entry4
+DIR          -  2025-01-26 12:54  dir1
+DIR          -  2025-02-16 13:37  test2
+DIR          -  2025-03-01 07:11  debian3
+DIR          -  2025-01-02 12:32  entry4
 "##
         );
     }
@@ -411,15 +412,15 @@ DIR         -  2025-01-02 12:32  entry4
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-DIR         -  2025-03-01 07:11  debian3
-FILE     123M  2024-12-08 08:22  debian4
-DIR         -  2025-01-26 12:54  dir1
-FILE      67K  2025-07-17 23:59  entry3
-DIR         -  2025-01-02 12:32  entry4
-FILE      123  1987-10-09 04:37  file1
-FILE     2345  2023-01-01 00:00  files2
-DIR         -  2025-02-16 13:37  test2
+DIR          -                    ..
+DIR          -  2025-03-01 07:11  debian3
+FILE      123M  2024-12-08 08:22  debian4
+DIR          -  2025-01-26 12:54  dir1
+FILE       67K  2025-07-17 23:59  entry3
+DIR          -  2025-01-02 12:32  entry4
+FILE       123  1987-10-09 04:37  file1
+FILE      2345  2023-01-01 00:00  files2
+DIR          -  2025-02-16 13:37  test2
 "##
         );
         let httpdir = httpdir.sort_by_name(Sorting::Descending);
@@ -438,15 +439,15 @@ DIR         -  2025-02-16 13:37  test2
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-DIR         -  2025-02-16 13:37  test2
-FILE     2345  2023-01-01 00:00  files2
-FILE      123  1987-10-09 04:37  file1
-DIR         -  2025-01-02 12:32  entry4
-FILE      67K  2025-07-17 23:59  entry3
-DIR         -  2025-01-26 12:54  dir1
-FILE     123M  2024-12-08 08:22  debian4
-DIR         -  2025-03-01 07:11  debian3
+DIR          -                    ..
+DIR          -  2025-02-16 13:37  test2
+FILE      2345  2023-01-01 00:00  files2
+FILE       123  1987-10-09 04:37  file1
+DIR          -  2025-01-02 12:32  entry4
+FILE       67K  2025-07-17 23:59  entry3
+DIR          -  2025-01-26 12:54  dir1
+FILE      123M  2024-12-08 08:22  debian4
+DIR          -  2025-03-01 07:11  debian3
 "##
         );
     }
@@ -470,15 +471,15 @@ DIR         -  2025-03-01 07:11  debian3
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-FILE      123  1987-10-09 04:37  file1
-FILE     2345  2023-01-01 00:00  files2
-FILE     123M  2024-12-08 08:22  debian4
-DIR         -  2025-01-02 12:32  entry4
-DIR         -  2025-01-26 12:54  dir1
-DIR         -  2025-02-16 13:37  test2
-DIR         -  2025-03-01 07:11  debian3
-FILE      67K  2025-07-17 23:59  entry3
+DIR          -                    ..
+FILE       123  1987-10-09 04:37  file1
+FILE      2345  2023-01-01 00:00  files2
+FILE      123M  2024-12-08 08:22  debian4
+DIR          -  2025-01-02 12:32  entry4
+DIR          -  2025-01-26 12:54  dir1
+DIR          -  2025-02-16 13:37  test2
+DIR          -  2025-03-01 07:11  debian3
+FILE       67K  2025-07-17 23:59  entry3
 "##
         );
         let httpdir = httpdir.sort_by_date(Sorting::Descending);
@@ -497,15 +498,15 @@ FILE      67K  2025-07-17 23:59  entry3
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-FILE      67K  2025-07-17 23:59  entry3
-DIR         -  2025-03-01 07:11  debian3
-DIR         -  2025-02-16 13:37  test2
-DIR         -  2025-01-26 12:54  dir1
-DIR         -  2025-01-02 12:32  entry4
-FILE     123M  2024-12-08 08:22  debian4
-FILE     2345  2023-01-01 00:00  files2
-FILE      123  1987-10-09 04:37  file1
+DIR          -                    ..
+FILE       67K  2025-07-17 23:59  entry3
+DIR          -  2025-03-01 07:11  debian3
+DIR          -  2025-02-16 13:37  test2
+DIR          -  2025-01-26 12:54  dir1
+DIR          -  2025-01-02 12:32  entry4
+FILE      123M  2024-12-08 08:22  debian4
+FILE      2345  2023-01-01 00:00  files2
+FILE       123  1987-10-09 04:37  file1
 "##
         );
     }
@@ -529,15 +530,15 @@ FILE      123  1987-10-09 04:37  file1
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-DIR         -  2025-01-26 12:54  dir1
-DIR         -  2025-02-16 13:37  test2
-DIR         -  2025-03-01 07:11  debian3
-DIR         -  2025-01-02 12:32  entry4
-FILE      123  1987-10-09 04:37  file1
-FILE     2345  2023-01-01 00:00  files2
-FILE      67K  2025-07-17 23:59  entry3
-FILE     123M  2024-12-08 08:22  debian4
+DIR          -                    ..
+DIR          -  2025-01-26 12:54  dir1
+DIR          -  2025-02-16 13:37  test2
+DIR          -  2025-03-01 07:11  debian3
+DIR          -  2025-01-02 12:32  entry4
+FILE       123  1987-10-09 04:37  file1
+FILE      2345  2023-01-01 00:00  files2
+FILE       67K  2025-07-17 23:59  entry3
+FILE      123M  2024-12-08 08:22  debian4
 "##
         );
         let httpdir = httpdir.sort_by_size(Sorting::Descending);
@@ -556,15 +557,15 @@ FILE     123M  2024-12-08 08:22  debian4
         assert_eq!(
             output,
             r##"
-DIR         -                    ..
-FILE     123M  2024-12-08 08:22  debian4
-FILE      67K  2025-07-17 23:59  entry3
-FILE     2345  2023-01-01 00:00  files2
-FILE      123  1987-10-09 04:37  file1
-DIR         -  2025-01-26 12:54  dir1
-DIR         -  2025-02-16 13:37  test2
-DIR         -  2025-03-01 07:11  debian3
-DIR         -  2025-01-02 12:32  entry4
+DIR          -                    ..
+FILE      123M  2024-12-08 08:22  debian4
+FILE       67K  2025-07-17 23:59  entry3
+FILE      2345  2023-01-01 00:00  files2
+FILE       123  1987-10-09 04:37  file1
+DIR          -  2025-01-26 12:54  dir1
+DIR          -  2025-02-16 13:37  test2
+DIR          -  2025-03-01 07:11  debian3
+DIR          -  2025-01-02 12:32  entry4
 "##
         );
     }

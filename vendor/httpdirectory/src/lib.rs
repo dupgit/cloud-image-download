@@ -4,6 +4,7 @@ use const_format::formatcp;
 pub(crate) mod detect;
 pub(crate) mod requests;
 pub(crate) mod scrape;
+pub(crate) mod scrapers;
 
 /// All errors that you might get from httpdirectory library
 pub mod error;

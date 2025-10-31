@@ -2,8 +2,9 @@ use crate::{
     detect::{PureHtml, SiteType},
     error::HttpDirError,
     httpdirectoryentry::HttpDirectoryEntry,
+    scrapers::{h5ai::scrape_h5ai, miniserve::scrape_miniserve, snt::scrape_snt, ul::scrape_ul},
 };
-use log::{debug, trace};
+use log::{debug, info, trace, warn};
 use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 
@@ -14,9 +15,9 @@ use scraper::{ElementRef, Html, Selector};
 // Tells whether the table we are inspecting is a table
 // that contains the headers that we should find in a
 // file list ("last modified", "modified" or "date")
-fn are_table_headers_present(table: ElementRef) -> bool {
+pub(crate) fn are_table_headers_present(table: ElementRef) -> bool {
     let th_selector = Selector::parse("th").unwrap();
-    let re = Regex::new(r"(?msi)Last modified|Modified|Date").unwrap();
+    let re = Regex::new(r"(?msi)Last modified|Modified|Date|Modification time|Last modification").unwrap();
 
     for th in table.select(&th_selector) {
         let columns: Vec<_> = th.text().collect();
@@ -27,6 +28,7 @@ fn are_table_headers_present(table: ElementRef) -> bool {
         }
     }
 
+    warn!("This table does not contain any date header field");
     false
 }
 
@@ -36,7 +38,7 @@ fn are_table_headers_present(table: ElementRef) -> bool {
 // column (first one) is not empty (it has text) so
 // it may be that this is in fact the name & link
 // column
-fn scrape_table(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
+pub(crate) fn scrape_table(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
     let mut http_dir_entry = vec![];
 
     let html = Html::parse_document(body);
@@ -104,10 +106,13 @@ fn scrape_table(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
                 trace!("date: {date:?}, size: {size:?}");
                 if !name.is_empty() && !date.is_empty() && !size.is_empty() {
                     http_dir_entry.push(HttpDirectoryEntry::new(name[0], date[0], size[0], link));
-                } else if date.is_empty() && !size.is_empty() && !name.is_empty() {
+                } else if !name.is_empty() && !date.is_empty() && size.is_empty() {
+                    // size is empty this may be is a directory
+                    http_dir_entry.push(HttpDirectoryEntry::new(name[0], date[0], " - ", link));
+                } else if !name.is_empty() && date.is_empty() && !size.is_empty() {
                     // date may be empty for a parent directory for instance
                     http_dir_entry.push(HttpDirectoryEntry::new(name[0], "", size[0], link));
-                } else if date.is_empty() && size.is_empty() && !name.is_empty() {
+                } else if !name.is_empty() && date.is_empty() && size.is_empty() {
                     // date and size may be empty for a parent directory for instance
                     http_dir_entry.push(HttpDirectoryEntry::new(name[0], "", " - ", link));
                 }
@@ -131,11 +136,11 @@ fn scrape_pre_with_img(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirErr
 
     for pre in pre_iter {
         if pre.inner_html().contains("<img") {
-            trace!("Analyzing <pre> tag");
+            debug!("Analyzing <pre> tag with <img> tag");
             // <img> tag represents the icon at the beginning of the line
             for line in pre.inner_html().split("<img") {
                 // Removing the img tag (we know that > exists in line)
-                let new_line = strip_until_greater(line);
+                let new_line = strip_until_stop(line, "<a", false);
                 if !new_line.is_empty() {
                     // Considering only non empty lines
                     trace!("{new_line}");
@@ -161,15 +166,15 @@ fn scrape_pre_with_img(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirErr
                 // We have analyzed valid entries: no need to inspect other <pre> tags
                 return Ok(http_dir_entry);
             }
-            debug!("Unable to get entry from this body (no headers ?):\n{body}");
+            trace!("Unable to get entry from this body (no headers ?):\n{body}");
         } else {
-            debug!("Unable to get entry from this body (no <img> tag):\n{}", pre.inner_html());
+            trace!("Unable to get entry from this body (no <img> tag):\n{}", pre.inner_html());
         }
     }
     Ok(http_dir_entry)
 }
 
-fn remove_empty_cell(mut vector: Vec<&str>) -> Vec<&str> {
+pub(crate) fn remove_empty_cell(mut vector: Vec<&str>) -> Vec<&str> {
     vector.retain(|v| !v.trim().is_empty());
     vector
 }
@@ -202,7 +207,7 @@ fn get_date_and_size(line: &str) -> (&str, &str) {
 // Form of the column:  '<a href="bionic/">bionic/'
 // Returns a tuple with the text of the link and the
 // linked text as name. Here : ("bionic/", "bionic/")
-fn get_link_and_name(column: &str) -> (&str, &str) {
+pub fn get_link_and_name(column: &str) -> (&str, &str) {
     match column.find('>') {
         Some(num) => {
             let name = &column[num + 1..];
@@ -233,28 +238,32 @@ fn get_link_and_name(column: &str) -> (&str, &str) {
 }
 
 // Returns true if href vector contains
-// Name, Last modified, Size, Description
-// in this exact order
+// Name, Last modified, Size in this exact order
+// Some websites does not provides a description
 fn is_this_a_real_header(href: &[&str]) -> bool {
-    let name = strip_until_greater(href[0]);
-    let date = strip_until_greater(href[1]);
-    let size = strip_until_greater(href[2]);
-    let description = strip_until_greater(href[3]);
-    trace!("This is the header: {name}, {date}, {size}, {description}");
-    name.to_lowercase() == "name"
-        && date.to_lowercase() == "last modified"
-        && size.to_lowercase() == "size"
-        && description.to_lowercase() == "description"
+    let name = strip_until_stop(href[0], ">", true);
+    let date = strip_until_stop(href[1], ">", true);
+    let size = strip_until_stop(href[2], ">", true);
+    // let description = strip_until_greater(href[3]);
+    trace!("This is the header: {name}, {date}, {size}");
+
+    name.to_lowercase() == "name" && date.to_lowercase() == "last modified" && size.to_lowercase() == "size"
+    // && description.to_lowercase() == "description"
 }
 
-// Removes prefix until '>' sign that we know
+// Removes prefix until the stop '>' sign that we know
 // exists in the line &str.
-fn strip_until_greater(line: &str) -> &str {
-    match line.find('>') {
-        Some(num) => match line.strip_prefix(&line[0..=num]) {
-            Some(line_without_prefix) => line_without_prefix.trim(),
-            None => unreachable!(), // because we now that line has the prefix we want to remove
-        },
+fn strip_until_stop<'a>(line: &'a str, stop: &str, remove: bool) -> &'a str {
+    match line.find(stop) {
+        Some(mut num) => {
+            if !remove && num >= 1 {
+                num -= 1;
+            }
+            match line.strip_prefix(&line[0..=num]) {
+                Some(line_without_prefix) => line_without_prefix.trim(),
+                None => line.trim(),
+            }
+        }
         None => line.trim(),
     }
 }
@@ -269,6 +278,7 @@ fn scrape_pre_simple(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError
     let pre_iter = html.select(&pre_selector);
 
     for pre in pre_iter {
+        debug!("Analyzing <pre> tag");
         for line in pre.inner_html().lines() {
             if !line.is_empty() {
                 // Considering only non empty lines
@@ -298,13 +308,25 @@ fn scrape_pre_simple(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError
 // accordingly
 pub fn scrape_body(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
     match SiteType::detect(body) {
+        SiteType::H5ai(version) => {
+            info!("H5ai powered version {version} website detected");
+            scrape_h5ai(body, &version)
+        }
+        SiteType::Snt => {
+            info!("SNT index generator website detected");
+            scrape_snt(body)
+        }
+        SiteType::MiniServe(version) => {
+            info!("Miniserve version {version} website detected");
+            scrape_miniserve(body, &version)
+        }
         SiteType::NotNamed(html) => match html {
             PureHtml::Table => {
-                debug!("body has <table> tag, trying this");
+                info!("Body has <table> tag");
                 scrape_table(body)
             }
             PureHtml::Pre => {
-                debug!("body has <pre> tag, trying this");
+                info!("Body has <pre> tag");
                 let http_dir_entry = scrape_pre_with_img(body)?;
                 if http_dir_entry.is_empty() {
                     let http_dir_entry = scrape_pre_simple(body)?;
@@ -313,8 +335,15 @@ pub fn scrape_body(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> 
                     Ok(http_dir_entry)
                 }
             }
+            PureHtml::Ul => {
+                info!("Body has no <table>, nor <pre> but <ul> tag");
+                scrape_ul(body)
+            }
         },
-        SiteType::None => Ok(vec![]),
+        SiteType::None => {
+            warn!("Site type has not been detected: doing nothing");
+            Ok(vec![])
+        }
     }
 }
 

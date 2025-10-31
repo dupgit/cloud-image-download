@@ -4,6 +4,9 @@ use regex::Regex;
 #[derive(Debug, PartialEq, Eq)]
 pub enum SiteType {
     NotNamed(PureHtml),
+    H5ai(String),      // from https://github.com/lrsjng/h5ai
+    Snt,               // SNT index generator from https://snt.utwente.nl/en/
+    MiniServe(String), // Miniserv file server from https://crates.io/crates/miniserve
     None,
 }
 
@@ -11,6 +14,7 @@ pub enum SiteType {
 pub enum PureHtml {
     Table,
     Pre,
+    Ul,
 }
 
 // <table> detection is considered valid if
@@ -29,18 +33,40 @@ fn detect_table(body: &str) -> bool {
     }
 }
 
+fn detect_h5ai(body: &str) -> Option<String> {
+    let re = Regex::new(r"powered by h5ai ([v]?\d+.\d+.\d+[\+\-\.\w]*)").unwrap();
+    re.captures(body).map(|value| value[1].to_string())
+}
+
+fn detect_snt(body: &str) -> bool {
+    body.contains("SNT index generator")
+}
+
+fn detect_miniserve(body: &str) -> Option<String> {
+    let re = Regex::new(
+        r#"<div class="version"><a href="https://github.com/svenstaro/miniserve">miniserve</a>/(\d+.\d+.\d+)</div>"#,
+    )
+    .unwrap();
+    re.captures(body).map(|value| value[1].to_string())
+}
+
 impl SiteType {
     /// Detects the possible type of the site we are
     /// scraping information from by "analyzing" it's
     /// body.
     pub fn detect(body: &str) -> Self {
-        // `<table>` tag may contain attributes such as
-        // `id="indexlist"` for instance so we need to
-        // search without the closing `>` tag sign
-        if detect_table(body) {
+        if let Some(version) = detect_h5ai(body) {
+            SiteType::H5ai(version)
+        } else if detect_snt(body) {
+            SiteType::Snt
+        } else if let Some(version) = detect_miniserve(body) {
+            SiteType::MiniServe(version)
+        } else if detect_table(body) {
             SiteType::NotNamed(PureHtml::Table)
         } else if body.contains("<pre>") {
             SiteType::NotNamed(PureHtml::Pre)
+        } else if body.contains("<ul>") {
+            SiteType::NotNamed(PureHtml::Ul)
         } else {
             SiteType::None
         }

@@ -20,7 +20,7 @@ const_format = "0.2.34"
 directories = "6.0.0"
 env_logger = "0.11.6"
 futures = "0.3.31"
-httpdirectory = "0.15.0"
+httpdirectory = "0.16.0"
 log = "0.4.22"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["stream"] }
