@@ -46,9 +46,11 @@ impl Settings {
             }
         };
 
-        // To give the command line option the latest word
+        // To give the command line option the latest word:
+        // overwrite db_path setting if one was provided with
+        // the cli
         if let Some(db_path) = &cli.db_path {
-            settings.db_path = Some(db_path.to_string());
+            settings.db_path = Some(db_path.clone());
         }
 
         settings
