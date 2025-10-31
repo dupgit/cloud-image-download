@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.44](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.43...cc-v1.2.44) - 2025-10-31
+
+### Other
+
+- Fix debug assertion for env/abi mismatch ([#1604](https://github.com/rust-lang/cc-rs/pull/1604))
+- Update CHANGELOG for version 1.2.43 ([#1602](https://github.com/rust-lang/cc-rs/pull/1602))
+- Stop passing an invalid target to `llvm-mingw`'s cross-compilation wrappers ([#1495](https://github.com/rust-lang/cc-rs/pull/1495))
+
+## [1.2.43](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.42...cc-v1.2.43) - 2025-10-24
+
+### Other
+
+- Mark `static_flag` and `shared_flag` as deprecated ([#1582](https://github.com/rust-lang/cc-rs/pull/1582))
+
+## [1.2.42](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.41...cc-v1.2.42) - 2025-10-24
+
+### Other
+
+- Fix check-semver-checks ([#1600](https://github.com/rust-lang/cc-rs/pull/1600))
+- minor improvement for docs ([#1598](https://github.com/rust-lang/cc-rs/pull/1598))
+- Fix linker-plugin-lto: use `-flto=thin` ([#1594](https://github.com/rust-lang/cc-rs/pull/1594))
+- Disable check-buildstd for armv7k-apple-watchos ([#1599](https://github.com/rust-lang/cc-rs/pull/1599))
+- Add elf abi to ppc64 targets ([#1596](https://github.com/rust-lang/cc-rs/pull/1596))
+
 ## [1.2.41](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.40...cc-v1.2.41) - 2025-10-10
 
 ### Other

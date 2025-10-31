@@ -783,17 +783,19 @@ impl Build {
 
     /// Set the `-shared` flag.
     ///
-    /// When enabled, the compiler will produce a shared object which can
-    /// then be linked with other objects to form an executable.
+    /// This will typically be ignored by the compiler when calling [`Self::compile()`] since it only
+    /// produces static libraries.
     ///
     /// # Example
     ///
     /// ```no_run
+    /// // This will create a library named "liblibfoo.so.a"
     /// cc::Build::new()
     ///     .file("src/foo.c")
     ///     .shared_flag(true)
     ///     .compile("libfoo.so");
     /// ```
+    #[deprecated = "cc only creates static libraries, setting this does nothing"]
     pub fn shared_flag(&mut self, shared_flag: bool) -> &mut Build {
         self.shared_flag = Some(shared_flag);
         self
@@ -801,8 +803,8 @@ impl Build {
 
     /// Set the `-static` flag.
     ///
-    /// When enabled on systems that support dynamic linking, this prevents
-    /// linking with the shared libraries.
+    /// This will typically be ignored by the compiler when calling [`Self::compile()`] since it only
+    /// produces static libraries.
     ///
     /// # Example
     ///
@@ -813,6 +815,7 @@ impl Build {
     ///     .static_flag(true)
     ///     .compile("foo");
     /// ```
+    #[deprecated = "cc only creates static libraries, setting this does nothing"]
     pub fn static_flag(&mut self, static_flag: bool) -> &mut Build {
         self.static_flag = Some(static_flag);
         self
@@ -1319,7 +1322,7 @@ impl Build {
     /// always run on every compilation if no rerun cargo metadata is emitted.
     ///
     /// NOTE that cc does not emit metadata to detect changes for `PATH`, since it could
-    /// be changed every comilation yet does not affect the result of compilation
+    /// be changed every compilation yet does not affect the result of compilation
     /// (i.e. rust-analyzer adds temporary directory to `PATH`).
     ///
     /// cc in general, has no way detecting changes to compiler, as there are so many ways to
@@ -1805,7 +1808,7 @@ impl Build {
                 is_arm,
             },
         );
-        // armasm and armasm64 don't requrie -c option
+        // armasm and armasm64 don't require -c option
         if !is_assembler_msvc || !is_arm {
             cmd.arg("-c");
         }
@@ -3038,6 +3041,23 @@ impl Build {
             };
         }
 
+        // Under cross-compilation scenarios, llvm-mingw's clang executable is just a
+        // wrapper script that calls the actual clang binary with a suitable `--target`
+        // argument, much like the Android NDK case outlined above. Passing a target
+        // argument ourselves in this case will result in an error, as they expect
+        // targets like `x86_64-w64-mingw32`, and we can't always set such a target
+        // string because it is specific to this MinGW cross-compilation toolchain.
+        //
+        // For example, the following command will always fail due to using an unsuitable
+        // `--target` argument we'd otherwise pass:
+        // $ /opt/llvm-mingw-20250613-ucrt-ubuntu-22.04-x86_64/bin/x86_64-w64-mingw32-clang --target=x86_64-pc-windows-gnu dummy.c
+        //
+        // Code reference:
+        // https://github.com/mstorsjo/llvm-mingw/blob/a1f6413e5c21fd74b64137b56167f4fba500d1d8/wrappers/clang-target-wrapper.sh#L31
+        if !cfg!(windows) && target.os == "windows" && is_llvm_mingw_wrapper(&tool.path) {
+            tool.has_internal_target_arg = true;
+        }
+
         // If we found `cl.exe` in our environment, the tool we're returning is
         // an MSVC-like tool, *and* no env vars were set then set env vars for
         // the tool that we're returning.
@@ -4239,6 +4259,17 @@ fn android_clang_compiler_uses_target_arg_internally(clang_path: &Path) -> bool 
         }
     }
     false
+}
+
+fn is_llvm_mingw_wrapper(clang_path: &Path) -> bool {
+    if let Some(filename) = clang_path
+        .file_name()
+        .and_then(|file_name| file_name.to_str())
+    {
+        filename.ends_with("-w64-mingw32-clang") || filename.ends_with("-w64-mingw32-clang++")
+    } else {
+        false
+    }
 }
 
 // FIXME: Use parsed target.
