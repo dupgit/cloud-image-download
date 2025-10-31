@@ -90,8 +90,9 @@ command line, variable environment. These settings may be:
     that contains any of these regular expressions)
   - Destination path where a downloaded image will be saved
   - Normalize that is a template filename to save the downloaded files in a
-    "normalized" way (one can use date, version and after_version parameters
-    to customize the filename's template)
+    "normalized" way (one can use `date`, `version` and `after_version`
+    parameters to customize the filename's template - see
+    [cloud-image-download.toml](https://github.com/dupgit/cloud-image-download/blob/master/test_data/cloud-image-download.toml))
 
 #### Image history
 
