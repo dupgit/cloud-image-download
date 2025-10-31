@@ -6,7 +6,7 @@ authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
 description = "Downloads cloud images to a directory"
 repository = "https://github.com/dupgit/cloud-image-download"
 license = "MIT OR Apache-2.0"
-keywords = ["cloud", "image", "download", "qcow2", "ubuntu", "fedora"]
+keywords = ["cloud", "image", "download", "qcow2", "qemu"]
 categories = ["command-line-utilities"]
 
 [dependencies]
