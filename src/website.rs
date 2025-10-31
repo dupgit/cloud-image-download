@@ -32,6 +32,8 @@ pub struct WSImageList {
     pub website: Arc<WebSite>,
 }
 
+/// cloud-image-download Url type to get all the
+/// components of an Url from the configuration file
 #[derive(Default, PartialEq, Debug)]
 pub struct Url {
     pub url: String,
