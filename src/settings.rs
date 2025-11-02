@@ -28,7 +28,7 @@ impl Settings {
 
         let config = match Config::builder()
             .add_source(config::File::with_name(&config_filename).required(false))
-            .add_source(config::Environment::with_prefix("CID"))
+            .add_source(config::Environment::with_prefix("CID_"))
             .build()
         {
             Ok(conf) => conf,
