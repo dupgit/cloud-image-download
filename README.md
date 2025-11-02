@@ -23,7 +23,7 @@ the following keys:
 - `image_name_cleanse` as an array of Regex string to filter
   out the images (the images to download should not match
   any of those strings),
-- `normalize` is a string that will be used as a tmeplate to
+- `normalize` is a string that will be used as a template to
   normalize the filename of the saved image. You can use
   `{version}`, `{date}` and `{after_version}` modifiers in this
   string to customize the image name after these variable.
