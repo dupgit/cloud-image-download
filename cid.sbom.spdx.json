@@ -1,20 +1,20 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2025-10-31T18:52:08Z",
+    "created": "2025-11-02T16:55:01Z",
     "creators": [
       "Tool: cargo-sbom-v0.10.0"
     ]
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-f61e626e-78a9-4358-bcd8-a9d5be551b26",
+  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-6d96dfad-653e-4f3b-87de-a63ded0ad33d",
   "files": [
     {
       "SPDXID": "SPDXRef-File-cid",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "74cbe0ec50ea9010f684ee86575a63eb48b935cc"
+          "checksumValue": "ae3eca25fda807eb78a88aa3679a23bf999c3aed"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -28,7 +28,7 @@
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "74cbe0ec50ea9010f684ee86575a63eb48b935cc"
+          "checksumValue": "ae3eca25fda807eb78a88aa3679a23bf999c3aed"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -498,13 +498,13 @@
       "versionInfo": "3.0.4"
     },
     {
-      "SPDXID": "SPDXRef-Package-cloud-image-download-0.4.1",
+      "SPDXID": "SPDXRef-Package-cloud-image-download-0.5.0",
       "description": "Downloads cloud images to a directory",
       "downloadLocation": "NONE",
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "cloud-image-download",
-      "versionInfo": "0.4.1"
+      "versionInfo": "0.5.0"
     },
     {
       "SPDXID": "SPDXRef-Package-colorchoice-1.0.4",
@@ -4216,13 +4216,13 @@
       "versionInfo": "0.26.4"
     },
     {
-      "SPDXID": "SPDXRef-Package-tokio-util-0.7.16",
+      "SPDXID": "SPDXRef-Package-tokio-util-0.7.17",
       "description": "Additional utilities for working with Tokio.\n",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/tokio-util@0.7.16",
+          "referenceLocator": "pkg:cargo/tokio-util@0.7.17",
           "referenceType": "purl"
         }
       ],
@@ -4230,7 +4230,7 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "name": "tokio-util",
-      "versionInfo": "0.7.16"
+      "versionInfo": "0.7.17"
     },
     {
       "SPDXID": "SPDXRef-Package-toml--datetime-0.7.3",
@@ -5745,12 +5745,12 @@
       "spdxElementId": "SPDXRef-DOCUMENT"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.4.1",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.0",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cid"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.4.1",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.0",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cloud_image_download"
     },
@@ -5952,102 +5952,102 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-base16ct-0.3.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-chrono-0.4.42",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-4.5.51",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-verbosity-flag-3.0.4",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-colored-3.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-config-0.15.18",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-const--format-0.2.35",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-directories-6.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-env--logger-0.11.8",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-httpdirectory-0.16.3",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-log-0.4.28",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-regex-1.12.2",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-reqwest-0.12.24",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-rusqlite-0.37.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde-1.0.228",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-sha2-0.10.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-shellexpand-3.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.48.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-trauma-2.3.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.4.1"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.59.0",
@@ -6650,7 +6650,7 @@
       "spdxElementId": "SPDXRef-Package-h2-0.4.12"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-tokio-util-0.7.16",
+      "relatedSpdxElement": "SPDXRef-Package-tokio-util-0.7.17",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-h2-0.4.12"
     },
@@ -8155,7 +8155,7 @@
       "spdxElementId": "SPDXRef-Package-reqwest-0.12.24"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-tokio-util-0.7.16",
+      "relatedSpdxElement": "SPDXRef-Package-tokio-util-0.7.17",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-reqwest-0.12.24"
     },
@@ -9067,27 +9067,27 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-bytes-1.10.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.16"
+      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.17"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-core-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.16"
+      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.17"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-sink-0.3.31",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.16"
+      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.17"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-pin-project-lite-0.2.16",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.16"
+      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.17"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.48.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.16"
+      "spdxElementId": "SPDXRef-Package-tokio-util-0.7.17"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde--core-1.0.228",

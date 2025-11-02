@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.71"
 name = "tokio-util"
-version = "0.7.16"
+version = "0.7.17"
 authors = ["Tokio Contributors <team@tokio.rs>"]
 build = false
 autolib = false
@@ -32,13 +32,13 @@ repository = "https://github.com/tokio-rs/tokio"
 
 [package.metadata.docs.rs]
 all-features = true
-rustc-args = [
+rustdoc-args = [
     "--cfg",
     "docsrs",
     "--cfg",
     "tokio_unstable",
 ]
-rustdoc-args = [
+rustc-args = [
     "--cfg",
     "docsrs",
     "--cfg",
@@ -180,6 +180,10 @@ name = "task_join_map"
 path = "tests/task_join_map.rs"
 
 [[test]]
+name = "task_join_queue"
+path = "tests/task_join_queue.rs"
+
+[[test]]
 name = "task_tracker"
 path = "tests/task_tracker.rs"
 
@@ -266,8 +270,6 @@ check-cfg = [
     "cfg(tokio_internal_mt_counters)",
     "cfg(tokio_no_parking_lot)",
     "cfg(tokio_no_tuning_tests)",
-    "cfg(tokio_taskdump)",
     "cfg(tokio_unstable)",
-    "cfg(tokio_uring)",
     'cfg(target_os, values("cygwin"))',
 ]
