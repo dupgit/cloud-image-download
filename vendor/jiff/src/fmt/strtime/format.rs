@@ -10,7 +10,7 @@ use crate::{
         Write, WriteExt,
     },
     tz::Offset,
-    util::{escape, t::C, utf8},
+    util::{escape, utf8},
     Error,
 };
 
@@ -130,8 +130,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
             b'.' => {
                 if !self.bump_fmt() {
                     return Err(err!(
-                        "invalid format string, expected directive \
-                             after '%.'",
+                        "invalid format string, expected directive after '%.'",
                     ));
                 }
                 // Parse precision settings after the `.`, effectively
@@ -143,8 +142,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
                     }
                     unk => {
                         return Err(err!(
-                            "found unrecognized directive %{unk} \
-                                 following %.",
+                            "found unrecognized directive %{unk} following %.",
                             unk = escape::Byte(unk),
                         ));
                     }
@@ -189,6 +187,13 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     /// actual UTF-8 decoding, but since the `Write` trait only represents
     /// Unicode-accepting buffers, we need to actually do decoding here.
     ///
+    /// # Errors
+    ///
+    /// Unless lenient parsing is enabled, this returns an error if UTF-8
+    /// decoding failed. When lenient parsing is enabled, decoding errors
+    /// are turned into the Unicode replacement codepoint via the
+    /// "substitution of maximal subparts" strategy.
+    ///
     /// # Panics
     ///
     /// When `self.fmt` is empty. i.e., Only call this when you know there is
@@ -201,10 +206,14 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
                 self.fmt = &self.fmt[ch.len_utf8()..];
                 return Ok(ch);
             }
-            Err(invalid) => Err(err!(
-                "found invalid UTF-8 byte {byte:?} in format \
+            Err(errant_bytes) if self.config.lenient => {
+                self.fmt = &self.fmt[errant_bytes.len()..];
+                return Ok(char::REPLACEMENT_CHARACTER);
+            }
+            Err(errant_bytes) => Err(err!(
+                "found invalid UTF-8 byte {errant_bytes:?} in format \
                  string (format strings must be valid UTF-8)",
-                byte = escape::Byte(invalid),
+                errant_bytes = escape::Bytes(errant_bytes),
             )),
         }
     }
@@ -216,7 +225,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn parse_extension(&mut self) -> Result<Extension, Error> {
         let flag = self.parse_flag()?;
         let width = self.parse_width()?;
-        let colons = self.parse_colons();
+        let colons = self.parse_colons()?;
         Ok(Extension { flag, width, colons })
     }
 
@@ -248,10 +257,10 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     /// Parses an optional number of colons (up to 3) immediately before a
     /// conversion specifier.
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    fn parse_colons(&mut self) -> u8 {
-        let (colons, fmt) = Extension::parse_colons(self.fmt);
+    fn parse_colons(&mut self) -> Result<u8, Error> {
+        let (colons, fmt) = Extension::parse_colons(self.fmt)?;
         self.fmt = fmt;
-        colons
+        Ok(colons)
     }
 
     // These are the formatting functions. They are pretty much responsible
@@ -263,7 +272,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_ampm_lower(&mut self, ext: &Extension) -> Result<(), Error> {
         let hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format AM/PM"))?
             .get();
         ext.write_str(
@@ -277,7 +286,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_ampm_upper(&mut self, ext: &Extension) -> Result<(), Error> {
         let hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format AM/PM"))?
             .get();
         // Manually specialize this case to avoid hitting `write_str_cold`.
@@ -351,7 +360,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_hour12_zero(&mut self, ext: &Extension) -> Result<(), Error> {
         let mut hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format hour"))?
             .get();
         if hour == 0 {
@@ -366,7 +375,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_hour24_zero(&mut self, ext: &Extension) -> Result<(), Error> {
         let hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format hour"))?
             .get();
         ext.write_int(b'0', Some(2), hour, self.wtr)
@@ -376,7 +385,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_hour12_space(&mut self, ext: &Extension) -> Result<(), Error> {
         let mut hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format hour"))?
             .get();
         if hour == 0 {
@@ -391,7 +400,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     fn fmt_hour24_space(&mut self, ext: &Extension) -> Result<(), Error> {
         let hour = self
             .tm
-            .hour
+            .hour_ranged()
             .ok_or_else(|| err!("requires time to format hour"))?
             .get();
         ext.write_int(b' ', Some(2), hour, self.wtr)
@@ -536,6 +545,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
         let subsec = self.tm.subsec.ok_or_else(|| {
             err!("requires time to format subsecond nanoseconds")
         })?;
+        let subsec = i32::from(subsec).unsigned_abs();
         // For %f, we always want to emit at least one digit. The only way we
         // wouldn't is if our fractional component is zero. One exception to
         // this is when the width is `0` (which looks like `%00f`), in which
@@ -545,7 +555,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
         if ext.width == Some(0) {
             return Err(err!("zero precision with %f is not allowed"));
         }
-        if subsec == C(0) && ext.width.is_none() {
+        if subsec == 0 && ext.width.is_none() {
             self.wtr.write_str("0")?;
             return Ok(());
         }
@@ -556,7 +566,8 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
     /// %.f
     fn fmt_dot_fractional(&mut self, ext: &Extension) -> Result<(), Error> {
         let Some(subsec) = self.tm.subsec else { return Ok(()) };
-        if subsec == C(0) && ext.width.is_none() || ext.width == Some(0) {
+        let subsec = i32::from(subsec).unsigned_abs();
+        if subsec == 0 && ext.width.is_none() || ext.width == Some(0) {
             return Ok(());
         }
         ext.write_str(Case::AsIs, ".", self.wtr)?;
@@ -572,6 +583,7 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
         if ext.width == Some(0) {
             return Err(err!("zero precision with %N is not allowed"));
         }
+        let subsec = i32::from(subsec).unsigned_abs();
         // Since `%N` is actually an alias for `%9f`, when the precision
         // is missing, we default to 9.
         if ext.width.is_none() {
@@ -590,8 +602,8 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
             })?;
         let ts = self
             .tm
-            .timestamp
-            .ok_or_else(|| err!("requires timestamp in broken down time"))?;
+            .to_timestamp()
+            .context("requires timestamp in broken down time")?;
         let oinfo = tz.to_offset_info(ts);
         ext.write_str(Case::Upper, oinfo.abbreviation(), self.wtr)
     }
@@ -731,12 +743,6 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
             .or_else(|| self.tm.to_date().ok().map(|d| d.year_ranged()))
             .ok_or_else(|| err!("requires date to format year (2-digit)"))?
             .get();
-        if !(1969 <= year && year <= 2068) {
-            return Err(err!(
-                "formatting a 2-digit year requires that it be in \
-                 the inclusive range 1969 to 2068, but got {year}",
-            ));
-        }
         let year = year % 100;
         ext.write_int(b'0', Some(2), year, self.wtr)
     }
@@ -783,13 +789,6 @@ impl<'c, 'f, 't, 'w, W: Write, L: Custom> Formatter<'c, 'f, 't, 'w, W, L> {
                 )
             })?
             .get();
-        if !(1969 <= year && year <= 2068) {
-            return Err(err!(
-                "formatting a 2-digit ISO 8601 week-based year \
-                 requires that it be in \
-                 the inclusive range 1969 to 2068, but got {year}",
-            ));
-        }
         let year = year % 100;
         ext.write_int(b'0', Some(2), year, self.wtr)
     }
@@ -981,7 +980,7 @@ impl Extension {
     /// The `width` setting on `Extension` is treated as a precision setting.
     fn write_fractional_seconds<W: Write>(
         &self,
-        number: impl Into<i64>,
+        number: impl Into<u32>,
         wtr: &mut W,
     ) -> Result<(), Error> {
         let number = number.into();
@@ -1436,6 +1435,9 @@ mod tests {
         insta::assert_snapshot!(f("%05y", date(2001, 7, 14)), @"00001");
         insta::assert_snapshot!(f("%_y", date(2001, 7, 14)), @" 1");
         insta::assert_snapshot!(f("%_5y", date(2001, 7, 14)), @"    1");
+
+        insta::assert_snapshot!(f("%y", date(1824, 7, 14)), @"24");
+        insta::assert_snapshot!(f("%g", date(1824, 7, 14)), @"24");
     }
 
     #[test]
@@ -1511,9 +1513,22 @@ mod tests {
     }
 
     #[test]
+    fn err_invalid_utf8() {
+        let d = date(2025, 1, 20);
+        insta::assert_snapshot!(
+            format("abc %F xyz", d).unwrap(),
+            @"abc 2025-01-20 xyz",
+        );
+        insta::assert_snapshot!(
+            format(b"abc %F \xFFxyz", d).unwrap_err(),
+            @r#"strftime formatting failed: found invalid UTF-8 byte "\xff" in format string (format strings must be valid UTF-8)"#,
+        );
+    }
+
+    #[test]
     fn lenient() {
         fn f(
-            fmt: &str,
+            fmt: impl AsRef<[u8]>,
             tm: impl Into<BrokenDownTime>,
         ) -> alloc::string::String {
             let config = Config::new().lenient(true);
@@ -1526,5 +1541,26 @@ mod tests {
         insta::assert_snapshot!(f("%+", date(2024, 7, 9)), @"%+");
         insta::assert_snapshot!(f("%F", date(2024, 7, 9)), @"2024-07-09");
         insta::assert_snapshot!(f("%T", date(2024, 7, 9)), @"%T");
+        insta::assert_snapshot!(f("%F%", date(2024, 7, 9)), @"2024-07-09%");
+        insta::assert_snapshot!(
+            f(b"abc %F \xFFxyz", date(2024, 7, 9)),
+            @"abc 2024-07-09 �xyz",
+        );
+        // Demonstrates substitution of maximal subparts.
+        // Namely, `\xF0\x9F\x92` is a prefix of a valid
+        // UTF-8 encoding of a codepoint, such as `💩`.
+        // So the entire prefix should get substituted with
+        // a single replacement character...
+        insta::assert_snapshot!(
+            f(b"%F\xF0\x9F\x92%Y", date(2024, 7, 9)),
+            @"2024-07-09�2024",
+        );
+        // ... but \xFF is never part of a valid encoding.
+        // So each instance gets its own replacement
+        // character.
+        insta::assert_snapshot!(
+            f(b"%F\xFF\xFF\xFF%Y", date(2024, 7, 9)),
+            @"2024-07-09���2024",
+        );
     }
 }

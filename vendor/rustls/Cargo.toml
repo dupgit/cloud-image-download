@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls"
-version = "0.23.34"
+version = "0.23.35"
 build = "build.rs"
 exclude = [
     "src/testdata",

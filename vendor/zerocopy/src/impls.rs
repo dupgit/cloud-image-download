@@ -812,7 +812,7 @@ unsafe impl<T: TryFromBytes + ?Sized> TryFromBytes for UnsafeCell<T> {
         //
         // `is_bit_valid` is documented as panicking or failing to monomorphize
         // if called with a shared-aliased pointer on a type containing an
-        // `UnsafeCell`. In practice, it will always be a monorphization error.
+        // `UnsafeCell`. In practice, it will always be a monomorphization error.
         // Since `is_bit_valid` is `#[doc(hidden)]` and only called directly
         // from this crate, we only need to worry about our own code incorrectly
         // calling `UnsafeCell::is_bit_valid`. The post-monomorphization error
@@ -1074,8 +1074,8 @@ mod simd {
             int16x8_t, int32x2_t, int32x4_t, int64x1_t, int64x2_t, poly8x8_t, poly8x8x2_t, poly8x8x3_t,
             poly8x8x4_t, poly8x16_t, poly8x16x2_t, poly8x16x3_t, poly8x16x4_t, poly16x4_t, poly16x8_t,
             poly64x1_t, poly64x2_t, uint8x8_t, uint8x8x2_t, uint8x8x3_t, uint8x8x4_t, uint8x16_t,
-            uint8x16x2_t, uint8x16x3_t, uint8x16x4_t, uint16x4_t, uint16x8_t, uint32x2_t, uint32x4_t,
-            uint64x1_t, uint64x2_t
+            uint8x16x2_t, uint8x16x3_t, uint8x16x4_t, uint16x4_t, uint16x4x2_t, uint16x4x3_t,
+            uint16x4x4_t, uint16x8_t, uint32x2_t, uint32x4_t, uint64x1_t, uint64x2_t
         );
     };
 }
@@ -2073,8 +2073,8 @@ mod tests {
                 int16x8_t, int32x2_t, int32x4_t, int64x1_t, int64x2_t, poly8x8_t, poly8x8x2_t, poly8x8x3_t,
                 poly8x8x4_t, poly8x16_t, poly8x16x2_t, poly8x16x3_t, poly8x16x4_t, poly16x4_t, poly16x8_t,
                 poly64x1_t, poly64x2_t, uint8x8_t, uint8x8x2_t, uint8x8x3_t, uint8x8x4_t, uint8x16_t,
-                uint8x16x2_t, uint8x16x3_t, uint8x16x4_t, uint16x4_t, uint16x8_t, uint32x2_t, uint32x4_t,
-                uint64x1_t, uint64x2_t
+                uint8x16x2_t, uint8x16x3_t, uint8x16x4_t, uint16x4_t, uint16x4x2_t, uint16x4x3_t,
+                uint16x4x4_t, uint16x8_t, uint32x2_t, uint32x4_t, uint64x1_t, uint64x2_t
             );
         }
     }

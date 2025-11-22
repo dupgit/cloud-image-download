@@ -202,9 +202,9 @@
 //!
 //! # Thanks
 //!
-//! Zerocopy is maintained by engineers at Google and Amazon with help from
-//! [many wonderful contributors][contributors]. Thank you to everyone who has
-//! lent a hand in making Rust a little more secure!
+//! Zerocopy is maintained by engineers at Google with help from [many wonderful
+//! contributors][contributors]. Thank you to everyone who has lent a hand in
+//! making Rust a little more secure!
 //!
 //! [contributors]: https://github.com/google/zerocopy/graphs/contributors
 
@@ -322,7 +322,7 @@
 )]
 #![cfg_attr(
     all(feature = "simd-nightly", target_arch = "arm"),
-    feature(stdarch_arm_dsp, stdarch_arm_neon_intrinsics)
+    feature(stdarch_arm_neon_intrinsics)
 )]
 #![cfg_attr(
     all(feature = "simd-nightly", any(target_arch = "powerpc", target_arch = "powerpc64")),
@@ -630,7 +630,7 @@ use {FromZeros as FromZeroes, IntoBytes as AsBytes, Ref as LayoutVerified};
 /// example.
 ///
 /// A `#[repr(C)]` slice DST is laid out [just like sized `#[repr(C)]`
-/// types][repr-c-structs], but the presenence of a variable-length field
+/// types][repr-c-structs], but the presence of a variable-length field
 /// introduces the possibility of *dynamic padding*. In particular, it may be
 /// necessary to add trailing padding *after* the trailing slice field in order
 /// to satisfy the outer type's alignment, and the amount of padding required
@@ -1446,7 +1446,7 @@ pub use zerocopy_derive::TryFromBytes;
 /// definitely invalid.
 ///
 /// Zerocopy takes a conservative approach, and only considers a bit pattern to
-/// be valid if its validity is a documenteed guarantee provided by the
+/// be valid if its validity is a documented guarantee provided by the
 /// language.
 ///
 /// For most use cases, Rust's current guarantees align with programmers'

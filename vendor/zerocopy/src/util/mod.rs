@@ -39,12 +39,18 @@ impl<T: ?Sized> Default for SendSyncPhantomData<T> {
 }
 
 impl<T: ?Sized> PartialEq for SendSyncPhantomData<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+    fn eq(&self, _other: &Self) -> bool {
+        true
     }
 }
 
 impl<T: ?Sized> Eq for SendSyncPhantomData<T> {}
+
+impl<T: ?Sized> Clone for SendSyncPhantomData<T> {
+    fn clone(&self) -> Self {
+        SendSyncPhantomData(PhantomData)
+    }
+}
 
 pub(crate) trait AsAddress {
     fn addr(self) -> usize;
@@ -281,7 +287,7 @@ pub(crate) const unsafe fn transmute_unchecked<Src, Dst>(src: Src) -> Dst {
     // SAFETY: Since `Transmute<Src, Dst>` is `#[repr(C)]`, its `src` and `dst`
     // fields both start at the same offset and the types of those fields are
     // transparent wrappers around `Src` and `Dst` [1]. Consequently,
-    // initializng `Transmute` with with `src` and then reading out `dst` is
+    // initializing `Transmute` with with `src` and then reading out `dst` is
     // equivalent to transmuting from `Src` to `Dst` [2]. Transmuting from `src`
     // to `Dst` is valid because — by contract on the caller — `src` is a valid
     // instance of `Dst`.
@@ -362,6 +368,7 @@ where
         }
     } else {
         let align = T::LAYOUT.align.get();
+
         // We use `transmute` instead of an `as` cast since Miri (with strict
         // provenance enabled) notices and complains that an `as` cast creates a
         // pointer with no provenance. Miri isn't smart enough to realize that
@@ -370,7 +377,9 @@ where
         //
         // SAFETY: any initialized bit sequence is a bit-valid `*mut u8`. All
         // bits of a `usize` are initialized.
-        #[allow(unknown_lints)] // For `integer_to_ptr_transmutes`
+        //
+        // `#[allow(unknown_lints)]` is for `integer_to_ptr_transmutes`
+        #[allow(unknown_lints)]
         #[allow(clippy::useless_transmute, integer_to_ptr_transmutes)]
         let dangling = unsafe { mem::transmute::<usize, *mut u8>(align) };
         // SAFETY: `dangling` is constructed from `T::LAYOUT.align`, which is a

@@ -297,7 +297,7 @@ impl Date {
     /// Construct a Gregorian date from an [ISO 8601 week date].
     ///
     /// The [`ISOWeekDate`] type describes itself in more detail, but in
-    /// breif, the ISO week date calendar system eschews months in favor of
+    /// brief, the ISO week date calendar system eschews months in favor of
     /// weeks.
     ///
     /// The minimum and maximum values of an `ISOWeekDate` correspond
@@ -2476,9 +2476,9 @@ impl core::ops::SubAssign<UnsignedDuration> for Date {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for Date {
+impl serde_core::Serialize for Date {
     #[inline]
-    fn serialize<S: serde::Serializer>(
+    fn serialize<S: serde_core::Serializer>(
         &self,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -2487,12 +2487,12 @@ impl serde::Serialize for Date {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Date {
+impl<'de> serde_core::Deserialize<'de> for Date {
     #[inline]
-    fn deserialize<D: serde::Deserializer<'de>>(
+    fn deserialize<D: serde_core::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Date, D::Error> {
-        use serde::de;
+        use serde_core::de;
 
         struct DateVisitor;
 
@@ -2548,8 +2548,10 @@ impl quickcheck::Arbitrary for Date {
 
 /// An iterator over periodic dates, created by [`Date::series`].
 ///
-/// It is exhausted when the next value would exceed a [`Span`] or [`Date`]
-/// value.
+/// It is exhausted when the next value would exceed the limits of a [`Span`]
+/// or [`Date`] value.
+///
+/// This iterator is created by [`Date::series`].
 #[derive(Clone, Debug)]
 pub struct DateSeries {
     start: Date,
@@ -2568,6 +2570,8 @@ impl Iterator for DateSeries {
         Some(date)
     }
 }
+
+impl core::iter::FusedIterator for DateSeries {}
 
 /// Options for [`Date::checked_add`] and [`Date::checked_sub`].
 ///

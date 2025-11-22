@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "servo_arc"
-version = "0.4.1"
+version = "0.4.3"
 authors = ["The Servo Project Developers"]
 build = false
 autolib = false

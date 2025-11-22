@@ -1,5 +1,65 @@
 # CHANGELOG
 
+0.2.16 (TBD)
+============
+TODO
+
+Enhancements:
+
+* [#298](https://github.com/BurntSushi/jiff/issues/298):
+Add Serde helpers for (de)serializing `std::time::Duration` values.
+* [#396](https://github.com/BurntSushi/jiff/issues/396):
+Add `Sub` and `Add` trait implementations for `Zoned` (in addition to the
+already existing trait implementations for `&Zoned`).
+* [#397](https://github.com/BurntSushi/jiff/pull/397):
+Add `BrokenDownTime::set_meridiem` and ensure it overrides the hour when
+formatting.
+* [#409](https://github.com/BurntSushi/jiff/pull/409):
+Switch dependency on `serde` to `serde_core`. This should help speed up
+compilation times in some cases.
+* [#430](https://github.com/BurntSushi/jiff/pull/430):
+Add new `Zoned::series` API, making it consistent with the same API on other
+datetime types.
+* [#432](https://github.com/BurntSushi/jiff/pull/432):
+When `lenient` mode is enabled for `strftime`, Jiff will no longer error when
+the formatting string contains invalid UTF-8.
+* [#432](https://github.com/BurntSushi/jiff/pull/432):
+Formatting of `%y` and `%g` no longer fails based on the specific year value.
+* [#432](https://github.com/BurntSushi/jiff/pull/432):
+Parsing of `%s` is now a bit more consistent with other fields. Moreover,
+`BrokenDownTime::{to_timestamp,to_zoned}` will now prefer timestamps parsed
+with `%s` over any other fields that have been parsed.
+* [#433](https://github.com/BurntSushi/jiff/pull/433):
+Allow parsing just a `%s` into a `Zoned` via the `Etc/Unknown` time zone.
+
+Bug fixes:
+
+* [#386](https://github.com/BurntSushi/jiff/issues/386):
+Fix a bug where `2087-12-31T23:00:00Z` in the `Africa/Casablanca` time zone
+could not be round-tripped (because its offset was calculated incorrectly as
+a result of not handling "permanent DST" POSIX time zones).
+* [#407](https://github.com/BurntSushi/jiff/issues/407):
+Fix a panic that occurred when parsing an empty string as a POSIX time zone.
+* [#410](https://github.com/BurntSushi/jiff/issues/410):
+Fix a panic that could occur when parsing `%:` via `strptime` APIs.
+* [#414](https://github.com/BurntSushi/jiff/pull/414):
+Update some parts of the documentation to indicate that `TimeZone::unknown()`
+is a fallback for `TimeZone::system()` (instead of the `jiff 0.1` behavior of
+using `TimeZone::UTC`).
+* [#423](https://github.com/BurntSushi/jiff/issues/423):
+Fix a panicking bug when reading malformed TZif data.
+* [#426](https://github.com/BurntSushi/jiff/issues/426):
+Fix a panicking bug when parsing century (`%C`) via `strptime`.
+* [#445](https://github.com/BurntSushi/jiff/pull/445):
+Fixed bugs with parsing durations like `-9223372036854775808s`
+and `-PT9223372036854775808S`.
+
+Performance:
+
+* [#445](https://github.com/BurntSushi/jiff/pull/445):
+Parsing into `Span` or `SignedDuration` is now a fair bit faster in some cases.
+
+
 0.2.15 (2025-06-13)
 ===================
 This release fixes a bug where error values were being constructed during
@@ -479,7 +539,7 @@ Add integration with the SQLx project via the [`jiff-sqlx`] crate. `jiff-sqlx`
 provides wrapper types that implement the necessary traits in SQLx for
 reasonably ergonomic integration. This includes PostgreSQL and SQLite support,
 but not MySQL support. (It's not clear if it's possible at present to provide
-MySQL supprot fro SQLx for datetime types outside of SQLx itself.)
+MySQL support for SQLx for datetime types outside of SQLx itself.)
 * [#241](https://github.com/BurntSushi/jiff/pull/241):
 Add integration with the Diesel project via the [`jiff-diesel`] crate.
 `jiff-diesel` provides wrapper types that implement the necessary traits in
@@ -680,7 +740,7 @@ zero-length duration.
 
 0.1.20 (2025-01-03)
 ===================
-This release inclues a new type, `Pieces`, in the `jiff::fmt::temporal`
+This release includes a new type, `Pieces`, in the `jiff::fmt::temporal`
 sub-module. This exposes the individual components of a parsed Temporal
 ISO 8601 datetime string. It allows users of Jiff to circumvent the checks
 in the higher level parsing routines that prevent you from shooting yourself
@@ -1027,7 +1087,7 @@ zone identifier in some cases where it wouldn't before. While Jiff would
 previously read the symlink metadata on `/etc/localtime` by default to discover
 the system configured time zone on Unix systems, it *wouldn't* do so when
 `TZ=/etc/localtime`. There's really no reason not to, so this release of Jiff
-is fixed to use symlink sniffing on file paths provided by thw `TZ` environment
+is fixed to use symlink sniffing on file paths provided by the `TZ` environment
 variable.
 
 Bug fixes:
@@ -1115,7 +1175,7 @@ renamed to `from_duration` in `jiff 0.2`.
 to `to_duration` in `jiff 0.2`.
 
 Basically, all of the above APIs either accept or return a
-`std::time::Duration`. To avoid breaking chnages at this point, new methods
+`std::time::Duration`. To avoid breaking changes at this point, new methods
 for `SignedDuration` were added. For example, `Timestamp::as_jiff_duration`.
 In `jiff 0.2`, the above deprecated methods will be removed and replaced with
 equivalent methods that accept or return a `SignedDuration` instead. Callers

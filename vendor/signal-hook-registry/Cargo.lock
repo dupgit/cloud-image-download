@@ -29,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.6"
+version = "1.4.7"
 dependencies = [
  "libc",
  "signal-hook",

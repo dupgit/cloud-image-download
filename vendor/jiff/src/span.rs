@@ -2628,7 +2628,7 @@ impl Span {
     }
 
     #[inline]
-    pub(crate) fn try_units_ranged(
+    fn try_units_ranged(
         self,
         unit: Unit,
         value: NoUnits,
@@ -2722,6 +2722,103 @@ impl Span {
             Unit::Microsecond => self.get_microseconds_ranged().rinto(),
             Unit::Nanosecond => self.get_nanoseconds_ranged().rinto(),
         }
+    }
+}
+
+/// Crate internal APIs that permit setting units without checks.
+///
+/// Callers should be very careful when using these. These notably also do
+/// not handle updating the sign on the `Span` and require the precisely
+/// correct integer primitive.
+impl Span {
+    #[inline]
+    pub(crate) fn years_unchecked(self, years: i16) -> Span {
+        let mut span =
+            Span { years: t::SpanYears::new_unchecked(years), ..self };
+        span.units = span.units.set(Unit::Year, years == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn months_unchecked(self, months: i32) -> Span {
+        let mut span =
+            Span { months: t::SpanMonths::new_unchecked(months), ..self };
+        span.units = span.units.set(Unit::Month, months == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn weeks_unchecked(self, weeks: i32) -> Span {
+        let mut span =
+            Span { weeks: t::SpanWeeks::new_unchecked(weeks), ..self };
+        span.units = span.units.set(Unit::Week, weeks == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn days_unchecked(self, days: i32) -> Span {
+        let mut span = Span { days: t::SpanDays::new_unchecked(days), ..self };
+        span.units = span.units.set(Unit::Day, days == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn hours_unchecked(self, hours: i32) -> Span {
+        let mut span =
+            Span { hours: t::SpanHours::new_unchecked(hours), ..self };
+        span.units = span.units.set(Unit::Hour, hours == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn minutes_unchecked(self, minutes: i64) -> Span {
+        let mut span =
+            Span { minutes: t::SpanMinutes::new_unchecked(minutes), ..self };
+        span.units = span.units.set(Unit::Minute, minutes == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn seconds_unchecked(self, seconds: i64) -> Span {
+        let mut span =
+            Span { seconds: t::SpanSeconds::new_unchecked(seconds), ..self };
+        span.units = span.units.set(Unit::Second, seconds == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn milliseconds_unchecked(self, milliseconds: i64) -> Span {
+        let mut span = Span {
+            milliseconds: t::SpanMilliseconds::new_unchecked(milliseconds),
+            ..self
+        };
+        span.units = span.units.set(Unit::Millisecond, milliseconds == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn microseconds_unchecked(self, microseconds: i64) -> Span {
+        let mut span = Span {
+            microseconds: t::SpanMicroseconds::new_unchecked(microseconds),
+            ..self
+        };
+        span.units = span.units.set(Unit::Microsecond, microseconds == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn nanoseconds_unchecked(self, nanoseconds: i64) -> Span {
+        let mut span = Span {
+            nanoseconds: t::SpanNanoseconds::new_unchecked(nanoseconds),
+            ..self
+        };
+        span.units = span.units.set(Unit::Nanosecond, nanoseconds == 0);
+        span
+    }
+
+    #[inline]
+    pub(crate) fn sign_unchecked(self, sign: Sign) -> Span {
+        Span { sign, ..self }
     }
 }
 
@@ -3596,9 +3693,9 @@ impl TryFrom<SignedDuration> for Span {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for Span {
+impl serde_core::Serialize for Span {
     #[inline]
-    fn serialize<S: serde::Serializer>(
+    fn serialize<S: serde_core::Serializer>(
         &self,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -3607,12 +3704,12 @@ impl serde::Serialize for Span {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Span {
+impl<'de> serde_core::Deserialize<'de> for Span {
     #[inline]
-    fn deserialize<D: serde::Deserializer<'de>>(
+    fn deserialize<D: serde_core::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Span, D::Error> {
-        use serde::de;
+        use serde_core::de;
 
         struct SpanVisitor;
 
@@ -4163,6 +4260,24 @@ impl Unit {
         }
     }
 
+    /*
+    /// Returns the next smallest unit, if one exists.
+    pub(crate) fn prev(&self) -> Option<Unit> {
+        match *self {
+            Unit::Year => Some(Unit::Month),
+            Unit::Month => Some(Unit::Week),
+            Unit::Week => Some(Unit::Day),
+            Unit::Day => Some(Unit::Hour),
+            Unit::Hour => Some(Unit::Minute),
+            Unit::Minute => Some(Unit::Second),
+            Unit::Second => Some(Unit::Millisecond),
+            Unit::Millisecond => Some(Unit::Microsecond),
+            Unit::Microsecond => Some(Unit::Nanosecond),
+            Unit::Nanosecond => None,
+        }
+    }
+    */
+
     /// Returns the number of nanoseconds in this unit as a 128-bit integer.
     ///
     /// # Panics
@@ -4239,6 +4354,13 @@ impl Unit {
             Unit::Microsecond => "µs",
             Unit::Nanosecond => "ns",
         }
+    }
+
+    /// Return this unit as a `usize`.
+    ///
+    /// This is use `unit as usize`.
+    pub(crate) fn as_usize(&self) -> usize {
+        *self as usize
     }
 
     /// The inverse of `unit as usize`.
@@ -5442,11 +5564,11 @@ impl From<(Unit, i64)> for SpanRound<'static> {
 /// `2024-04-01` is 30 days. Similar for years.
 ///
 /// When a relative datetime in time zone aware (i.e., it is a `Zoned`), then
-/// a `Span` will also consider its day units to be variable in length. For
-/// example, `2024-03-10` in `America/New_York` was only 23 hours long, where
-/// as `2024-11-03` in `America/New_York` was 25 hours long. When a relative
-/// datetime is civil, then days are considered to always be of a fixed 24
-/// hour length.
+/// operations on a `Span` will also consider its day units to be variable in
+/// length. For example, `2024-03-10` in `America/New_York` was only 23 hours
+/// long, where as `2024-11-03` in `America/New_York` was 25 hours long. When
+/// a relative datetime is civil, then days are considered to always be of a
+/// fixed 24 hour length.
 ///
 /// This type is principally used as an input to one of several different
 /// [`Span`] APIs:
@@ -5457,7 +5579,7 @@ impl From<(Unit, i64)> for SpanRound<'static> {
 /// * Span arithmetic via [`Span::checked_add`] and [`Span::checked_sub`].
 /// A relative datetime is needed when adding or subtracting spans with
 /// calendar units.
-/// * Span comarisons via [`Span::compare`] require a relative datetime when
+/// * Span comparisons via [`Span::compare`] require a relative datetime when
 /// comparing spans with calendar units.
 /// * Computing the "total" duration as a single floating point number via
 /// [`Span::total`] also requires a relative datetime when dealing with
@@ -5518,7 +5640,7 @@ impl<'a> SpanRelativeTo<'a> {
     /// `Span` APIs. Previously, some APIs (like [`Timestamp::checked_add`])
     /// would always return an error if the `Span` given had non-zero
     /// units of days or greater. On the other hand, other APIs (like
-    /// [`Span::checked_add`]) would autoamtically assume days were always
+    /// [`Span::checked_add`]) would automatically assume days were always
     /// 24 hours if no relative reference time was given and either span had
     /// non-zero units of days. With this marker, APIs _never_ assume days are
     /// always 24 hours automatically.
@@ -5879,7 +6001,7 @@ impl<'a> Relative<'a> {
     /// This returns an error in the same cases as the underlying checked
     /// arithmetic APIs. In general, this occurs when adding the given `span`
     /// would result in overflow.
-    fn checked_add(&self, span: Span) -> Result<Relative, Error> {
+    fn checked_add(&'a self, span: Span) -> Result<Relative<'a>, Error> {
         match *self {
             Relative::Civil(dt) => Ok(Relative::Civil(dt.checked_add(span)?)),
             Relative::Zoned(ref zdt) => {
@@ -5889,9 +6011,9 @@ impl<'a> Relative<'a> {
     }
 
     fn checked_add_duration(
-        &self,
+        &'a self,
         duration: SignedDuration,
-    ) -> Result<Relative, Error> {
+    ) -> Result<Relative<'a>, Error> {
         match *self {
             Relative::Civil(dt) => {
                 Ok(Relative::Civil(dt.checked_add_duration(duration)?))
@@ -6316,7 +6438,7 @@ impl<'a> RelativeZoned<'a> {
 
     /// Returns the borrowed version of self; useful when you need to convert
     /// `&RelativeZoned` into `RelativeZoned` without cloning anything.
-    fn borrowed(&self) -> RelativeZoned {
+    fn borrowed(&'a self) -> RelativeZoned<'a> {
         RelativeZoned { zoned: self.zoned.borrowed() }
     }
 }

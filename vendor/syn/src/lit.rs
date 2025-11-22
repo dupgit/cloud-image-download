@@ -1,4 +1,6 @@
 #[cfg(feature = "parsing")]
+use crate::ext::TokenStreamExt as _;
+#[cfg(feature = "parsing")]
 use crate::lookahead;
 #[cfg(feature = "parsing")]
 use crate::parse::{Parse, Parser};
@@ -215,10 +217,11 @@ impl LitStr {
 
         // Token stream with every span replaced by the given one.
         fn respan_token_stream(stream: TokenStream, span: Span) -> TokenStream {
-            stream
-                .into_iter()
-                .map(|token| respan_token_tree(token, span))
-                .collect()
+            let mut tokens = TokenStream::new();
+            for token in stream {
+                tokens.append(respan_token_tree(token, span));
+            }
+            tokens
         }
 
         // Token tree with every span replaced by the given one.
@@ -1066,7 +1069,7 @@ pub(crate) mod parsing {
 mod printing {
     use crate::lit::{LitBool, LitByte, LitByteStr, LitCStr, LitChar, LitFloat, LitInt, LitStr};
     use proc_macro2::TokenStream;
-    use quote::{ToTokens, TokenStreamExt};
+    use quote::{ToTokens, TokenStreamExt as _};
 
     #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
     impl ToTokens for LitStr {

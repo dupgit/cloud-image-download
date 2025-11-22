@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// Site type enumeration.
 #[derive(Debug, PartialEq, Eq)]
@@ -17,43 +18,56 @@ pub enum PureHtml {
     Ul,
 }
 
+// Regex used to determine `SiteType`
+static H5AI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"powered by h5ai (v\d+.\d+.\d+)").unwrap());
+
+// Some websites are using "Modified" instead of "Last modified"
+static TABLE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?msi)<table(.+?<th.+?(Last )?modified.+?</th.+?)</table").unwrap());
+
+// Some other websites are using "Date" instead of "Last modified" or "Modified"
+static TABLE_DATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?msi)<table(.+?<th.+?Date.+?</th.+?)</table").unwrap());
+
+static MINISERVE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"<div class="version"><a href="https://github.com/svenstaro/miniserve">miniserve</a>/(\d+.\d+.\d+)</div>"#,
+    )
+    .unwrap()
+});
+
 // <table> detection is considered valid if
 // we can match a column name "Modified",
 // "Last Modified" or "Date" within the table
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn detect_table(body: &str) -> bool {
-    // Some websites prints "Modified" instead of "Last modified"
-    let re = Regex::new(r"(?msi)<table(.+?<th.+?(Last )?modified.+?</th.+?)</table").unwrap();
-
-    if re.is_match(body) {
+    if TABLE_RE.is_match(body) {
         true
     } else {
-        // Some websites prints "Date" instead of "Last modified"
-        let re = Regex::new(r"(?msi)<table(.+?<th.+?Date.+?</th.+?)</table").unwrap();
-        re.is_match(body)
+        TABLE_DATE_RE.is_match(body)
     }
 }
 
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn detect_h5ai(body: &str) -> Option<String> {
-    let re = Regex::new(r"powered by h5ai ([v]?\d+.\d+.\d+[\+\-\.\w]*)").unwrap();
-    re.captures(body).map(|value| value[1].to_string())
+    H5AI_RE.captures(body).map(|value| value[1].to_string())
 }
 
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn detect_snt(body: &str) -> bool {
     body.contains("SNT index generator")
 }
 
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn detect_miniserve(body: &str) -> Option<String> {
-    let re = Regex::new(
-        r#"<div class="version"><a href="https://github.com/svenstaro/miniserve">miniserve</a>/(\d+.\d+.\d+)</div>"#,
-    )
-    .unwrap();
-    re.captures(body).map(|value| value[1].to_string())
+    MINISERVE_RE.captures(body).map(|value| value[1].to_string())
 }
 
 impl SiteType {
     /// Detects the possible type of the site we are
     /// scraping information from by "analyzing" it's
     /// body.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub fn detect(body: &str) -> Self {
         if let Some(version) = detect_h5ai(body) {
             SiteType::H5ai(version)

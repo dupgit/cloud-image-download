@@ -196,6 +196,17 @@ pub(crate) struct Parsed<'i, V> {
     input: &'i [u8],
 }
 
+impl<'i, V> Parsed<'i, V> {
+    #[inline]
+    fn and_then<U>(
+        self,
+        map: impl FnOnce(V) -> Result<U, Error>,
+    ) -> Result<Parsed<'i, U>, Error> {
+        let Parsed { value, input } = self;
+        Ok(Parsed { value: map(value)?, input })
+    }
+}
+
 impl<'i, V: core::fmt::Display> Parsed<'i, V> {
     /// Ensures that the parsed value represents the entire input. This occurs
     /// precisely when the `input` on this parsed value is empty.
@@ -211,6 +222,32 @@ impl<'i, V: core::fmt::Display> Parsed<'i, V> {
             "parsed value '{value}', but unparsed input {unparsed:?} \
              remains (expected no unparsed input)",
             value = self.value,
+            unparsed = escape::Bytes(self.input),
+        ))
+    }
+}
+
+impl<'i, V> Parsed<'i, V> {
+    /// Ensures that the parsed value represents the entire input. This occurs
+    /// precisely when the `input` on this parsed value is empty.
+    ///
+    /// This is useful when one expects a parsed value to consume the entire
+    /// input, and to consider it an error if it doesn't.
+    ///
+    /// This is like `Parsed::into_full`, but lets the caller provide a custom
+    /// `Display` implementation.
+    #[inline]
+    fn into_full_with(
+        self,
+        display: impl core::fmt::Display,
+    ) -> Result<V, Error> {
+        if self.input.is_empty() {
+            return Ok(self.value);
+        }
+        Err(err!(
+            "parsed value '{value}', but unparsed input {unparsed:?} \
+             remains (expected no unparsed input)",
+            value = display,
             unparsed = escape::Bytes(self.input),
         ))
     }
@@ -391,15 +428,26 @@ impl<W: Write> core::fmt::Write for StdFmtWrite<W> {
 /// types. Those types could perhaps be exposed if there was strong demand,
 /// but I'm skeptical.
 trait WriteExt: Write {
-    /// Write the given number as a decimal using ASCII digits to this buffer.
-    /// The given formatter controls how the decimal is formatted.
+    /// Write the given number as a signed decimal using ASCII digits to this
+    /// buffer. The given formatter controls how the decimal is formatted.
     #[inline]
     fn write_int(
         &mut self,
         formatter: &DecimalFormatter,
         n: impl Into<i64>,
     ) -> Result<(), Error> {
-        self.write_decimal(&Decimal::new(formatter, n.into()))
+        self.write_decimal(&formatter.format_signed(n.into()))
+    }
+
+    /// Write the given number as an unsigned decimal using ASCII digits to
+    /// this buffer. The given formatter controls how the decimal is formatted.
+    #[inline]
+    fn write_uint(
+        &mut self,
+        formatter: &DecimalFormatter,
+        n: impl Into<u64>,
+    ) -> Result<(), Error> {
+        self.write_decimal(&formatter.format_unsigned(n.into()))
     }
 
     /// Write the given fractional number using ASCII digits to this buffer.
@@ -408,7 +456,7 @@ trait WriteExt: Write {
     fn write_fraction(
         &mut self,
         formatter: &FractionalFormatter,
-        n: impl Into<i64>,
+        n: impl Into<u32>,
     ) -> Result<(), Error> {
         self.write_fractional(&Fractional::new(formatter, n.into()))
     }

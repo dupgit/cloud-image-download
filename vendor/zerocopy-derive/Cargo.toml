@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "zerocopy-derive"
-version = "0.8.27"
+version = "0.8.28"
 authors = [
     "Joshua Liebow-Feeser <joshlf@google.com>",
     "Jack Wrenn <jswrenn@amazon.com>",
@@ -166,7 +166,7 @@ path = "tests/unsafe_cell.rs"
 version = "1.0.1"
 
 [dependencies.quote]
-version = "1.0.10"
+version = "1.0.40"
 
 [dependencies.syn]
 version = "2.0.46"
@@ -183,6 +183,12 @@ version = "=1.9"
 
 [dev-dependencies.prettyplease]
 version = "=0.2.17"
+
+[dev-dependencies.proc-macro2]
+version = "=1.0.80"
+
+[dev-dependencies.quote]
+version = "=1.0.40"
 
 [dev-dependencies.rustversion]
 version = "1.0"

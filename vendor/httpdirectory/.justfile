@@ -9,6 +9,8 @@ alias t := test
 alias d := document
 alias c := coverage
 alias p := publish
+alias e := example
+alias b := bench
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
@@ -16,6 +18,9 @@ install-dev-tools:
 
 # Bumps {patch} (major, minor or patch) version number and does a release
 bump patch: check-typos
+    # Verifying that the MSRV is still Ok.
+    cargo msrv verify
+
     # Ensures that the source code is correctly formatted -> it should not modify anything
     cargo fmt
 
@@ -74,3 +79,11 @@ bench:
 # Check for typos
 check-typos:
     typos src/ README.md tests examples .justfile benches ChangeLog
+
+# Invoke clippy in pedantic mode
+clippy:
+    cargo clippy -- -W clippy::pedantic
+
+# Run examples with hotpath feature
+example example="debug_me":
+    cargo r --release --example {{example}} --features=hotpath

@@ -183,46 +183,48 @@ pub trait Serializer: sealed::serializer::Sealed {
 }
 
 impl dyn Serializer {
-    /// Convert any Serde `Serializer` to a trait object.
-    ///
-    /// ```rust
-    /// use erased_serde::{Serialize, Serializer};
-    /// use std::collections::BTreeMap as Map;
-    /// use std::io;
-    ///
-    /// fn main() {
-    ///     // Construct some serializers.
-    ///     let json = &mut serde_json::Serializer::new(io::stdout());
-    ///     let cbor = &mut serde_cbor::Serializer::new(serde_cbor::ser::IoWrite::new(io::stdout()));
-    ///
-    ///     // The values in this map are boxed trait objects. Ordinarily this would not
-    ///     // be possible with serde::Serializer because of object safety, but type
-    ///     // erasure makes it possible with erased_serde::Serializer.
-    ///     let mut formats: Map<&str, Box<dyn Serializer>> = Map::new();
-    ///     formats.insert("json", Box::new(<dyn Serializer>::erase(json)));
-    ///     formats.insert("cbor", Box::new(<dyn Serializer>::erase(cbor)));
-    ///
-    ///     // These are boxed trait objects as well. Same thing here - type erasure
-    ///     // makes this possible.
-    ///     let mut values: Map<&str, Box<dyn Serialize>> = Map::new();
-    ///     values.insert("vec", Box::new(vec!["a", "b"]));
-    ///     values.insert("int", Box::new(65536));
-    ///
-    ///     // Pick a Serializer out of the formats map.
-    ///     let format = formats.get_mut("json").unwrap();
-    ///
-    ///     // Pick a Serialize out of the values map.
-    ///     let value = values.get("vec").unwrap();
-    ///
-    ///     // This line prints `["a","b"]` to stdout.
-    ///     value.erased_serialize(format).unwrap();
-    /// }
-    /// ```
-    pub fn erase<S>(serializer: S) -> impl Serializer
-    where
-        S: serde::Serializer,
-    {
-        erase::Serializer::new(serializer)
+    return_impl_trait! {
+        /// Convert any Serde `Serializer` to a trait object.
+        ///
+        /// ```rust
+        /// use erased_serde::{Serialize, Serializer};
+        /// use std::collections::BTreeMap as Map;
+        /// use std::io;
+        ///
+        /// fn main() {
+        ///     // Construct some serializers.
+        ///     let json = &mut serde_json::Serializer::new(io::stdout());
+        ///     let cbor = &mut serde_cbor::Serializer::new(serde_cbor::ser::IoWrite::new(io::stdout()));
+        ///
+        ///     // The values in this map are boxed trait objects. Ordinarily this would not
+        ///     // be possible with serde::Serializer because of object safety, but type
+        ///     // erasure makes it possible with erased_serde::Serializer.
+        ///     let mut formats: Map<&str, Box<dyn Serializer>> = Map::new();
+        ///     formats.insert("json", Box::new(<dyn Serializer>::erase(json)));
+        ///     formats.insert("cbor", Box::new(<dyn Serializer>::erase(cbor)));
+        ///
+        ///     // These are boxed trait objects as well. Same thing here - type erasure
+        ///     // makes this possible.
+        ///     let mut values: Map<&str, Box<dyn Serialize>> = Map::new();
+        ///     values.insert("vec", Box::new(vec!["a", "b"]));
+        ///     values.insert("int", Box::new(65536));
+        ///
+        ///     // Pick a Serializer out of the formats map.
+        ///     let format = formats.get_mut("json").unwrap();
+        ///
+        ///     // Pick a Serialize out of the values map.
+        ///     let value = values.get("vec").unwrap();
+        ///
+        ///     // This line prints `["a","b"]` to stdout.
+        ///     value.erased_serialize(format).unwrap();
+        /// }
+        /// ```
+        pub fn erase<S>(serializer: S) -> impl Serializer [erase::Serializer<S>]
+        where
+            S: serde::Serializer,
+        {
+            erase::Serializer::new(serializer)
+        }
     }
 }
 
@@ -921,9 +923,8 @@ where
     T: serde::Serializer,
 {
     fn erased_serialize_element(&mut self, value: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Seq(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Seq(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_element(value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -932,9 +933,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::Seq(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Seq(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -970,9 +970,8 @@ where
     T: serde::Serializer,
 {
     fn erased_serialize_element(&mut self, value: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Tuple(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Tuple(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_element(value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -981,9 +980,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::Tuple(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Tuple(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1019,9 +1017,8 @@ where
     T: serde::Serializer,
 {
     fn erased_serialize_field(&mut self, value: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::TupleStruct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::TupleStruct(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_field(value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1030,9 +1027,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::TupleStruct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::TupleStruct(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1068,9 +1064,8 @@ where
     T: serde::Serializer,
 {
     fn erased_serialize_field(&mut self, value: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::TupleVariant(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::TupleVariant(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_field(value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1079,9 +1074,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::TupleVariant(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::TupleVariant(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1123,9 +1117,8 @@ where
     T: serde::Serializer,
 {
     fn erased_serialize_key(&mut self, key: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Map(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Map(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_key(key).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1134,9 +1127,8 @@ where
     }
 
     fn erased_serialize_value(&mut self, value: &dyn Serialize) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Map(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Map(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_value(value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1149,9 +1141,8 @@ where
         key: &dyn Serialize,
         value: &dyn Serialize,
     ) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Map(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Map(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_entry(key, value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1160,9 +1151,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::Map(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Map(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1222,9 +1212,8 @@ where
         key: &'static str,
         value: &dyn Serialize,
     ) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Struct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Struct(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_field(key, value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1233,9 +1222,8 @@ where
     }
 
     fn erased_skip_field(&mut self, key: &'static str) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Struct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Struct(serializer) = self else {
+            unreachable!();
         };
         serializer.skip_field(key).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1244,9 +1232,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::Struct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Struct(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1295,9 +1282,8 @@ where
         key: &'static str,
         value: &dyn Serialize,
     ) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::StructVariant(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::StructVariant(serializer) = self else {
+            unreachable!();
         };
         serializer.serialize_field(key, value).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1306,9 +1292,8 @@ where
     }
 
     fn erased_skip_field(&mut self, key: &'static str) -> Result<(), ErrorImpl> {
-        let serializer = match self {
-            erase::Serializer::Struct(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::Struct(serializer) = self else {
+            unreachable!();
         };
         serializer.skip_field(key).map_err(|err| {
             *self = erase::Serializer::Error(err);
@@ -1317,9 +1302,8 @@ where
     }
 
     fn erased_end(&mut self) {
-        let serializer = match self.take() {
-            erase::Serializer::StructVariant(serializer) => serializer,
-            _ => unreachable!(),
+        let erase::Serializer::StructVariant(serializer) = self.take() else {
+            unreachable!();
         };
         *self = match serializer.end() {
             Ok(ok) => erase::Serializer::Complete(ok),
@@ -1608,5 +1592,12 @@ mod tests {
         assert::<Box<dyn Serialize + Sync + Send>>();
         assert::<Vec<Box<dyn Serialize>>>();
         assert::<Vec<Box<dyn Serialize + Send>>>();
+    }
+
+    #[test]
+    fn test_dangle() {
+        let mut json_serializer = serde_json::Serializer::new(Vec::new());
+        let _erased_serializer = <dyn Serializer>::erase(&mut json_serializer);
+        drop(json_serializer);
     }
 }

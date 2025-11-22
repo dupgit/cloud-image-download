@@ -11,11 +11,12 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.83"
 name = "pest"
-version = "2.8.3"
+version = "2.8.4"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false

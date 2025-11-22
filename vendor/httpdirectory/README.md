@@ -1,7 +1,7 @@
 # *httpdirectory*'s readme
 
 This project is in an early stage of development but is already
-correct on many websites: the 408 debian mirrors I could join
+correct on many websites: the ~400 debian mirrors I could join
 were correctly interpreted
 
 ## Description
@@ -37,7 +37,8 @@ DIR       -  2023-07-25 07:43  trixie/
 
 - simple html `<table>` tables
 - `<pre>` formatted tables
-- very simple websites containing only `<ul>` and `<il>` tags
+- very simple websites containing only `<ul>` and `<il>` tags such as
+  the python based server: `python3 -m http.server -b 127.0.0.1 8080`
 - h5ai fallback website
 - OCF adapted nginx flat theme
 - SNT index generator
