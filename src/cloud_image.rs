@@ -74,25 +74,50 @@ impl CloudImage {
     }
 }
 
-/// Verifies a file's (named `filename`) checksum (contained in `checksum`)
+/// Generic hash verification helper
 ///
 /// # Errors
 ///
 /// It will return errors when
 ///  - the file can not be opened
 ///  - the file can not be read
-// @todo: remove similar code for hashing
-pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>, Box<dyn Error>> {
-    let input = match File::open(filename) {
-        Ok(input) => input,
-        Err(e) => {
-            error!("Error while opening {filename}: {e}");
-            return Err(Box::new(e));
-        }
-    };
+fn verify_with_hasher<D: Digest>(
+    filename: &str,
+    mut hasher: D,
+    expected_hash: &str,
+) -> Result<Option<bool>, Box<dyn Error>> {
+    let input = File::open(filename).map_err(|e| {
+        error!("Error while opening {filename}: {e}");
+        e
+    })?;
 
     let mut reader = BufReader::new(input);
+    let mut buffer = vec![0; 16_777_216];
 
+    loop {
+        let count = reader.read(&mut buffer).map_err(|e| {
+            error!("Error while reading file {filename}. Skipped");
+            e
+        })?;
+
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    let digest = hasher.finalize();
+    Ok(Some(lower::encode_string(&digest) == expected_hash))
+}
+
+/// Verifies a file's (named `filename`) checksum (contained in `checksum`)
+///
+/// # Errors
+///
+/// It will return errors when
+///  - the file cannot be opened
+///  - the file cannot be read
+pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>, Box<dyn Error>> {
     match checksum {
         CheckSums::None => {
             warn!("No checksum for file {filename}: nothing verified");
@@ -100,57 +125,11 @@ pub fn verify_file(filename: &str, checksum: &CheckSums) -> Result<Option<bool>,
         }
         CheckSums::Sha256(hash) => {
             info!("Verifying {filename} sha256's checksum");
-            let digest = {
-                let mut hasher = Sha256::new();
-                let mut buffer = vec![0; 16_777_216];
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(count) => {
-                            if count == 0 {
-                                break;
-                            }
-                            hasher.update(&buffer[..count]);
-                        }
-                        Err(e) => {
-                            error!("Error while reading file {filename} Skipped");
-                            return Err(Box::new(e));
-                        }
-                    }
-                }
-                hasher.finalize()
-            };
-            if lower::encode_string(&digest) == *hash {
-                Ok(Some(true))
-            } else {
-                Ok(Some(false))
-            }
+            verify_with_hasher(filename, Sha256::new(), hash)
         }
         CheckSums::Sha512(hash) => {
             info!("Verifying {filename} sha512's checksum");
-            let digest = {
-                let mut hasher = Sha512::new();
-                let mut buffer = vec![0; 16_777_216];
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(count) => {
-                            if count == 0 {
-                                break;
-                            }
-                            hasher.update(&buffer[..count]);
-                        }
-                        Err(e) => {
-                            error!("Error while reading file {filename} Skipped");
-                            return Err(Box::new(e));
-                        }
-                    }
-                }
-                hasher.finalize()
-            };
-            if lower::encode_string(&digest) == *hash {
-                Ok(Some(true))
-            } else {
-                Ok(Some(false))
-            }
+            verify_with_hasher(filename, Sha512::new(), hash)
         }
     }
 }
