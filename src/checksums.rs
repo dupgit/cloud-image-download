@@ -1,6 +1,11 @@
-use log::{debug, info, trace};
+use base16ct::lower;
+use log::{debug, error, info, trace, warn};
 use regex::Regex;
+use sha2::{Digest, Sha256, Sha512};
+use std::error::Error;
 use std::fmt;
+use std::fs::File;
+use std::io::{BufReader, Read};
 
 /// An enum to allow different checksum types
 /// For now there is only sha256 and sha512
@@ -11,6 +16,44 @@ pub enum CheckSums {
     Sha512(String),
     #[default]
     None,
+}
+
+const HASH_BUFFER_SIZE: usize = 16_777_216;
+
+/// Generic hash verification helper
+///
+/// # Errors
+///
+/// It will return errors when
+///  - the file can not be opened
+///  - the file can not be read
+fn verify_with_hasher<D: Digest>(
+    filename: &str,
+    mut hasher: D,
+    expected_hash: &str,
+) -> Result<Option<bool>, Box<dyn Error>> {
+    let input = File::open(filename).map_err(|e| {
+        error!("Error while opening {filename}: {e}");
+        e
+    })?;
+
+    let mut reader = BufReader::new(input);
+    let mut buffer = vec![0; HASH_BUFFER_SIZE];
+
+    loop {
+        let count = reader.read(&mut buffer).map_err(|e| {
+            error!("Error while reading file {filename}. Skipped");
+            e
+        })?;
+
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    let digest = hasher.finalize();
+    Ok(Some(lower::encode_string(&digest) == expected_hash))
 }
 
 impl CheckSums {
@@ -69,6 +112,30 @@ impl CheckSums {
             None => info!("no checksum buffer to analyze"),
         }
         CheckSums::None
+    }
+
+    /// Verifies a file's (named `filename`) checksum (contained in `checksum`)
+    ///
+    /// # Errors
+    ///
+    /// It will return errors when
+    ///  - the file cannot be opened
+    ///  - the file cannot be read
+    pub fn verify_file(&self, filename: &str) -> Result<Option<bool>, Box<dyn Error>> {
+        match self {
+            CheckSums::None => {
+                warn!("No checksum for file {filename}: nothing verified");
+                Ok(None)
+            }
+            CheckSums::Sha256(hash) => {
+                info!("Verifying {filename} sha256's checksum");
+                verify_with_hasher(filename, Sha256::new(), hash)
+            }
+            CheckSums::Sha512(hash) => {
+                info!("Verifying {filename} sha512's checksum");
+                verify_with_hasher(filename, Sha512::new(), hash)
+            }
+        }
     }
 }
 
