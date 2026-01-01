@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.71"
 name = "wasm-bindgen"
-version = "0.2.105"
+version = "0.2.106"
 authors = ["The wasm-bindgen Developers"]
 build = "build.rs"
 include = [
@@ -76,10 +76,10 @@ version = "1.0"
 optional = true
 
 [dependencies.wasm-bindgen-macro]
-version = "=0.2.105"
+version = "=0.2.106"
 
 [dependencies.wasm-bindgen-shared]
-version = "=0.2.105"
+version = "=0.2.106"
 
 [dev-dependencies.once_cell]
 version = "1"

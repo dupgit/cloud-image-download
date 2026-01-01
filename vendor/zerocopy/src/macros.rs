@@ -1202,16 +1202,17 @@ mod tests {
 
         // Before 1.61.0, we can't define the `const fn transmute_ref` function
         // that we do on and after 1.61.0.
-        #[cfg(not(zerocopy_generic_bounds_in_const_fn_1_61_0))]
+        #[cfg(no_zerocopy_generic_bounds_in_const_fn_1_61_0)]
         {
-            // Test that `transmute_ref!` supports non-`KnownLayout` `Sized` types.
+            // Test that `transmute_ref!` supports non-`KnownLayout` `Sized`
+            // types.
             const ARRAY_OF_NKL_U8S: Nkl<[u8; 8]> = Nkl([0u8, 1, 2, 3, 4, 5, 6, 7]);
             const ARRAY_OF_NKL_ARRAYS: Nkl<[[u8; 2]; 4]> = Nkl([[0, 1], [2, 3], [4, 5], [6, 7]]);
             const X_NKL: &Nkl<[[u8; 2]; 4]> = transmute_ref!(&ARRAY_OF_NKL_U8S);
             assert_eq!(*X_NKL, ARRAY_OF_NKL_ARRAYS);
         }
 
-        #[cfg(zerocopy_generic_bounds_in_const_fn_1_61_0)]
+        #[cfg(not(no_zerocopy_generic_bounds_in_const_fn_1_61_0))]
         {
             // Call through a generic function to make sure our autoref
             // specialization trick works even when types are generic.
@@ -1223,7 +1224,8 @@ mod tests {
                 transmute_ref!(t)
             }
 
-            // Test that `transmute_ref!` supports non-`KnownLayout` `Sized` types.
+            // Test that `transmute_ref!` supports non-`KnownLayout` `Sized`
+            // types.
             const ARRAY_OF_NKL_U8S: Nkl<[u8; 8]> = Nkl([0u8, 1, 2, 3, 4, 5, 6, 7]);
             const ARRAY_OF_NKL_ARRAYS: Nkl<[[u8; 2]; 4]> = Nkl([[0, 1], [2, 3], [4, 5], [6, 7]]);
             const X_NKL: &Nkl<[[u8; 2]; 4]> = transmute_ref(&ARRAY_OF_NKL_U8S);
@@ -1571,9 +1573,10 @@ mod tests {
 
             cryptocorrosion_derive_traits! {
                 #[repr(C)]
-                /// Generic wrapper for unparameterized storage of any of the possible impls.
-                /// Converting into and out of this type should be essentially free, although it may be more
-                /// aligned than a particular impl requires.
+                /// Generic wrapper for unparameterized storage of any of the
+                /// possible impls. Converting into and out of this type should
+                /// be essentially free, although it may be more aligned than a
+                /// particular impl requires.
                 #[allow(non_camel_case_types)]
                 #[derive(Copy, Clone)]
                 pub union vec128_storage {

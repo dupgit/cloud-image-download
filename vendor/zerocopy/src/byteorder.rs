@@ -27,6 +27,7 @@
 //!
 //! Type aliases are provided for common byte orders in the [`big_endian`],
 //! [`little_endian`], [`network_endian`], and [`native_endian`] submodules.
+//! Note that network-endian is a synonym for big-endian.
 //!
 //! # Example
 //!
@@ -494,6 +495,7 @@ example of how it can be used for parsing UDP packets.
         // layout as its only non-zero field, which is a `u8` array. `u8` arrays
         // are `Immutable`, `TryFromBytes`, `FromZeros`, `FromBytes`,
         // `IntoBytes`, and `Unaligned`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             impl_or_verify!(O => Immutable for $name<O>);
             impl_or_verify!(O => TryFromBytes for $name<O>);

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.76"
 name = "toml"
-version = "0.9.8"
+version = "0.9.10+spec-1.1.0"
 build = false
 include = [
     "build.rs",
@@ -185,23 +185,23 @@ optional = true
 default-features = false
 
 [dependencies.serde_spanned]
-version = "1.0.3"
+version = "1.0.4"
 features = ["alloc"]
 default-features = false
 
 [dependencies.toml_datetime]
-version = "0.7.3"
+version = "0.7.5"
 features = ["alloc"]
 default-features = false
 
 [dependencies.toml_parser]
-version = "1.0.4"
+version = "1.0.6"
 features = ["alloc"]
 optional = true
 default-features = false
 
 [dependencies.toml_writer]
-version = "1.0.4"
+version = "1.0.6"
 features = ["alloc"]
 optional = true
 default-features = false

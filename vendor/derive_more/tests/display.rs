@@ -132,15 +132,15 @@ mod structs {
 
                 #[test]
                 fn assert() {
-                    assert_eq!(format!("{:03}", Display), "011");
-                    assert_eq!(format!("{:03}", Debug), "011");
-                    assert_eq!(format!("{:07}", Binary), "0001011");
-                    assert_eq!(format!("{:07}", Octal), "0000013");
-                    assert_eq!(format!("{:03}", LowerHex), "00b");
-                    assert_eq!(format!("{:03}", UpperHex), "00B");
-                    assert_eq!(format!("{:07}", LowerExp), "03.15e0");
-                    assert_eq!(format!("{:07}", UpperExp), "03.15E0");
-                    assert_eq!(format!("{:018}", Pointer), format!("{POINTER:018p}"));
+                    assert_eq!(format!("{Display:03}"), "011");
+                    assert_eq!(format!("{Debug:03}"), "011");
+                    assert_eq!(format!("{Binary:07}"), "0001011");
+                    assert_eq!(format!("{Octal:07}"), "0000013");
+                    assert_eq!(format!("{LowerHex:03}"), "00b");
+                    assert_eq!(format!("{UpperHex:03}"), "00B");
+                    assert_eq!(format!("{LowerExp:07}"), "03.15e0");
+                    assert_eq!(format!("{UpperExp:07}"), "03.15E0");
+                    assert_eq!(format!("{Pointer:018}"), format!("{POINTER:018p}"));
                 }
             }
 
@@ -187,14 +187,14 @@ mod structs {
 
                     #[test]
                     fn assert() {
-                        assert_eq!(format!("{:03}", LowerDebug), "b");
-                        assert_eq!(format!("{:03}", UpperDebug), "B");
-                        assert_eq!(format!("{:03}", Align), "11");
-                        assert_eq!(format!("{:04}", Sign), "+11");
-                        assert_eq!(format!("{:07}", Alternate), "0b1011");
-                        assert_eq!(format!("{:07}", ZeroPadded), "11");
-                        assert_eq!(format!("{:03}", Width), "0000011");
-                        assert_eq!(format!("{:.3}", Precision), "3.1");
+                        assert_eq!(format!("{LowerDebug:03}"), "b");
+                        assert_eq!(format!("{UpperDebug:03}"), "B");
+                        assert_eq!(format!("{Align:03}"), "11");
+                        assert_eq!(format!("{Sign:04}"), "+11");
+                        assert_eq!(format!("{Alternate:07}"), "0b1011");
+                        assert_eq!(format!("{ZeroPadded:07}"), "11");
+                        assert_eq!(format!("{Width:03}"), "0000011");
+                        assert_eq!(format!("{Precision:.3}"), "3.1");
                     }
                 }
             }
@@ -616,6 +616,21 @@ mod structs {
                 field: !,
             }
         }
+
+        mod deprecated {
+            use super::*;
+
+            #[derive(Display)]
+            #[deprecated(note = "struct")]
+            struct Tuple(#[deprecated(note = "field")] i32);
+
+            #[derive(Display)]
+            #[deprecated(note = "struct")]
+            struct Struct {
+                #[deprecated(note = "field")]
+                field: i32,
+            }
+        }
     }
 
     mod multi_field {
@@ -771,6 +786,7 @@ mod structs {
             }
         }
 
+        #[cfg(target_endian = "little")]
         mod r#unsized {
             use super::*;
 
@@ -974,6 +990,54 @@ mod enums {
                         assert_eq!(format!("{:.3}", Unit::Precision), "3.1");
                     }
                 }
+            }
+        }
+
+        mod default {
+            use super::*;
+
+            #[derive(
+                Binary, Display, LowerExp, LowerHex, Octal, Pointer, UpperExp, UpperHex
+            )]
+            #[binary("Binary")]
+            #[display("Display")]
+            #[lower_exp("LowerExp")]
+            #[lower_hex("LowerHex")]
+            #[octal("Octal")]
+            #[pointer("Pointer")]
+            #[upper_exp("UpperExp")]
+            #[upper_hex("UpperHex")]
+            enum Unit {
+                A,
+                #[binary("Binary Custom")]
+                #[display("Display Custom")]
+                #[lower_exp("LowerExp Custom")]
+                #[lower_hex("LowerHex Custom")]
+                #[octal("Octal Custom")]
+                #[pointer("Pointer Custom")]
+                #[upper_exp("UpperExp Custom")]
+                #[upper_hex("UpperHex Custom")]
+                B,
+            }
+
+            #[test]
+            fn assert() {
+                assert_eq!(format!("{:b}", Unit::A), "Binary");
+                assert_eq!(format!("{:b}", Unit::B), "Binary Custom");
+                assert_eq!(Unit::A.to_string(), "Display");
+                assert_eq!(Unit::B.to_string(), "Display Custom");
+                assert_eq!(format!("{:e}", Unit::A), "LowerExp");
+                assert_eq!(format!("{:e}", Unit::B), "LowerExp Custom");
+                assert_eq!(format!("{:x}", Unit::A), "LowerHex");
+                assert_eq!(format!("{:x}", Unit::B), "LowerHex Custom");
+                assert_eq!(format!("{:o}", Unit::A), "Octal");
+                assert_eq!(format!("{:o}", Unit::B), "Octal Custom");
+                assert_eq!(format!("{:p}", Unit::A), "Pointer");
+                assert_eq!(format!("{:p}", Unit::B), "Pointer Custom");
+                assert_eq!(format!("{:E}", Unit::A), "UpperExp");
+                assert_eq!(format!("{:E}", Unit::B), "UpperExp Custom");
+                assert_eq!(format!("{:X}", Unit::A), "UpperHex");
+                assert_eq!(format!("{:X}", Unit::B), "UpperHex Custom");
             }
         }
     }
@@ -1321,6 +1385,20 @@ mod enums {
             enum Enum {
                 Unnamed(!),
                 Named { field: ! },
+            }
+        }
+
+        mod deprecated {
+            use super::*;
+
+            #[derive(Display)]
+            #[deprecated(note = "enum")]
+            enum Enum {
+                #[deprecated(note = "variant")]
+                Deprecated {
+                    #[deprecated(note = "field")]
+                    field: i32,
+                },
             }
         }
     }
@@ -1796,6 +1874,79 @@ mod enums {
                 }
             }
         }
+    }
+
+    mod rename_all {
+        use super::*;
+
+        macro_rules! casing_test {
+            ($name:ident, $casing:literal, $VariantOne:literal, $Two:literal) => {
+                mod $name {
+                    use super::*;
+
+                    #[test]
+                    fn enum_top_level() {
+                        #[derive(Display)]
+                        #[display(rename_all = $casing)]
+                        enum Enum {
+                            VariantOne,
+                            Two,
+                        }
+
+                        assert_eq!(Enum::VariantOne.to_string(), $VariantOne);
+                        assert_eq!(Enum::Two.to_string(), $Two);
+                    }
+
+                    #[test]
+                    fn enum_variant_level() {
+                        #[derive(Display)]
+                        #[display(rename_all = "lowercase")] // ignored
+                        enum Enum {
+                            #[display(rename_all = $casing)]
+                            VariantOne,
+                            #[display(rename_all = $casing)]
+                            Two,
+                        }
+
+                        assert_eq!(Enum::VariantOne.to_string(), $VariantOne);
+                        assert_eq!(Enum::Two.to_string(), $Two);
+                    }
+
+                    #[test]
+                    fn struct_top_level() {
+                        #[derive(Display)]
+                        #[display(rename_all = $casing)]
+                        struct VariantOne;
+
+                        #[derive(Display)]
+                        #[display(rename_all = $casing)]
+                        struct Two;
+
+                        assert_eq!(VariantOne.to_string(), $VariantOne);
+                        assert_eq!(Two.to_string(), $Two);
+                    }
+                }
+            };
+        }
+
+        casing_test!(lower_case, "lowercase", "variantone", "two");
+        casing_test!(upper_case, "UPPERCASE", "VARIANTONE", "TWO");
+        casing_test!(pascal_case, "PascalCase", "VariantOne", "Two");
+        casing_test!(camel_case, "camelCase", "variantOne", "two");
+        casing_test!(snake_case, "snake_case", "variant_one", "two");
+        casing_test!(
+            screaming_snake_case,
+            "SCREAMING_SNAKE_CASE",
+            "VARIANT_ONE",
+            "TWO"
+        );
+        casing_test!(kebab_case, "kebab-case", "variant-one", "two");
+        casing_test!(
+            screaming_kebab_case,
+            "SCREAMING-KEBAB-CASE",
+            "VARIANT-ONE",
+            "TWO"
+        );
     }
 }
 

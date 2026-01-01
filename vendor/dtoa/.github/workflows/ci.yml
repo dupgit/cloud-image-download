@@ -24,10 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [nightly, beta, stable, 1.36.0]
+        rust: [nightly, beta, stable, 1.86.0, 1.68.0]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust}}
@@ -36,8 +36,15 @@ jobs:
         if: matrix.rust == 'nightly'
       - run: cargo build
       - run: cargo test
+        if: matrix.rust != '1.68.0'
       - run: cargo build --tests --features no-panic --release
         if: matrix.rust == 'nightly'
+      - uses: actions/upload-artifact@v6
+        if: matrix.rust == 'nightly' && always()
+        with:
+          name: Cargo.lock
+          path: Cargo.lock
+        continue-on-error: true
 
   doc:
     name: Documentation
@@ -48,7 +55,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -Dwarnings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
       - uses: dtolnay/install@cargo-docs-rs
       - run: cargo docs-rs
@@ -60,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@miri
       - run: cargo miri setup
       - run: cargo miri test
@@ -73,6 +80,17 @@ jobs:
     if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@clippy
       - run: cargo clippy --tests --benches -- -Dclippy::all -Dclippy::pedantic
+
+  outdated:
+    name: Outdated
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/install@cargo-outdated
+      - run: cargo outdated --exit-code 1

@@ -13,14 +13,13 @@ use alloc::{
 #[cfg(feature = "std")]
 use std::borrow::Cow;
 
-use derive_more::From;
 use static_assertions::assert_not_impl_any;
 
 mod structs {
     use super::*;
 
     mod unit {
-        use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         struct Unit;
@@ -39,7 +38,7 @@ mod structs {
         }
 
         mod generic {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             struct Unit<const N: usize>;
@@ -61,6 +60,7 @@ mod structs {
 
     mod single_field {
         use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         struct Tuple(i32);
@@ -78,6 +78,7 @@ mod structs {
 
         mod types {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             #[from(i8)]
@@ -114,6 +115,7 @@ mod structs {
 
         mod forward {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             #[from(forward)]
@@ -146,7 +148,7 @@ mod structs {
         }
 
         mod generic {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             struct Tuple<T>(T);
@@ -163,7 +165,7 @@ mod structs {
             }
 
             mod reference {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<'a, T>(&'a T);
@@ -181,7 +183,7 @@ mod structs {
             }
 
             mod indirect {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<T: 'static>(&'static T);
@@ -199,7 +201,7 @@ mod structs {
             }
 
             mod bounded {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<T: Clone>(T);
@@ -217,7 +219,7 @@ mod structs {
             }
 
             mod r#const {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<const N: usize, T>(T);
@@ -238,6 +240,7 @@ mod structs {
 
     mod multi_field {
         use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         struct Tuple(i32, i16);
@@ -262,6 +265,7 @@ mod structs {
 
         mod types {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             #[from((i16, i16))]
@@ -291,7 +295,7 @@ mod structs {
         }
 
         mod forward {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             #[from(forward)]
@@ -358,7 +362,7 @@ mod structs {
         }
 
         mod generic {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             struct Tuple<A, B>(A, B);
@@ -382,7 +386,7 @@ mod structs {
             }
 
             mod reference {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<'a, A, B>(&'a A, &'a B);
@@ -407,7 +411,7 @@ mod structs {
             }
 
             mod bounded {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct Tuple<A: Clone, B>(A, B);
@@ -432,7 +436,7 @@ mod structs {
             }
 
             mod r#const {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 struct ConstTuple<const N: usize, A, B>(A, B);
@@ -459,7 +463,7 @@ mod structs {
 
         #[cfg(nightly)]
         mod never {
-            use super::*;
+            use derive_more::From;
 
             #[derive(From)]
             struct Tuple(i32, !);
@@ -467,6 +471,23 @@ mod structs {
             #[derive(From)]
             struct Struct {
                 field1: !,
+                field2: i16,
+            }
+        }
+
+        mod deprecated {
+            use derive_more::From;
+
+            #[derive(From)]
+            #[deprecated(note = "struct")]
+            struct Tuple(i32, #[deprecated(note = "field")] i16);
+
+            #[derive(From)]
+            #[deprecated(note = "struct")]
+            struct Struct {
+                #[deprecated(note = "field")]
+                field1: i32,
+                #[deprecated(note = "field")]
                 field2: i16,
             }
         }
@@ -478,6 +499,7 @@ mod enums {
 
     mod unit_variant {
         use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         enum Enum {
@@ -494,6 +516,7 @@ mod enums {
 
         mod generic {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Unit {
@@ -516,6 +539,7 @@ mod enums {
 
             mod r#const {
                 use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Unit<const N: usize> {
@@ -539,7 +563,7 @@ mod enums {
         }
 
         mod from {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Unit {
@@ -570,7 +594,7 @@ mod enums {
             }
 
             mod r#const {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Unit<const N: usize> {
@@ -602,6 +626,7 @@ mod enums {
 
     mod single_field_variant {
         use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         enum Enum {
@@ -616,7 +641,7 @@ mod enums {
         }
 
         mod generic {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Tuple<T> {
@@ -635,7 +660,7 @@ mod enums {
             }
 
             mod reference {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<'a, T> {
@@ -655,7 +680,7 @@ mod enums {
             }
 
             mod indirect {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<T: 'static> {
@@ -675,7 +700,7 @@ mod enums {
             }
 
             mod bounded {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<T: Clone> {
@@ -695,7 +720,7 @@ mod enums {
             }
 
             mod r#const {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<T, const N: usize> {
@@ -716,7 +741,7 @@ mod enums {
         }
 
         mod from {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Tuple {
@@ -744,7 +769,7 @@ mod enums {
         }
 
         mod skip {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Enum {
@@ -767,7 +792,7 @@ mod enums {
             }
 
             mod generic {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<T> {
@@ -794,7 +819,7 @@ mod enums {
                 }
 
                 mod reference {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<'a, T> {
@@ -822,7 +847,7 @@ mod enums {
                 }
 
                 mod indirect {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<T: 'static> {
@@ -850,7 +875,7 @@ mod enums {
                 }
 
                 mod bounded {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<T: Clone> {
@@ -878,7 +903,7 @@ mod enums {
                 }
 
                 mod r#const {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<T, const N: usize> {
@@ -906,7 +931,7 @@ mod enums {
                 }
 
                 mod concrete {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<T> {
@@ -933,7 +958,7 @@ mod enums {
                     }
 
                     mod reference {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<'a, T> {
@@ -964,7 +989,7 @@ mod enums {
                     }
 
                     mod indirect {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<T: 'static> {
@@ -995,7 +1020,7 @@ mod enums {
                     }
 
                     mod bounded {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<T: Clone> {
@@ -1023,7 +1048,7 @@ mod enums {
                     }
 
                     mod r#const {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<T, const N: usize> {
@@ -1058,6 +1083,7 @@ mod enums {
 
         mod types {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Enum {
@@ -1079,7 +1105,7 @@ mod enums {
         }
 
         mod forward {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Unnamed {
@@ -1113,6 +1139,7 @@ mod enums {
 
     mod multi_field_variant {
         use super::*;
+        use derive_more::From;
 
         #[derive(Debug, From, PartialEq)]
         enum Enum {
@@ -1133,7 +1160,7 @@ mod enums {
         }
 
         mod generic {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Tuple<A, B> {
@@ -1158,7 +1185,7 @@ mod enums {
             }
 
             mod reference {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<'a, A, B> {
@@ -1184,7 +1211,7 @@ mod enums {
             }
 
             mod indirect {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<A: 'static, B: 'static> {
@@ -1213,7 +1240,7 @@ mod enums {
             }
 
             mod bounded {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<A: Clone, B> {
@@ -1239,7 +1266,7 @@ mod enums {
             }
 
             mod r#const {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<const N: usize, A, B> {
@@ -1266,7 +1293,7 @@ mod enums {
         }
 
         mod from {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Tuple {
@@ -1302,7 +1329,7 @@ mod enums {
         }
 
         mod skip {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Enum {
@@ -1333,7 +1360,7 @@ mod enums {
             }
 
             mod generic {
-                use super::*;
+                use derive_more::From;
 
                 #[derive(Debug, From, PartialEq)]
                 enum Tuple<A, B> {
@@ -1368,7 +1395,7 @@ mod enums {
                 }
 
                 mod reference {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<'a, A, B> {
@@ -1404,7 +1431,7 @@ mod enums {
                 }
 
                 mod indirect {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<A: 'static, B: 'static> {
@@ -1440,7 +1467,7 @@ mod enums {
                 }
 
                 mod bounded {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<A: Clone, B> {
@@ -1476,7 +1503,7 @@ mod enums {
                 }
 
                 mod r#const {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<const N: usize, A, B> {
@@ -1515,7 +1542,7 @@ mod enums {
                 }
 
                 mod concrete {
-                    use super::*;
+                    use derive_more::From;
 
                     #[derive(Debug, From, PartialEq)]
                     enum Tuple<A, B> {
@@ -1553,7 +1580,7 @@ mod enums {
                     }
 
                     mod reference {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<'a, A, B> {
@@ -1592,7 +1619,7 @@ mod enums {
                     }
 
                     mod indirect {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<A: 'static, B: 'static> {
@@ -1631,7 +1658,7 @@ mod enums {
                     }
 
                     mod bounded {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<A: Clone, B> {
@@ -1670,7 +1697,7 @@ mod enums {
                     }
 
                     mod r#const {
-                        use super::*;
+                        use derive_more::From;
 
                         #[derive(Debug, From, PartialEq)]
                         enum Tuple<const N: usize, A, B> {
@@ -1713,6 +1740,7 @@ mod enums {
 
         mod types {
             use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Enum {
@@ -1744,7 +1772,7 @@ mod enums {
         }
 
         mod forward {
-            use super::*;
+            use derive_more::From;
 
             #[derive(Debug, From, PartialEq)]
             enum Unnamed {
@@ -1805,12 +1833,26 @@ mod enums {
 
         #[cfg(nightly)]
         mod never {
-            use super::*;
+            use derive_more::From;
 
             #[derive(From)]
             enum Enum {
                 Tuple(i8, !),
                 Struct { field1: !, field2: i16 },
+            }
+        }
+
+        mod deprecated {
+            use derive_more::From;
+
+            #[derive(From)]
+            #[deprecated(note = "enum")]
+            enum Enum {
+                #[deprecated(note = "variant")]
+                Deprecated {
+                    #[deprecated(note = "field")]
+                    field: i32,
+                },
             }
         }
     }

@@ -1,0 +1,52 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "creationInfo": {
+    "created": "2025-12-02T21:36:20Z",
+    "creators": [
+      "Tool: cargo-sbom-v0.10.0"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/unwrap_unreachable-0adb6bd6-db01-4640-b401-0a779137d2f6",
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File-unwrap_unreachable",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "ab35e73807315d991096739d7571443d8c700c12"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    }
+  ],
+  "name": "unwrap_unreachable",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-unwrap--unreachable-0.1.1",
+      "description": "Provides `Option::unreachable()` and `Result::unreachable()` methods",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "name": "unwrap_unreachable",
+      "versionInfo": "0.1.1"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-File-unwrap_unreachable",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-unwrap--unreachable-0.1.1",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-unwrap_unreachable"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}

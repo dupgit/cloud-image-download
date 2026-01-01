@@ -52,6 +52,19 @@ impl<T: ?Sized> Clone for SendSyncPhantomData<T> {
     }
 }
 
+#[cfg(miri)]
+extern "Rust" {
+    /// Miri-provided intrinsic that marks the pointer `ptr` as aligned to
+    /// `align`.
+    ///
+    /// This intrinsic is used to inform Miri's symbolic alignment checker that
+    /// a pointer is aligned, even if Miri cannot statically deduce that fact.
+    /// This is often required when performing raw pointer arithmetic or casts
+    /// where the alignment is guaranteed by runtime checks or invariants that
+    /// Miri is not aware of.
+    pub(crate) fn miri_promise_symbolic_alignment(ptr: *const (), align: usize);
+}
+
 pub(crate) trait AsAddress {
     fn addr(self) -> usize;
 }
@@ -146,7 +159,8 @@ pub(crate) const fn padding_needed_for(len: usize, align: NonZeroUsize) -> usize
     #[allow(clippy::arithmetic_side_effects)]
     let mask = align.get() - 1;
 
-    // To efficiently subtract this value from align, we can use the bitwise complement.
+    // To efficiently subtract this value from align, we can use the bitwise
+    // complement.
     // Note that ((!len) & (align-1)) gives us a number that with (len &
     // (align-1)) sums to align-1. So subtracting 1 from x before taking the
     // complement subtracts `len` from `align`. Some quick inspection of
@@ -177,7 +191,8 @@ pub(crate) const fn padding_needed_for(len: usize, align: NonZeroUsize) -> usize
     //
     // (declare-const len (_ BitVec 32))
     // (declare-const align (_ BitVec 32))
-    // ; Search for a case where align is a power of two and padding2 disagrees with padding1
+    // ; Search for a case where align is a power of two and padding2 disagrees
+    // ; with padding1
     // (assert (and (is-power-of-two align)
     //              (not (= (padding1 len align) (padding2 len align)))))
     // (simplify (padding1 (_ bv300 32) (_ bv32 32))) ; 20
@@ -221,7 +236,7 @@ pub(crate) const fn round_down_to_next_multiple_of_alignment(
     }
 
     let align = align.get();
-    #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+    #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
     debug_assert!(align.is_power_of_two());
 
     // Subtraction can't underflow because `align.get() >= 1`.
@@ -357,7 +372,7 @@ where
         // check ensures their shared safety precondition: that the supplied
         // layout is not zero-sized type [1].
         //
-        // [1] Per https://doc.rust-lang.org/stable/std/alloc/trait.GlobalAlloc.html#tymethod.alloc:
+        // [1] Per https://doc.rust-lang.org/1.81.0/std/alloc/trait.GlobalAlloc.html#tymethod.alloc:
         //
         //     This function is unsafe because undefined behavior can result if
         //     the caller does not ensure that layout has non-zero size.
@@ -498,13 +513,17 @@ mod len_of {
             T: KnownLayout<PointerMetadata = usize>,
         {
             let trailing_slice_layout = crate::trailing_slice_layout::<T>();
+
+            // FIXME(#67): Remove this allow. See NumExt for more details.
+            #[allow(
+                unstable_name_collisions,
+                clippy::incompatible_msrv,
+                clippy::multiple_unsafe_ops_per_block
+            )]
             // SAFETY: By invariant on `self`, a `&T` with metadata `self.meta`
             // describes an object of size `<= isize::MAX`. This computes the
             // size of such a `&T` without any trailing padding, and so neither
             // the multiplication nor the addition will overflow.
-            //
-            // FIXME(#67): Remove this allow. See NumExt for more details.
-            #[allow(unstable_name_collisions, clippy::incompatible_msrv)]
             let unpadded_size = unsafe {
                 let trailing_size = self.meta.unchecked_mul(trailing_slice_layout.elem_size);
                 trailing_size.unchecked_add(trailing_slice_layout.offset)
@@ -598,8 +617,9 @@ pub(crate) use len_of::MetadataOf;
 /// exist (stably) on our MSRV. This module provides polyfills for those
 /// features so that we can write more "modern" code, and just remove the
 /// polyfill once our MSRV supports the corresponding feature. Without this,
-/// we'd have to write worse/more verbose code and leave FIXME comments sprinkled
-/// throughout the codebase to update to the new pattern once it's stabilized.
+/// we'd have to write worse/more verbose code and leave FIXME comments
+/// sprinkled throughout the codebase to update to the new pattern once it's
+/// stabilized.
 ///
 /// Each trait is imported as `_` at the crate root; each polyfill should "just
 /// work" at usage sites.

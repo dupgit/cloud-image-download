@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.71"
 name = "wasm-bindgen-macro-support"
-version = "0.2.105"
+version = "0.2.106"
 authors = ["The wasm-bindgen Developers"]
 build = false
 include = [
@@ -58,7 +58,7 @@ features = [
 ]
 
 [dependencies.wasm-bindgen-shared]
-version = "=0.2.105"
+version = "=0.2.106"
 
 [lints.clippy]
 large_enum_variant = "allow"

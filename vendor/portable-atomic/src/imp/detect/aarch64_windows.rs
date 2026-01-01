@@ -11,12 +11,12 @@ Refs: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-p
 
 include!("common.rs");
 
-// windows-sys requires Rust 1.60
+// windows-sys requires Rust 1.71
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 mod ffi {
     sys_type!({
         pub(crate) type [Win32::System::Threading] PROCESSOR_FEATURE_ID = u32;
-        pub(crate) type [Win32::Foundation] BOOL = i32;
+        pub(crate) type [core] BOOL = i32;
     });
 
     sys_const!({
@@ -25,6 +25,9 @@ mod ffi {
         // Defined in winnt.h of Windows SDK.
         pub(crate) const [Win32::System::Threading]
             PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE: PROCESSOR_FEATURE_ID = 34;
+        #[cfg(test)]
+        pub(crate) const [Win32::System::Threading]
+            PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE: PROCESSOR_FEATURE_ID = 45;
     });
 
     sys_fn!({
@@ -49,4 +52,6 @@ fn _detect(info: &mut CpuInfo) {
         };
     }
     check!(lse, PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE);
+    #[cfg(test)]
+    check!(rcpc, PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE);
 }

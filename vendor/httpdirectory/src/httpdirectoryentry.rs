@@ -196,8 +196,10 @@ pub enum EntryType {
 /// This function is used for testing the library and not intended
 /// for any other usage. Compares the size with the apparent size.
 pub fn assert_entry(dir_entry: &HttpDirectoryEntry, entry_type: &EntryType, name: &str, size: usize, date_str: &str) {
-    // Use cargo t -- --show-output to show outputs while testing
+    // Use `cargo test --features test-output -- --nocapture` to show outputs while testing
+    #[cfg(feature = "test-output")]
     println!("{dir_entry:?}, {entry_type:?}, {name}, {size}, {date_str}");
+
     match dir_entry {
         HttpDirectoryEntry::Directory(entry) => {
             assert!(matches!(entry_type, EntryType::Directory));
@@ -231,6 +233,7 @@ mod tests {
         crate::{httpdirectory::Sorting, httpdirectoryentry::CompareField},
         chrono::NaiveDate,
         std::cmp::Ordering,
+        unwrap_unreachable::UnwrapUnreachable,
     };
 
     #[test]
@@ -255,7 +258,7 @@ mod tests {
         assert_eq!(httpdirectoryentry.name(), Some("name"));
         assert_eq!(
             httpdirectoryentry.date(),
-            Some(NaiveDate::from_ymd_opt(2025, 05, 20).unwrap().and_hms_opt(20, 19, 00).unwrap())
+            Some(NaiveDate::from_ymd_opt(2025, 05, 20).unreachable().and_hms_opt(20, 19, 00).unreachable())
         );
     }
 

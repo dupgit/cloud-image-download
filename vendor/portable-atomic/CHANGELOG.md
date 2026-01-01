@@ -12,15 +12,45 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [1.13.0] - 2025-12-27
+
+- Add `unsafe-assume-privileged` feature / `portable_atomic_unsafe_assume_privileged` cfg for safer lock-based fallback on multi-core privileged environments. ([b084ee1](https://github.com/taiki-e/portable-atomic/commit/b084ee1b6cba3e9d7158a6c9e5450e1fc8bbde36))
+
+- Support `unsafe-assume-single-core`/`unsafe-assume-privileged` on all 32-bit Arm targets. Previously it was only M-profile and pre-v6 targets. ([7e07f5e](https://github.com/taiki-e/portable-atomic/commit/7e07f5e2bc8ad74287830522c02f960a8c8da59e))
+
+- Make `AtomicPtr::fetch_*` strict-provenance compatible on all environments. Previously it was only strict-provenance compatible on `cfg(miri)` and otherwise permissive-provenance compatible. ([4306943](https://github.com/taiki-e/portable-atomic/commit/4306943fb09af3a4f763f1f8ff257fe752c7b7e3))
+
+- Ensure sequential consistency in lock-based fallback when SeqCst is used. ([7e80742](https://github.com/taiki-e/portable-atomic/commit/7e80742eeed9fc4d1aa15455b862d70194f6f1bf))
+
+- Support compile-time detection for x86_64 VMOVDQA. ([f7bb1aa](https://github.com/taiki-e/portable-atomic/commit/f7bb1aa246df0e13fa02fb707f8462d8dfe6b7e9))
+
+- Improve compile-time detection of s390x miscellaneous-extensions-3. ([11045fe](https://github.com/taiki-e/portable-atomic/commit/11045fe513689a842e393324c05f2c5f169b59d4))
+
+- Optimize AVR 8-bit swap when RMW instructions available. ([8cedb34](https://github.com/taiki-e/portable-atomic/commit/8cedb34a0b9f2ca1680d893a58020ba1e5d0a87b))
+
+- Optimize interrupt restore on RISC-V. ([9b97a2a](https://github.com/taiki-e/portable-atomic/commit/9b97a2a18142c9a8d21f03de7fff30caea89d51e))
+
+## [1.12.0] - 2025-12-19
+
+- Fix build error on no-std pre-v6 Arm targets due to the [recent upstream change](https://github.com/rust-lang/rust/pull/149241). ([83f6f3e](https://github.com/taiki-e/portable-atomic/commit/83f6f3e4957833af6dd1bae054da1e8d51501a76))
+
+- Support `unsafe-assume-single-core` feature / `portable_atomic_unsafe_assume_single_core` cfg for targets with CAS. ([38e9572](https://github.com/taiki-e/portable-atomic/commit/38e95722dde98e7a9b59d2acbff968450a0b09ea))
+
+- Improve compile-time detection of s390x target feature. ([5ae0ef5](https://github.com/taiki-e/portable-atomic/commit/5ae0ef5ed7f9a0c9efe9e628ba2fbc5876487219))
+
+- Documentation improvements. ([c84f720](https://github.com/taiki-e/portable-atomic/commit/c84f7203ae6e39a5c9966748123b95b90e8a127a))
+
 ## [1.11.1] - 2025-06-06
 
-- Fix build error when building non-x86 targets for Miri or ThreadSanitizer since nightly-2025-05-31.
+- Fix build error when building aarch64/arm64ec/powerpc64/s390x targets for Miri or ThreadSanitizer since nightly-2025-05-31.
 
 - aarch64: Optimize atomic floats when FEAT_LSFE is enabled. ([#201](https://github.com/taiki-e/portable-atomic/pull/201))
 
 - Improve compile-time detection of RISC-V Zacas extension. ([b7634e2](https://github.com/taiki-e/portable-atomic/commit/b7634e2cd808ea118266d12f99fd8877a92e3d31))
 
 - Improve run-time detection on linux-musl. ([7fdad7f](https://github.com/taiki-e/portable-atomic/commit/7fdad7f7dd32e32ece7bd0eaf565db657b3406bb))
+
+- Optimize interrupt restore on thumbv6m. ([dd2004a](https://github.com/taiki-e/portable-atomic/commit/dd2004aaa14d034b0db652eb9939b780d0d8221f))
 
 ## [1.11.0] - 2025-02-24
 
@@ -532,7 +562,9 @@ The latest version of portable-atomic is 1.x. This release makes portable-atomic
 
 Initial release
 
-[Unreleased]: https://github.com/taiki-e/portable-atomic/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/taiki-e/portable-atomic/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/taiki-e/portable-atomic/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/taiki-e/portable-atomic/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/taiki-e/portable-atomic/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/taiki-e/portable-atomic/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/taiki-e/portable-atomic/compare/v1.9.0...v1.10.0

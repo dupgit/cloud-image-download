@@ -1,6 +1,6 @@
 {
   "git": {
-    "sha1": "f72a9d68d90cd75513e18859403f0139cc6913a1"
+    "sha1": "11831fb89d02ea80b2f72e10868e913d87156c06"
   },
   "path_in_vcs": "crates/js-sys"
 }

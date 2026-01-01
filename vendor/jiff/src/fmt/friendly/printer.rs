@@ -1,6 +1,6 @@
 use crate::{
     fmt::{
-        util::{DecimalFormatter, FractionalFormatter},
+        util::{FractionalFormatter, IntegerFormatter},
         Write, WriteExt,
     },
     Error, SignedDuration, Span, Unit,
@@ -1223,19 +1223,19 @@ impl SpanPrinter {
     ) -> Result<(), Error> {
         let span = span.abs();
         if span.get_years() != 0 {
-            wtr.write(Unit::Year, span.get_years().unsigned_abs())?;
+            wtr.write(Unit::Year, span.get_years().unsigned_abs().into())?;
         }
         if span.get_months() != 0 {
-            wtr.write(Unit::Month, span.get_months().unsigned_abs())?;
+            wtr.write(Unit::Month, span.get_months().unsigned_abs().into())?;
         }
         if span.get_weeks() != 0 {
-            wtr.write(Unit::Week, span.get_weeks().unsigned_abs())?;
+            wtr.write(Unit::Week, span.get_weeks().unsigned_abs().into())?;
         }
         if span.get_days() != 0 {
-            wtr.write(Unit::Day, span.get_days().unsigned_abs())?;
+            wtr.write(Unit::Day, span.get_days().unsigned_abs().into())?;
         }
         if span.get_hours() != 0 {
-            wtr.write(Unit::Hour, span.get_hours().unsigned_abs())?;
+            wtr.write(Unit::Hour, span.get_hours().unsigned_abs().into())?;
         }
         if span.get_minutes() != 0 {
             wtr.write(Unit::Minute, span.get_minutes().unsigned_abs())?;
@@ -1310,7 +1310,7 @@ impl SpanPrinter {
         span_time = span_time.abs();
 
         let fmtint =
-            DecimalFormatter::new().padding(self.padding.unwrap_or(2));
+            IntegerFormatter::new().padding(self.padding.unwrap_or(2));
         let fmtfraction = FractionalFormatter::new().precision(self.precision);
         wtr.wtr.write_int(&fmtint, span_time.get_hours_ranged().get())?;
         wtr.wtr.write_str(":")?;
@@ -1366,10 +1366,16 @@ impl SpanPrinter {
                 wtr.write(Unit::Minute, secs / SECS_PER_MIN)?;
                 wtr.write(Unit::Second, secs % SECS_PER_MIN)?;
                 let mut nanos = dur.subsec_nanos();
-                wtr.write(Unit::Millisecond, nanos / NANOS_PER_MILLI)?;
+                wtr.write(
+                    Unit::Millisecond,
+                    (nanos / NANOS_PER_MILLI).into(),
+                )?;
                 nanos %= NANOS_PER_MILLI;
-                wtr.write(Unit::Microsecond, nanos / NANOS_PER_MICRO)?;
-                wtr.write(Unit::Nanosecond, nanos % NANOS_PER_MICRO)?;
+                wtr.write(
+                    Unit::Microsecond,
+                    (nanos / NANOS_PER_MICRO).into(),
+                )?;
+                wtr.write(Unit::Nanosecond, (nanos % NANOS_PER_MICRO).into())?;
             }
             Some(FractionalUnit::Hour) => {
                 wtr.write_fractional_duration(FractionalUnit::Hour, &dur)?;
@@ -1421,7 +1427,10 @@ impl SpanPrinter {
                 wtr.write(Unit::Minute, secs / SECS_PER_MIN)?;
                 wtr.write(Unit::Second, secs % SECS_PER_MIN)?;
                 let mut nanos = dur.subsec_nanos();
-                wtr.write(Unit::Millisecond, nanos / NANOS_PER_MILLI)?;
+                wtr.write(
+                    Unit::Millisecond,
+                    (nanos / NANOS_PER_MILLI).into(),
+                )?;
                 nanos %= NANOS_PER_MILLI;
 
                 let leftovers = core::time::Duration::new(0, nanos);
@@ -1479,7 +1488,7 @@ impl SpanPrinter {
         // bigger.
 
         let fmtint =
-            DecimalFormatter::new().padding(self.padding.unwrap_or(2));
+            IntegerFormatter::new().padding(self.padding.unwrap_or(2));
         let fmtfraction = FractionalFormatter::new().precision(self.precision);
 
         let mut secs = udur.as_secs();
@@ -1609,7 +1618,7 @@ struct DesignatorWriter<'p, 'w, W> {
     wtr: &'w mut W,
     desig: Designators,
     sign: Option<DirectionSign>,
-    fmtint: DecimalFormatter,
+    fmtint: IntegerFormatter,
     fmtfraction: FractionalFormatter,
     written_non_zero_unit: bool,
 }
@@ -1624,7 +1633,7 @@ impl<'p, 'w, W: Write> DesignatorWriter<'p, 'w, W> {
         let desig = Designators::new(printer.designator);
         let sign = printer.direction.sign(printer, has_calendar, signum);
         let fmtint =
-            DecimalFormatter::new().padding(printer.padding.unwrap_or(0));
+            IntegerFormatter::new().padding(printer.padding.unwrap_or(0));
         let fmtfraction =
             FractionalFormatter::new().precision(printer.precision);
         DesignatorWriter {
@@ -1670,12 +1679,7 @@ impl<'p, 'w, W: Write> DesignatorWriter<'p, 'w, W> {
         Ok(())
     }
 
-    fn write(
-        &mut self,
-        unit: Unit,
-        value: impl Into<u64>,
-    ) -> Result<(), Error> {
-        let value = value.into();
+    fn write(&mut self, unit: Unit, value: u64) -> Result<(), Error> {
         if value == 0 {
             return Ok(());
         }
@@ -1729,7 +1733,7 @@ impl<'p, 'w, W: Write> DesignatorWriter<'p, 'w, W> {
 struct FractionalPrinter {
     integer: u64,
     fraction: u32,
-    fmtint: DecimalFormatter,
+    fmtint: IntegerFormatter,
     fmtfraction: FractionalFormatter,
 }
 
@@ -1746,7 +1750,7 @@ impl FractionalPrinter {
     fn from_span(
         span: &Span,
         unit: FractionalUnit,
-        fmtint: DecimalFormatter,
+        fmtint: IntegerFormatter,
         fmtfraction: FractionalFormatter,
     ) -> FractionalPrinter {
         debug_assert!(span.largest_unit() <= Unit::from(unit));
@@ -1758,7 +1762,7 @@ impl FractionalPrinter {
     fn from_duration(
         dur: &core::time::Duration,
         unit: FractionalUnit,
-        fmtint: DecimalFormatter,
+        fmtint: IntegerFormatter,
         fmtfraction: FractionalFormatter,
     ) -> FractionalPrinter {
         match unit {

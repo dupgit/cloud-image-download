@@ -17,7 +17,7 @@ use std::{
 };
 
 use crate::{
-    error::{err, Error},
+    error::{tz::db::Error as E, Error},
     timestamp::Timestamp,
     tz::{
         db::special_time_zone, tzif::is_possibly_tzif, TimeZone,
@@ -204,13 +204,13 @@ impl Database {
 
 impl core::fmt::Debug for Database {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "ZoneInfo(")?;
+        f.write_str("ZoneInfo(")?;
         if let Some(ref dir) = self.dir {
-            write!(f, "{}", dir.display())?;
+            core::fmt::Display::fmt(&dir.display(), f)?;
         } else {
-            write!(f, "unavailable")?;
+            f.write_str("unavailable")?;
         }
-        write!(f, ")")
+        f.write_str(")")
     }
 }
 
@@ -560,7 +560,7 @@ impl ZoneInfoName {
     fn new(base: &Path, time_zone_name: &Path) -> Result<ZoneInfoName, Error> {
         let full = base.join(time_zone_name);
         let original = parse::os_str_utf8(time_zone_name.as_os_str())
-            .map_err(|err| err.path(base))?;
+            .map_err(|err| Error::from(err).path(base))?;
         let lower = original.to_ascii_lowercase();
         let inner = ZoneInfoNameInner {
             full,
@@ -792,14 +792,18 @@ fn walk(start: &Path) -> Result<Vec<ZoneInfoName>, Error> {
 
             let time_zone_name = match path.strip_prefix(start) {
                 Ok(time_zone_name) => time_zone_name,
-                Err(err) => {
+                // I think this error case is actually not possible.
+                // Or if it does, is a legitimate bug. Namely, `start`
+                // should always be a prefix of `path`, since `path`
+                // is itself derived, ultimately, from `start`.
+                Err(_err) => {
                     trace!(
                         "failed to extract time zone name from {} \
-                         using {} as a base: {err}",
+                         using {} as a base: {_err}",
                         path.display(),
                         start.display(),
                     );
-                    seterr(&path, Error::adhoc(err));
+                    seterr(&path, Error::from(E::ZoneInfoStripPrefix));
                     continue;
                 }
             };
@@ -817,7 +821,7 @@ fn walk(start: &Path) -> Result<Vec<ZoneInfoName>, Error> {
     if names.is_empty() {
         let err = first_err
             .take()
-            .unwrap_or_else(|| err!("{}: no TZif files", start.display()));
+            .unwrap_or_else(|| Error::from(E::ZoneInfoNoTzifFiles));
         Err(err)
     } else {
         // If we found at least one valid name, then we declare success and

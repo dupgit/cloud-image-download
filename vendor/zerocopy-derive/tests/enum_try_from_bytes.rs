@@ -631,7 +631,8 @@ fn test_trivial_is_bit_valid() {
 mod issue_2051 {
     use super::*;
 
-    // Test that the `non_camel_case_types` lint isn't triggered by generated code.
+    // Test that the `non_camel_case_types` lint isn't triggered by generated
+    // code.
     // Prevents regressions of #2051.
     #[repr(u32)]
     #[derive(imp::TryFromBytes)]
@@ -642,3 +643,11 @@ mod issue_2051 {
         I32_MUL,
     }
 }
+
+#[derive(imp::TryFromBytes)]
+#[repr(u8)]
+enum RawIdentifierVariant {
+    r#type,
+}
+
+util_assert_impl_all!(RawIdentifierVariant: imp::TryFromBytes);

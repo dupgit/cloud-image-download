@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "zerocopy-derive"
-version = "0.8.28"
+version = "0.8.31"
 authors = [
     "Joshua Liebow-Feeser <joshlf@google.com>",
     "Jack Wrenn <jswrenn@amazon.com>",
@@ -89,6 +89,10 @@ path = "tests/include.rs"
 [[test]]
 name = "issue_2117"
 path = "tests/issue_2117.rs"
+
+[[test]]
+name = "issue_2835"
+path = "tests/issue_2835.rs"
 
 [[test]]
 name = "paths_and_modules"

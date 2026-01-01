@@ -6,7 +6,7 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::string::ToString;
+use alloc::string::ToString as _;
 
 use derive_more::TryUnwrap;
 
@@ -138,5 +138,18 @@ mod never {
     enum Enum {
         Tuple(!),
         TupleMulti(i32, !),
+    }
+}
+
+mod deprecated {
+    use super::*;
+
+    #[derive(TryUnwrap)]
+    #[deprecated(note = "enum")]
+    enum Enum {
+        #[deprecated(note = "variant")]
+        Tuple(#[deprecated(note = "field")] i32),
+        #[deprecated(note = "variant")]
+        TupleMulti(i32, #[deprecated(note = "field")] i32),
     }
 }

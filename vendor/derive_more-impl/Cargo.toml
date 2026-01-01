@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.75.0"
+rust-version = "1.81.0"
 name = "derive_more-impl"
-version = "2.0.1"
+version = "2.1.1"
 authors = ["Jelte Fennema <github-tech@jeltef.nl>"]
 build = false
 include = [
@@ -41,13 +41,109 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[badges.github]
+repository = "JelteF/derive_more"
+workflow = "CI"
+
+[features]
+add = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+add_assign = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+as_ref = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+constructor = []
+debug = [
+    "syn/extra-traits",
+    "dep:unicode-xid",
+]
+default = []
+deref = []
+deref_mut = []
+display = [
+    "syn/extra-traits",
+    "dep:unicode-xid",
+    "dep:convert_case",
+]
+eq = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+error = ["syn/extra-traits"]
+from = ["syn/extra-traits"]
+from_str = [
+    "syn/full",
+    "syn/visit",
+    "dep:convert_case",
+]
+full = [
+    "add",
+    "add_assign",
+    "as_ref",
+    "constructor",
+    "debug",
+    "deref",
+    "deref_mut",
+    "display",
+    "eq",
+    "error",
+    "from",
+    "from_str",
+    "index",
+    "index_mut",
+    "into",
+    "into_iterator",
+    "is_variant",
+    "mul",
+    "mul_assign",
+    "not",
+    "sum",
+    "try_from",
+    "try_into",
+    "try_unwrap",
+    "unwrap",
+]
+index = []
+index_mut = []
+into = [
+    "syn/extra-traits",
+    "syn/visit-mut",
+]
+into_iterator = []
+is_variant = ["dep:convert_case"]
+mul = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+mul_assign = [
+    "syn/extra-traits",
+    "syn/visit",
+]
+not = ["syn/extra-traits"]
+sum = []
+testing-helpers = ["syn/full"]
+try_from = []
+try_into = [
+    "syn/extra-traits",
+    "syn/full",
+    "syn/visit-mut",
+]
+try_unwrap = ["dep:convert_case"]
+unwrap = ["dep:convert_case"]
+
 [lib]
 name = "derive_more_impl"
 path = "src/lib.rs"
 proc-macro = true
 
 [dependencies.convert_case]
-version = "0.7"
+version = "0.10"
 optional = true
 
 [dependencies.proc-macro2]
@@ -68,79 +164,12 @@ version = "0.14.0"
 
 [build-dependencies.rustc_version]
 version = "0.4"
-optional = true
-
-[features]
-add = []
-add_assign = []
-as_ref = [
-    "syn/extra-traits",
-    "syn/visit",
-]
-constructor = []
-debug = [
-    "syn/extra-traits",
-    "dep:unicode-xid",
-]
-default = []
-deref = []
-deref_mut = []
-display = [
-    "syn/extra-traits",
-    "dep:unicode-xid",
-]
-error = ["syn/extra-traits"]
-from = ["syn/extra-traits"]
-from_str = []
-full = [
-    "add",
-    "add_assign",
-    "as_ref",
-    "constructor",
-    "debug",
-    "deref",
-    "deref_mut",
-    "display",
-    "error",
-    "from",
-    "from_str",
-    "index",
-    "index_mut",
-    "into",
-    "into_iterator",
-    "is_variant",
-    "mul",
-    "mul_assign",
-    "not",
-    "sum",
-    "try_from",
-    "try_into",
-    "try_unwrap",
-    "unwrap",
-]
-index = []
-index_mut = []
-into = ["syn/extra-traits"]
-into_iterator = []
-is_variant = ["dep:convert_case"]
-mul = ["syn/extra-traits"]
-mul_assign = ["syn/extra-traits"]
-not = ["syn/extra-traits"]
-sum = []
-testing-helpers = ["dep:rustc_version"]
-try_from = []
-try_into = ["syn/extra-traits"]
-try_unwrap = ["dep:convert_case"]
-unwrap = ["dep:convert_case"]
-
-[badges.github]
-repository = "JelteF/derive_more"
-workflow = "CI"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
 check-cfg = [
     "cfg(ci)",
+    "cfg(error_generic_member_access)",
     "cfg(nightly)",
 ]

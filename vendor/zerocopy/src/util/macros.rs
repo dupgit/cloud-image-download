@@ -342,9 +342,10 @@ macro_rules! opt_unsafe_fn {
 /// assumption that the impl emitted by the custom derive is sound).
 ///
 /// The caller is still required to provide a safety comment (e.g. using the
-/// `const _: () = unsafe` macro) . The reason for this restriction is that, while
-/// `impl_or_verify!` can guarantee that the provided impl is sound when it is
-/// compiled with the appropriate cfgs, there is no way to guarantee that it is
+/// `const _: () = unsafe` macro). The reason for this restriction is that,
+/// while `impl_or_verify!` can guarantee that the provided impl is sound when
+/// it is compiled with the appropriate cfgs, there is no way to guarantee that
+/// it is
 /// ever compiled with those cfgs. In particular, it would be possible to
 /// accidentally place an `impl_or_verify!` call in a context that is only ever
 /// compiled when the `derive` feature is disabled. If that were to happen,
@@ -547,10 +548,10 @@ macro_rules! maybe_const_trait_bounded_fn {
     // non-method functions. Each `$args` may optionally be followed by `:
     // $arg_tys:ty`, which can be omitted for `self`.
     ($(#[$attr:meta])* $vis:vis const fn $name:ident($($args:ident $(: $arg_tys:ty)?),* $(,)?) $(-> $ret_ty:ty)? $body:block) => {
-        #[cfg(zerocopy_generic_bounds_in_const_fn_1_61_0)]
+        #[cfg(not(no_zerocopy_generic_bounds_in_const_fn_1_61_0))]
         $(#[$attr])* $vis const fn $name($($args $(: $arg_tys)?),*) $(-> $ret_ty)? $body
 
-        #[cfg(not(zerocopy_generic_bounds_in_const_fn_1_61_0))]
+        #[cfg(no_zerocopy_generic_bounds_in_const_fn_1_61_0)]
         $(#[$attr])* $vis fn $name($($args $(: $arg_tys)?),*) $(-> $ret_ty)? $body
     };
 }
@@ -571,9 +572,9 @@ macro_rules! const_panic {
         panic[0]
     }};
     ($($arg:tt)+) => {{
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         panic!($($arg)+);
-        #[cfg(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
+        #[cfg(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
         const_panic!(@non_panic $($arg)+)
     }};
 }
@@ -584,9 +585,9 @@ macro_rules! const_panic {
 /// accommodate old toolchains.
 macro_rules! const_assert {
     ($e:expr) => {{
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         assert!($e);
-        #[cfg(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
+        #[cfg(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
         {
             let e = $e;
             if !e {
@@ -595,9 +596,9 @@ macro_rules! const_assert {
         }
     }};
     ($e:expr, $($args:tt)+) => {{
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         assert!($e, $($args)+);
-        #[cfg(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
+        #[cfg(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
         {
             let e = $e;
             if !e {
@@ -610,9 +611,9 @@ macro_rules! const_assert {
 /// Like `const_assert!`, but relative to `debug_assert!`.
 macro_rules! const_debug_assert {
     ($e:expr $(, $msg:expr)?) => {{
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         debug_assert!($e $(, $msg)?);
-        #[cfg(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
+        #[cfg(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
         {
             // Use this (rather than `#[cfg(debug_assertions)]`) to ensure that
             // `$e` is always compiled even if it will never be evaluated at
@@ -631,10 +632,10 @@ macro_rules! const_debug_assert {
 /// toolchain supports panicking in `const fn`.
 macro_rules! const_unreachable {
     () => {{
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         unreachable!();
 
-        #[cfg(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
+        #[cfg(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
         loop {}
     }};
 }
@@ -813,6 +814,7 @@ macro_rules! impl_size_eq {
                     // `KnownLayout::LAYOUT.size_info`s are equal, and so this
                     // cast is guaranteed to preserve address and referent size.
                     // It trivially preserves provenance.
+                    #[allow(clippy::multiple_unsafe_ops_per_block)]
                     unsafe { cast!(t) }
                 }
             }
@@ -821,6 +823,7 @@ macro_rules! impl_size_eq {
                 #[inline(always)]
                 fn cast_from_raw(u: PtrInner<'_, $u>) -> PtrInner<'_, $t> {
                     // SAFETY: See previous safety comment.
+                    #[allow(clippy::multiple_unsafe_ops_per_block)]
                     unsafe { cast!(u) }
                 }
             }
@@ -891,10 +894,12 @@ macro_rules! unsafe_with_size_eq {
 
                 // SAFETY: By the preceding safety comment, this cast preserves
                 // referent size.
+                #[allow(clippy::multiple_unsafe_ops_per_block)]
                 let src: PtrInner<'_, T> = unsafe { cast!(src) };
                 let dst: PtrInner<'_, U> = crate::layout::cast_from_raw(src);
                 // SAFETY: By the preceding safety comment, this cast preserves
                 // referent size.
+                #[allow(clippy::multiple_unsafe_ops_per_block)]
                 unsafe { cast!(dst) }
             }
         }
@@ -905,9 +910,11 @@ macro_rules! unsafe_with_size_eq {
             let ptr = <$t as KnownLayout>::raw_dangling();
             #[allow(unused_unsafe)]
             // SAFETY: This call is never executed.
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             let ptr = unsafe { crate::pointer::PtrInner::new(ptr) };
             #[allow(unused_unsafe)]
             // SAFETY: This call is never executed.
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             let ptr = unsafe { cast!(ptr) };
             let _ = <$dst<$u> as SizeEq<$src<$t>>>::cast_from_raw(ptr);
         }

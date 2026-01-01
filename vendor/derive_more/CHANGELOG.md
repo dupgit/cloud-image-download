@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.1.1 - 2025-12-22
+
+### Fixed
+
+- `.as_dyn_error()` method hygiene inside `Error` derive expansion.
+  ([#527](https://github.com/JelteF/derive_more/pull/527))
+
+## 2.1.0 - 2025-12-02
+
+### Added
+
+- Support `#[display(rename_all = "<casing>")]` attribute to change output for
+  implicit naming of unit enum variants or unit structs when deriving `Display`.
+  ([#443](https://github.com/JelteF/derive_more/pull/443))
+- Support `#[from_str(rename_all = "<casing>")]` attribute for unit enum variants
+  and unit structs when deriving `FromStr`.
+  ([#467](https://github.com/JelteF/derive_more/pull/467))
+- Support `Option` fields for `Error::source()` in `Error` derive.
+  ([#459](https://github.com/JelteF/derive_more/pull/459))
+- Support structs with no fields in `FromStr` derive.
+  ([#469](https://github.com/JelteF/derive_more/pull/469))
+- Add `PartialEq` derive similar to `std`'s one, but considering generics correctly,
+  and implementing `ne()` method as well.
+  ([#473](https://github.com/JelteF/derive_more/pull/473),
+   [#475](https://github.com/JelteF/derive_more/pull/475))
+- Add `Eq` derive similar to `std`'s one, but considering generics correctly.
+  ([#479](https://github.com/JelteF/derive_more/pull/479))
+- Proxy-pass `#[allow]`/`#[expect]` attributes of the type in `Constructor` derive.
+  ([#477](https://github.com/JelteF/derive_more/pull/477))
+- Support `Deref` and `DerefMut` derives for enums.
+  ([#485](https://github.com/JelteF/derive_more/pull/485))
+- Support custom error in `FromStr` derive.
+  ([#494](https://github.com/JelteF/derive_more/pull/494))
+- Support custom error in `TryInto` derive.
+  ([#503](https://github.com/JelteF/derive_more/pull/503))
+- Support skipping fields in `Add`-like, `AddAssign`-like, `Mul`-like and
+  `MulAssign`-like derives.
+  ([#472](https://github.com/JelteF/derive_more/pull/472))
+
+### Changed
+
+- The minimum supported Rust version (MSRV) is now Rust 1.81.
+  ([#466](https://github.com/JelteF/derive_more/pull/466))
+- `Add`-like, `AddAssign`-like, `Mul`-like and `MulAssign`-like derives now
+  infer trait bounds for generics structurally (bound field types instead of
+  type parameters directly).
+  ([#472](https://github.com/JelteF/derive_more/pull/472))
+
+### Fixed
+
+- Suppress deprecation warnings in generated code.
+  ([#454](https://github.com/JelteF/derive_more/pull/454))
+- Silent no-op when `#[try_from(repr)]` attribute is not specified for `TryFrom` derive.
+  ([#458](https://github.com/JelteF/derive_more/pull/458))
+- Missing trait bounds in `AsRef`/`AsMut` derives when associative types are involved.
+  ([#474](https://github.com/JelteF/derive_more/pull/474))
+- Erroneous code generated in `Try`/`TryInto` derives when `Self` type is present in
+  the struct or enum definition.
+  ([#489](https://github.com/JelteF/derive_more/pull/489))
+- Dependency on unstable `feature(error_generic_member_access)` in `Error` derive when
+  using `Backtrace` on a non-nightly toolchain.
+  ([#513](https://github.com/JelteF/derive_more/pull/513))
+- Broken support for `#[<display-trait>("default formatting")]` attribute without `{_variant}`
+  being used as default for enum variants without explicit formatting.
+  ([#495](https://github.com/JelteF/derive_more/pull/495))
+
 ## 2.0.1 - 2025-02-03
 
 ### Added

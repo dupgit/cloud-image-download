@@ -43,7 +43,8 @@ pub(crate) fn generate_tag_enum(repr: &EnumRepr, data: &DataEnum) -> TokenStream
 }
 
 fn tag_ident(variant_ident: &Ident) -> Ident {
-    Ident::new(&format!("___ZEROCOPY_TAG_{}", variant_ident), variant_ident.span())
+    let variant_ident_str = crate::ext::to_ident_str(variant_ident);
+    Ident::new(&format!("___ZEROCOPY_TAG_{}", variant_ident_str), variant_ident.span())
 }
 
 /// Generates a constant for the tag associated with each variant of the enum.
@@ -70,8 +71,14 @@ fn generate_tag_consts(data: &DataEnum) -> TokenStream {
             // Because these are the same size, this is defined to be a no-op
             // and therefore is a lossless conversion [2].
             //
-            // [1]: https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#enum-cast
-            // [2]: https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
+            // [1] Per https://doc.rust-lang.org/1.81.0/reference/expressions/operator-expr.html#enum-cast:
+            //
+            //   Casts an enum to its discriminant.
+            //
+            // [2] Per https://doc.rust-lang.org/1.81.0/reference/expressions/operator-expr.html#numeric-cast:
+            //
+            //   Casting between two integers of the same size (e.g. i32 -> u32)
+            //   is a no-op.
             #[allow(non_upper_case_globals)]
             const #tag_ident: ___ZerocopyTagPrimitive =
                 ___ZerocopyTag::#variant_ident as ___ZerocopyTagPrimitive;
@@ -84,7 +91,8 @@ fn generate_tag_consts(data: &DataEnum) -> TokenStream {
 }
 
 fn variant_struct_ident(variant_ident: &Ident) -> Ident {
-    Ident::new(&format!("___ZerocopyVariantStruct_{}", variant_ident), variant_ident.span())
+    let variant_ident_str = crate::ext::to_ident_str(variant_ident);
+    Ident::new(&format!("___ZerocopyVariantStruct_{}", variant_ident_str), variant_ident.span())
 }
 
 /// Generates variant structs for the given enum variant.
@@ -160,9 +168,10 @@ fn generate_variants_union(generics: &Generics, data: &DataEnum) -> TokenStream 
             return None;
         }
 
-        // Field names are prefixed with `__field_` to prevent name collision with
-        // the `__nonempty` field.
-        let field_name = Ident::new(&format!("__field_{}", &variant.ident), variant.ident.span());
+        // Field names are prefixed with `__field_` to prevent name collision
+        // with the `__nonempty` field.
+        let field_name_str = crate::ext::to_ident_str(&variant.ident);
+        let field_name = Ident::new(&format!("__field_{}", field_name_str), variant.ident.span());
         let variant_struct_ident = variant_struct_ident(&variant.ident);
 
         Some(quote! {

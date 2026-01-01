@@ -53,3 +53,53 @@ mod never {
         other: i32,
     }
 }
+
+mod deprecated {
+    use super::*;
+
+    #[derive(Constructor)]
+    #[deprecated(note = "struct")]
+    struct Tuple(#[deprecated(note = "field")] i32);
+
+    #[derive(Constructor)]
+    #[deprecated(note = "struct")]
+    struct Struct {
+        #[deprecated(note = "field")]
+        field: i32,
+    }
+}
+
+mod proxy_lint_attr {
+    #![deny(non_snake_case, clippy::too_many_arguments)]
+
+    use super::*;
+
+    #[allow(clippy::too_many_arguments)]
+    #[derive(Constructor)]
+    struct ManyArguments(
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+        u8,
+    );
+
+    #[expect(non_snake_case)]
+    #[derive(Constructor)]
+    struct User {
+        Num: i32,
+    }
+}

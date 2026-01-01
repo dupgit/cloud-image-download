@@ -1,6 +1,6 @@
 //! HTTP status codes
 //!
-//! This module contains HTTP-status code related structs an errors. The main
+//! This module contains HTTP-status code related structs and errors. The main
 //! type in this module is `StatusCode` which is not intended to be used through
 //! this module but rather the `http::StatusCode` type.
 //!
@@ -70,14 +70,13 @@ impl StatusCode {
     /// assert!(err.is_err());
     /// ```
     #[inline]
-    pub fn from_u16(src: u16) -> Result<StatusCode, InvalidStatusCode> {
-        if !(100..1000).contains(&src) {
-            return Err(InvalidStatusCode::new());
+    pub const fn from_u16(src: u16) -> Result<StatusCode, InvalidStatusCode> {
+        if let 100..=999 = src {
+            if let Some(code) = NonZeroU16::new(src) {
+                return Ok(StatusCode(code));
+            }
         }
-
-        NonZeroU16::new(src)
-            .map(StatusCode)
-            .ok_or_else(InvalidStatusCode::new)
+        Err(InvalidStatusCode::new())
     }
 
     /// Converts a `&[u8]` to a status code.
@@ -334,6 +333,9 @@ status_codes! {
     /// 102 Processing
     /// [[RFC2518, Section 10.1](https://datatracker.ietf.org/doc/html/rfc2518#section-10.1)]
     (102, PROCESSING, "Processing");
+    /// 103 Early Hints
+    /// [[RFC8297, Section 2](https://datatracker.ietf.org/doc/html/rfc8297#section-2)]
+    (103, EARLY_HINTS, "Early Hints");
 
     /// 200 OK
     /// [[RFC9110, Section 15.3.1](https://datatracker.ietf.org/doc/html/rfc9110#section-15.3.1)]
@@ -523,7 +525,7 @@ status_codes! {
 }
 
 impl InvalidStatusCode {
-    fn new() -> InvalidStatusCode {
+    const fn new() -> InvalidStatusCode {
         InvalidStatusCode { _priv: () }
     }
 }

@@ -1,0 +1,15 @@
+[package]
+name = "unwrap_unreachable"
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+authors = ["Olivier Delhomme <olivier.delhomme@free.fr>"]
+documentation = "https://docs.rs/unwrap_unreachable"
+description = "Provides `Option::unreachable()` and `Result::unreachable()` methods"
+repository = "https://github.com/dupgit/unwrap_unreachable"
+keywords = ["unwrap", "unreachable", "UnwrapUnreachable"]
+categories = ["rust-patterns"]
+rust-version = "1.58.1"
+
+[dependencies]

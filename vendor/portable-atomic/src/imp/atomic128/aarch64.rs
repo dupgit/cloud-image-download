@@ -11,6 +11,10 @@ This architecture provides the following 128-bit atomic instructions:
 - LDIAPP/STILP: acquire-load/release-store (added as Armv8.9 FEAT_LRCPC3 (optional from Armv8.2) (if FEAT_LSE2 is also available))
 - LDCLRP/LDSETP/SWPP: fetch-and-{clear,or},swap (added as Armv9.4 FEAT_LSE128 (optional from Armv9.3))
 
+See "Atomic operation overview by architecture" in atomic-maybe-uninit for a more comprehensive and
+detailed description of the atomic and synchronize instructions in this architecture:
+https://github.com/taiki-e/atomic-maybe-uninit/blob/HEAD/src/arch/README.md#aarch64
+
 This module supports all of these instructions and attempts to select the best
 one based on compile-time and run-time information about available CPU features
 and platforms. For example:
@@ -59,11 +63,15 @@ this module and use intrinsics.rs instead.
 
 Refs:
 - Arm A-profile A64 Instruction Set Architecture
-  https://developer.arm.com/documentation/ddi0602/2024-12
+  https://developer.arm.com/documentation/ddi0602/2025-06
+- C/C++ Atomics Application Binary Interface Standard for the Arm® 64-bit Architecture
+  https://github.com/ARM-software/abi-aa/blob/2025Q1/atomicsabi64/atomicsabi64.rst
 - Arm Compiler armasm User Guide
   https://developer.arm.com/documentation/dui0801/latest
 - Arm Architecture Reference Manual for A-profile architecture
   https://developer.arm.com/documentation/ddi0487/latest (PDF)
+- Arm Architecture Reference Manual Supplement - Armv8, for Armv8-R AArch64 architecture profile
+  https://developer.arm.com/documentation/ddi0600/latest (PDF)
 - atomic-maybe-uninit https://github.com/taiki-e/atomic-maybe-uninit
 
 Generated asm:
@@ -139,23 +147,22 @@ mod detect;
 #[path = "../detect/aarch64_windows.rs"]
 mod detect;
 
-// test only
-#[cfg(test)]
+#[cfg(test)] // test-only (we use auxv.rs)
 #[cfg(not(valgrind))]
 #[cfg(not(portable_atomic_no_outline_atomics))]
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
 #[path = "../detect/aarch64_aa64reg.rs"]
-mod detect_aa64reg;
-#[cfg(test)]
+mod test_detect_aa64reg;
+#[cfg(test)] // test-only (unused)
 #[cfg(not(portable_atomic_no_outline_atomics))]
 #[cfg(target_vendor = "apple")]
 #[path = "../detect/aarch64_apple.rs"]
-mod detect_apple;
-#[cfg(test)]
+mod test_detect_apple;
+#[cfg(test)] // test-only (we use aarch64_aa64reg.rs)
 #[cfg(not(portable_atomic_no_outline_atomics))]
 #[cfg(target_os = "openbsd")]
 #[path = "../detect/auxv.rs"]
-mod detect_auxv;
+mod test_detect_auxv;
 
 #[cfg(not(portable_atomic_no_asm))]
 use core::arch::asm;
@@ -345,6 +352,8 @@ macro_rules! debug_assert_rcpc3 {
 // (It seems GCC effectively ignores this directive and always allow FEAT_LSE instructions: https://godbolt.org/z/W9W6rensG)
 // Note that the .arch_extension directive in global_asm!/naked_asm! which are
 // not used in this crate has different behavior: https://github.com/rust-lang/rust/pull/137720#discussion_r1973608259
+// Note that this directive currently cannot be used correctly with global_asm!/naked_asm!
+// due to LLVM bug: https://github.com/rust-lang/rust/pull/137720#discussion_r2014505753
 //
 // The .arch directive has a similar effect, but we don't use it due to the following issue:
 // https://github.com/torvalds/linux/commit/dd1f6308b28edf0452dd5dc7877992903ec61e69
@@ -657,7 +666,7 @@ unsafe fn _atomic_load_ldp(src: *mut u128, order: Ordering) -> u128 {
     // SAFETY: the caller must guarantee that `dst` is valid for reads,
     // 16-byte aligned, that there are no concurrent non-atomic operations.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDP--Load-pair-of-registers-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDP--Load-pair-of-registers-
     unsafe {
         let (out_lo, out_hi);
         macro_rules! atomic_load_relaxed {
@@ -725,7 +734,7 @@ unsafe fn _atomic_load_ldiapp(src: *mut u128, order: Ordering) -> u128 {
     // SAFETY: the caller must guarantee that `dst` is valid for reads,
     // 16-byte aligned, that there are no concurrent non-atomic operations.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDIAPP--Load-Acquire-RCpc-ordered-pair-of-registers-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDIAPP--Load-Acquire-RCpc-ordered-pair-of-registers-
     unsafe {
         let (out_lo, out_hi);
         match order {
@@ -1092,7 +1101,7 @@ unsafe fn _atomic_store_stp(dst: *mut u128, val: u128, order: Ordering) {
     // SAFETY: the caller must guarantee that `dst` is valid for writes,
     // 16-byte aligned, that there are no concurrent non-atomic operations.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/STP--Store-pair-of-registers-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/STP--Store-pair-of-registers-
     unsafe {
         macro_rules! atomic_store {
             ($acquire:tt, $release:tt) => {{
@@ -1168,7 +1177,7 @@ unsafe fn _atomic_store_stilp(dst: *mut u128, val: u128, order: Ordering) {
     // SAFETY: the caller must guarantee that `dst` is valid for writes,
     // 16-byte aligned, that there are no concurrent non-atomic operations.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/STILP--Store-release-ordered-pair-of-registers-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/STILP--Store-release-ordered-pair-of-registers-
     unsafe {
         macro_rules! atomic_store {
             ($acquire:tt) => {{
@@ -1199,7 +1208,7 @@ unsafe fn _atomic_store_stilp(dst: *mut u128, val: u128, order: Ordering) {
         }
         match order {
             Ordering::Release => atomic_store!(""),
-            // LLVM uses store-release (dmb ish; stp); dmb ish, GCC (libatomic)
+            // LLVM uses store-release (dmb ish; stp); dmb ish, GCC (libatomic) and Atomics ABI Standard
             // uses store-release (stilp) without fence for SeqCst store
             // (https://github.com/gcc-mirror/gcc/commit/7107574958e2bed11d916a1480ef1319f15e5ffe).
             // Considering https://reviews.llvm.org/D141748, LLVM's lowing seems
@@ -1464,7 +1473,7 @@ unsafe fn _atomic_compare_exchange_casp(
     // reads, 16-byte aligned, that there are no concurrent non-atomic operations,
     // and the CPU supports FEAT_LSE.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/CASP--CASPA--CASPAL--CASPL--Compare-and-swap-pair-of-words-or-doublewords-in-memory-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/CASP--CASPA--CASPAL--CASPL--Compare-and-swap-pair-of-words-or-doublewords-in-memory-
     unsafe {
         let old = U128 { whole: old };
         let new = U128 { whole: new };
@@ -1506,10 +1515,10 @@ unsafe fn _atomic_compare_exchange_ldxp_stxp(
     // reads, 16-byte aligned, and that there are no concurrent non-atomic operations.
     //
     // Refs:
-    // - LDXP: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDXP--Load-exclusive-pair-of-registers-
-    // - LDAXP: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDAXP--Load-acquire-exclusive-pair-of-registers-
-    // - STXP: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/STXP--Store-exclusive-pair-of-registers-
-    // - STLXP: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/STLXP--Store-release-exclusive-pair-of-registers-
+    // - LDXP: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDXP--Load-exclusive-pair-of-registers-
+    // - LDAXP: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDAXP--Load-acquire-exclusive-pair-of-registers-
+    // - STXP: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/STXP--Store-exclusive-pair-of-registers-
+    // - STLXP: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/STLXP--Store-release-exclusive-pair-of-registers-
     //
     // Note: Load-Exclusive pair (by itself) does not guarantee atomicity; to complete an atomic
     // operation (even load/store), a corresponding Store-Exclusive pair must succeed.
@@ -1619,7 +1628,7 @@ unsafe fn _atomic_swap_swpp(dst: *mut u128, val: u128, order: Ordering) -> u128 
     // reads, 16-byte aligned, that there are no concurrent non-atomic operations,
     // and the CPU supports FEAT_LSE128.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/SWPP--SWPPA--SWPPAL--SWPPL--Swap-quadword-in-memory-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/SWPP--SWPPA--SWPPAL--SWPPL--Swap-quadword-in-memory-
     unsafe {
         let val = U128 { whole: val };
         let (prev_lo, prev_hi);
@@ -2040,7 +2049,7 @@ unsafe fn atomic_and(dst: *mut u128, val: u128, order: Ordering) -> u128 {
     // reads, 16-byte aligned, that there are no concurrent non-atomic operations,
     // and the CPU supports FEAT_LSE128.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDCLRP--LDCLRPA--LDCLRPAL--LDCLRPL--Atomic-bit-clear-on-quadword-in-memory-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDCLRP--LDCLRPA--LDCLRPAL--LDCLRPL--Atomic-bit-clear-on-quadword-in-memory-
     unsafe {
         let val = U128 { whole: !val };
         let (prev_lo, prev_hi);
@@ -2118,7 +2127,7 @@ unsafe fn atomic_or(dst: *mut u128, val: u128, order: Ordering) -> u128 {
     // reads, 16-byte aligned, that there are no concurrent non-atomic operations,
     // and the CPU supports FEAT_LSE128.
     //
-    // Refs: https://developer.arm.com/documentation/ddi0602/2024-12/Base-Instructions/LDSETP--LDSETPA--LDSETPAL--LDSETPL--Atomic-bit-set-on-quadword-in-memory-
+    // Refs: https://developer.arm.com/documentation/ddi0602/2025-06/Base-Instructions/LDSETP--LDSETPA--LDSETPAL--LDSETPL--Atomic-bit-set-on-quadword-in-memory-
     unsafe {
         let val = U128 { whole: val };
         let (prev_lo, prev_hi);

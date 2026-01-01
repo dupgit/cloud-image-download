@@ -43,7 +43,7 @@ macro_rules! closures {
         }
 
         #[allow(non_snake_case)]
-        unsafe extern "C" fn invoke<$($var: $FromWasmAbi,)* R: ReturnWasmAbi>(
+        unsafe extern "C-unwind" fn invoke<$($var: $FromWasmAbi,)* R: ReturnWasmAbi>(
             a: usize,
             b: usize,
             $(

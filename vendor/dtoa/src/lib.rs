@@ -27,11 +27,19 @@
 //! }
 //! ```
 //!
-//! ## Performance (lower is better)
+//! ## Performance
 //!
-//! ![performance](https://raw.githubusercontent.com/dtolnay/dtoa/master/performance.png)
+//! The [dtoa-benchmark] compares this library and other Rust floating point
+//! formatting implementations across a range of precisions. The vertical axis
+//! in this chart shows nanoseconds taken by a single execution of
+//! `dtoa::Buffer::new().format_finite(value)` so a lower result indicates a
+//! faster library.
+//!
+//! [dtoa-benchmark]: https://github.com/dtolnay/dtoa-benchmark
+//!
+//! ![performance](https://raw.githubusercontent.com/dtolnay/dtoa/master/dtoa-benchmark.png)
 
-#![doc(html_root_url = "https://docs.rs/dtoa/1.0.10")]
+#![doc(html_root_url = "https://docs.rs/dtoa/1.0.11")]
 #![no_std]
 #![allow(
     clippy::cast_lossless,
@@ -49,7 +57,6 @@
     clippy::semicolon_if_nothing_returned, // https://github.com/rust-lang/rust-clippy/issues/7768
     clippy::shadow_unrelated,
     clippy::suspicious_else_formatting,
-    clippy::transmute_float_to_int,
     clippy::unreadable_literal,
     clippy::unseparated_literal_suffix
 )]
@@ -59,7 +66,7 @@ mod diyfp;
 #[macro_use]
 mod dtoa;
 
-use core::mem::{self, MaybeUninit};
+use core::mem::MaybeUninit;
 use core::slice;
 use core::str;
 #[cfg(feature = "no-panic")]
@@ -92,9 +99,9 @@ impl Default for Buffer {
 
 impl Copy for Buffer {}
 
+#[allow(clippy::non_canonical_clone_impl)]
 impl Clone for Buffer {
     #[inline]
-    #[allow(clippy::non_canonical_clone_impl)] // false positive https://github.com/rust-lang/rust-clippy/issues/11072
     fn clone(&self) -> Self {
         Buffer::new()
     }

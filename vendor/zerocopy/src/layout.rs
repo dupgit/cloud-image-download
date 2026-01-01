@@ -903,7 +903,7 @@ mod cast_from_raw {
                 // Since the caller promises that `src_meta` is valid `Src`
                 // metadata, this math will not overflow, and the returned value
                 // will describe a `Dst` of the same size.
-                #[allow(unstable_name_collisions)]
+                #[allow(unstable_name_collisions, clippy::multiple_unsafe_ops_per_block)]
                 unsafe {
                     self.offset_delta_elems
                         .unchecked_add(src_meta.unchecked_mul(self.elem_multiple))
@@ -1246,7 +1246,7 @@ mod tests {
                             layout(size_info, align).validate_cast_and_convert_metadata(addr, bytes_len, cast_type)
                         }).map_err(|d| {
                             let msg = d.downcast::<&'static str>().ok().map(|s| *s.as_ref());
-                            assert!(msg.is_some() || cfg!(not(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)), "non-string panic messages are not permitted when `--cfg zerocopy_panic_in_const_and_vec_try_reserve` is set");
+                            assert!(msg.is_some() || cfg!(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0), "non-string panic messages are not permitted when usage of panic in const fn is enabled");
                             msg
                         });
                         std::panic::set_hook(previous_hook);
@@ -1504,6 +1504,7 @@ mod tests {
                 }
 
                 // SAFETY: `ptr` points to a valid `T`.
+                #[allow(clippy::multiple_unsafe_ops_per_block)]
                 let (size, align) = unsafe {
                     (mem::size_of_val_raw(ptr.as_ptr()), mem::align_of_val_raw(ptr.as_ptr()))
                 };

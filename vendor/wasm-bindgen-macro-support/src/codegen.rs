@@ -306,7 +306,7 @@ impl ToTokens for ast::Struct {
                 #[doc(hidden)]
                 // `allow_delayed` is whether it's ok to not actually free the `ptr` immediately
                 // if it's still borrowed.
-                pub unsafe extern "C" fn #free_fn(ptr: u32, allow_delayed: u32) {
+                pub unsafe extern "C-unwind" fn #free_fn(ptr: u32, allow_delayed: u32) {
                     use #wasm_bindgen::__rt::alloc::rc::Rc;
 
                     if allow_delayed != 0 {
@@ -382,7 +382,10 @@ impl ToTokens for ast::Struct {
             #[automatically_derived]
             impl #wasm_bindgen::convert::TryFromJsValue for #name {
                 fn try_from_js_value(value: #wasm_bindgen::JsValue) -> #wasm_bindgen::__rt::core::result::Result<Self, #wasm_bindgen::JsValue> {
-                    let idx = #wasm_bindgen::convert::IntoWasmAbi::into_abi(&value);
+                    Self::try_from_js_value_ref(&value).ok_or(value)
+                }
+                fn try_from_js_value_ref(value: &#wasm_bindgen::JsValue) -> #wasm_bindgen::__rt::core::option::Option<Self> {
+                    let idx = #wasm_bindgen::convert::IntoWasmAbi::into_abi(value);
 
                     #[link(wasm_import_module = "__wbindgen_placeholder__")]
                     #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
@@ -397,20 +400,14 @@ impl ToTokens for ast::Struct {
 
                     let ptr = unsafe { #unwrap_fn(idx) };
                     if ptr == 0 {
-                        #wasm_bindgen::__rt::core::result::Result::Err(value)
+                        #wasm_bindgen::__rt::core::option::Option::None
                     } else {
-                        // Don't run `JsValue`'s destructor, `unwrap_fn` already did that for us.
-                        #[allow(clippy::mem_forget)]
-                        #wasm_bindgen::__rt::core::mem::forget(value);
                         unsafe {
-                            #wasm_bindgen::__rt::core::result::Result::Ok(
+                            #wasm_bindgen::__rt::core::option::Option::Some(
                                 <Self as #wasm_bindgen::convert::FromWasmAbi>::from_abi(ptr)
                             )
                         }
                     }
-                }
-                fn try_from_js_value_ref(value: &#wasm_bindgen::JsValue) -> #wasm_bindgen::__rt::core::option::Option<Self> {
-                    Self::try_from_js_value(value.clone()).ok()
                 }
             }
 
@@ -496,7 +493,7 @@ impl ToTokens for ast::StructField {
                 #wasm_bindgen::__wbindgen_coverage! {
                 #[cfg_attr(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")), no_mangle)]
                 #[doc(hidden)]
-                pub unsafe extern "C" fn #getter(js: u32)
+                pub unsafe extern "C-unwind" fn #getter(js: u32)
                     -> #wasm_bindgen::convert::WasmRet<<#ty as #wasm_bindgen::convert::IntoWasmAbi>::Abi>
                 {
                     use #wasm_bindgen::__rt::{WasmRefCell, assert_not_null};
@@ -539,7 +536,7 @@ impl ToTokens for ast::StructField {
                 #wasm_bindgen::__wbindgen_coverage! {
                 #[no_mangle]
                 #[doc(hidden)]
-                pub unsafe extern "C" fn #setter(
+                pub unsafe extern "C-unwind" fn #setter(
                     js: u32,
                     #(#args,)*
                 ) {
@@ -632,7 +629,7 @@ impl TryToTokens for ast::Export {
         for (i, arg) in self.function.arguments.iter().enumerate() {
             argtys.push(&*arg.pat_type.ty);
             let i = i + offset;
-            let ident = Ident::new(&format!("arg{}", i), Span::call_site());
+            let ident = Ident::new(&format!("arg{i}"), Span::call_site());
             fn unwrap_nested_types(ty: &syn::Type) -> &syn::Type {
                 match &ty {
                     syn::Type::Group(syn::TypeGroup { ref elem, .. }) => unwrap_nested_types(elem),
@@ -843,7 +840,7 @@ impl TryToTokens for ast::Export {
                     all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")),
                     export_name = #export_name,
                 )]
-                pub unsafe extern "C" fn #generated_name(#(#args),*) -> #wasm_bindgen::convert::WasmRet<#projection::Abi> {
+                pub unsafe extern "C-unwind" fn #generated_name(#(#args),*) -> #wasm_bindgen::convert::WasmRet<#projection::Abi> {
                     const _: () = {
                         #(#checks)*
                     };
@@ -1193,7 +1190,7 @@ impl ToTokens for ast::StringEnum {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let vis = &self.vis;
         let enum_name = &self.name;
-        let name_str = &self.js_name;
+        let name_str = &self.export_name;
         let name_len = name_str.len() as u32;
         let name_chars = name_str.chars().map(u32::from);
         let variants = &self.variants;
@@ -1205,8 +1202,7 @@ impl ToTokens for ast::StringEnum {
         let attrs = &self.rust_attrs;
 
         let invalid_to_str_msg = format!(
-            "Converting an invalid string enum ({}) back to a string is currently not supported",
-            enum_name
+            "Converting an invalid string enum ({enum_name}) back to a string is currently not supported"
         );
 
         // A vector of EnumName::VariantName tokens for this enum
@@ -1353,7 +1349,7 @@ impl TryToTokens for ast::ImportFunction {
                     subpat: None,
                     ..
                 }) => ident.clone(),
-                syn::Pat::Wild(_) => syn::Ident::new(&format!("__genarg_{}", i), Span::call_site()),
+                syn::Pat::Wild(_) => syn::Ident::new(&format!("__genarg_{i}"), Span::call_site()),
                 _ => bail_span!(
                     arg.pat_type.pat,
                     "unsupported pattern in #[wasm_bindgen] imported function",
@@ -1864,7 +1860,7 @@ impl<T: ToTokens> ToTokens for Descriptor<'_, T> {
             return;
         }
 
-        let name = Ident::new(&format!("__wbindgen_describe_{}", ident), ident.span());
+        let name = Ident::new(&format!("__wbindgen_describe_{ident}"), ident.span());
         let inner = &self.inner;
         let attrs = &self.attrs;
         let wasm_bindgen = &self.wasm_bindgen;
@@ -1876,7 +1872,7 @@ impl<T: ToTokens> ToTokens for Descriptor<'_, T> {
                 #(#attrs)*
                 #[no_mangle]
                 #[doc(hidden)]
-                pub extern "C" fn #name() {
+                pub extern "C-unwind" fn #name() {
                     use #wasm_bindgen::describe::*;
                     // See definition of `link_mem_intrinsics` for what this is doing
                     #wasm_bindgen::__rt::link_mem_intrinsics();

@@ -259,6 +259,7 @@
     clippy::indexing_slicing,
     clippy::missing_inline_in_public_items,
     clippy::missing_safety_doc,
+    clippy::multiple_unsafe_ops_per_block,
     clippy::must_use_candidate,
     clippy::must_use_unit,
     clippy::obfuscated_if_else,
@@ -303,23 +304,6 @@
     clippy::indexing_slicing,
 ))]
 #![cfg_attr(not(any(test, kani, feature = "std")), no_std)]
-// NOTE: This attribute should have the effect of causing CI to fail if
-// `stdarch_x86_avx512` - which is currently stable in 1.89.0-nightly as of this
-// writing on 2025-06-10 - has its stabilization rolled back.
-//
-// FIXME(#2583): Remove once `stdarch_x86_avx512` is stabilized in 1.89.0, and
-// 1.89.0 has been released as stable.
-#![cfg_attr(
-    all(feature = "simd-nightly", any(target_arch = "x86", target_arch = "x86_64")),
-    expect(stable_features)
-)]
-// FIXME(#2583): Remove once `stdarch_x86_avx512` is stabilized in 1.89.0, and
-// 1.89.0 has been released as stable. Replace with version detection for 1.89.0
-// (see #2574 for a draft implementation).
-#![cfg_attr(
-    all(feature = "simd-nightly", any(target_arch = "x86", target_arch = "x86_64")),
-    feature(stdarch_x86_avx512)
-)]
 #![cfg_attr(
     all(feature = "simd-nightly", target_arch = "arm"),
     feature(stdarch_arm_neon_intrinsics)
@@ -330,9 +314,10 @@
 )]
 #![cfg_attr(feature = "float-nightly", feature(f16, f128))]
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
+#![cfg_attr(__ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS, feature(coverage_attribute))]
 #![cfg_attr(
-    __ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS,
-    feature(layout_for_ptr, coverage_attribute)
+    any(__ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS, miri),
+    feature(layout_for_ptr)
 )]
 
 // This is a hack to allow zerocopy-derive derives to work in this crate. They
@@ -740,7 +725,7 @@ use {FromZeros as FromZeroes, IntoBytes as AsBytes, Ref as LayoutVerified};
     doc = concat!("[derive]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.KnownLayout.html"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(KnownLayout)]` to `{Self}`")
 )]
 pub unsafe trait KnownLayout {
@@ -1077,6 +1062,7 @@ impl_known_layout!(const N: usize, T => [T; N]);
 // [3] Per https://doc.rust-lang.org/1.85.0/core/cell/struct.Cell.html#memory-layout:
 //
 //   `Cell<T>` has the same in-memory representation as `T`.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl_known_layout!(
         #[repr([u8])]
@@ -1317,7 +1303,7 @@ pub use zerocopy_derive::Immutable;
     doc = concat!("[derive-analysis]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.Immutable.html#analysis"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(Immutable)]` to `{Self}`")
 )]
 pub unsafe trait Immutable {
@@ -1487,7 +1473,7 @@ pub use zerocopy_derive::TryFromBytes;
     doc = concat!("[derive]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.TryFromBytes.html"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(TryFromBytes)]` to `{Self}`")
 )]
 pub unsafe trait TryFromBytes {
@@ -3036,7 +3022,7 @@ unsafe fn try_read_from<S, T: TryFromBytes>(
     doc = concat!("[derive-analysis]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.FromZeros.html#analysis"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(FromZeros)]` to `{Self}`")
 )]
 pub unsafe trait FromZeros: TryFromBytes {
@@ -3172,7 +3158,7 @@ pub unsafe trait FromZeros: TryFromBytes {
             // is sufficiently aligned. Since the produced pointer is a
             // `NonNull`, it is non-null.
             //
-            // [1] Per https://doc.rust-lang.org/nightly/std/boxed/index.html#memory-layout:
+            // [1] Per https://doc.rust-lang.org/1.81.0/std/boxed/index.html#memory-layout:
             //
             //   For zero-sized values, the `Box` pointer has to be non-null and sufficiently aligned.
             //
@@ -3275,7 +3261,7 @@ pub unsafe trait FromZeros: TryFromBytes {
 
     /// Extends a `Vec<Self>` by pushing `additional` new items onto the end of
     /// the vector. The new items are initialized with zeros.
-    #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+    #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
     #[cfg(feature = "alloc")]
     #[cfg_attr(doc_cfg, doc(cfg(all(rust = "1.57.0", feature = "alloc"))))]
     #[inline(always)]
@@ -3294,7 +3280,7 @@ pub unsafe trait FromZeros: TryFromBytes {
     /// # Panics
     ///
     /// Panics if `position > v.len()`.
-    #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+    #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
     #[cfg(feature = "alloc")]
     #[cfg_attr(doc_cfg, doc(cfg(all(rust = "1.57.0", feature = "alloc"))))]
     #[inline]
@@ -3317,6 +3303,7 @@ pub unsafe trait FromZeros: TryFromBytes {
         //
         // `v.len() - position` cannot overflow because we asserted that
         // `position <= v.len()`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             // This is a potentially overlapping copy.
             let ptr = v.as_mut_ptr();
@@ -3550,7 +3537,7 @@ pub use zerocopy_derive::FromBytes;
     doc = concat!("[derive-analysis]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.FromBytes.html#analysis"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(FromBytes)]` to `{Self}`")
 )]
 pub unsafe trait FromBytes: FromZeros {
@@ -4679,6 +4666,7 @@ pub unsafe trait FromBytes: FromZeros {
     /// let header = BitmapFileHeader::read_from_io(&mut file).unwrap();
     /// ```
     #[cfg(feature = "std")]
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
     #[inline(always)]
     fn read_from_io<R>(mut src: R) -> io::Result<Self>
     where
@@ -5003,7 +4991,7 @@ pub use zerocopy_derive::IntoBytes;
     doc = concat!("[derive-analysis]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.IntoBytes.html#analysis"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(IntoBytes)]` to `{Self}`")
 )]
 pub unsafe trait IntoBytes {
@@ -5415,6 +5403,7 @@ pub unsafe trait IntoBytes {
     /// assert_eq!(dst, [255, 255]);
     /// ```
     #[cfg(feature = "std")]
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
     #[inline(always)]
     fn write_to_io<W>(&self, mut dst: W) -> io::Result<()>
     where
@@ -5565,7 +5554,7 @@ pub use zerocopy_derive::Unaligned;
     doc = concat!("[derive-analysis]: https://docs.rs/zerocopy/", env!("CARGO_PKG_VERSION"), "/zerocopy/derive.Unaligned.html#analysis"),
 )]
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(note = "Consider adding `#[derive(Unaligned)]` to `{Self}`")
 )]
 pub unsafe trait Unaligned {
@@ -5668,13 +5657,13 @@ pub use zerocopy_derive::SplitAt;
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "alloc")))]
-#[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+#[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
 mod alloc_support {
     use super::*;
 
     /// Extends a `Vec<T>` by pushing `additional` new items onto the end of the
     /// vector. The new items are initialized with zeros.
-    #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+    #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
     #[doc(hidden)]
     #[deprecated(since = "0.8.0", note = "moved to `FromZeros`")]
     #[inline(always)]
@@ -5691,7 +5680,7 @@ mod alloc_support {
     /// # Panics
     ///
     /// Panics if `position > v.len()`.
-    #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+    #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
     #[doc(hidden)]
     #[deprecated(since = "0.8.0", note = "moved to `FromZeros`")]
     #[inline(always)]
@@ -5705,7 +5694,7 @@ mod alloc_support {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+#[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
 #[doc(hidden)]
 pub use alloc_support::*;
 
@@ -6618,7 +6607,7 @@ mod tests {
     mod alloc {
         use super::*;
 
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         #[test]
         fn test_extend_vec_zeroed() {
             // Test extending when there is an existing allocation.
@@ -6636,7 +6625,7 @@ mod tests {
             drop(v);
         }
 
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         #[test]
         fn test_extend_vec_zeroed_zst() {
             // Test extending when there is an existing (fake) allocation.
@@ -6653,7 +6642,7 @@ mod tests {
             drop(v);
         }
 
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         #[test]
         fn test_insert_vec_zeroed() {
             // Insert at start (no existing allocation).
@@ -6685,7 +6674,7 @@ mod tests {
             drop(v);
         }
 
-        #[cfg(zerocopy_panic_in_const_and_vec_try_reserve_1_57_0)]
+        #[cfg(not(no_zerocopy_panic_in_const_and_vec_try_reserve_1_57_0))]
         #[test]
         fn test_insert_vec_zeroed_zst() {
             // Insert at start (no existing fake allocation).

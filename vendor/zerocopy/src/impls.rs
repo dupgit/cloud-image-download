@@ -24,6 +24,7 @@ use super::*;
 // - `Unaligned`: `()` has alignment 1.
 //
 // [1] https://doc.rust-lang.org/1.81.0/reference/type-layout.html#tuple-layout
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!((): Immutable, TryFromBytes, FromZeros, FromBytes, IntoBytes, Unaligned);
     assert_unaligned!(());
@@ -59,6 +60,7 @@ const _: () = unsafe {
 //
 // FIXME(#278): Once we've updated the trait docs to refer to `u8`s rather than
 // bits or bytes, update this comment, especially the reference to [1].
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(u8: Immutable, TryFromBytes, FromZeros, FromBytes, IntoBytes, Unaligned);
     unsafe_impl!(i8: Immutable, TryFromBytes, FromZeros, FromBytes, IntoBytes, Unaligned);
@@ -92,6 +94,7 @@ const _: () = unsafe {
 //   a size and alignment of 1 each."
 //
 // [1] https://doc.rust-lang.org/1.81.0/reference/types/boolean.html
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe { unsafe_impl!(bool: Immutable, FromZeros, IntoBytes, Unaligned) };
 assert_unaligned!(bool);
 
@@ -122,6 +125,7 @@ impl_size_eq!(bool, u8);
 //   patterns are valid for `char`.
 //
 // [1] https://doc.rust-lang.org/1.81.0/reference/types/textual.html
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe { unsafe_impl!(char: Immutable, FromZeros, IntoBytes) };
 
 // SAFETY: The impl must only return `true` for its argument if the original
@@ -150,12 +154,14 @@ impl_size_eq!(char, Unalign<u32>);
 // Note that we don't `assert_unaligned!(str)` because `assert_unaligned!` uses
 // `align_of`, which only works for `Sized` types.
 //
-// FIXME(#429):
-// - Add quotes from documentation.
-// - Improve safety proof for `FromZeros` and `IntoBytes`; having the same
-//   layout as `[u8]` isn't sufficient.
+// FIXME(#429): Improve safety proof for `FromZeros` and `IntoBytes`; having the same
+// layout as `[u8]` isn't sufficient.
 //
-// [1] https://doc.rust-lang.org/1.81.0/reference/type-layout.html#str-layout
+// [1] Per https://doc.rust-lang.org/1.81.0/reference/type-layout.html#str-layout:
+//
+//   String slices are a UTF-8 representation of characters that have the same
+//   layout as slices of type `[u8]`.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe { unsafe_impl!(str: Immutable, FromZeros, IntoBytes, Unaligned) };
 
 // SAFETY: The impl must only return `true` for its argument if the original
@@ -211,15 +217,16 @@ macro_rules! unsafe_impl_try_from_bytes_for_nonzero {
 //   how we'd prove it short of adding text to the stdlib docs that says so
 //   explicitly, which likely wouldn't be accepted.
 //
-// [1] https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroU8.html
+// [1] Per https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroU8.html:
 //
 //     `NonZeroU8` is guaranteed to have the same layout and bit validity as `u8` with
-//     the exception that 0 is not a valid instance
+//     the exception that 0 is not a valid instance.
 //
-// [2] https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroI8.html
+// [2] Per https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroI8.html:
 //
-// FIXME(https://github.com/rust-lang/rust/pull/104082): Cite documentation that
-// layout is the same as primitive layout.
+//     `NonZeroI8` is guaranteed to have the same layout and bit validity as `i8` with
+//     the exception that 0 is not a valid instance.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(NonZeroU8: Immutable, IntoBytes, Unaligned);
     unsafe_impl!(NonZeroI8: Immutable, IntoBytes, Unaligned);
@@ -261,13 +268,20 @@ const _: () = unsafe {
 //   purpose of those types, it's virtually unthinkable that that would ever
 //   change. The only valid alignment for a 1-byte type is 1.
 //
-// FIXME(#429): Add quotes from documentation.
+// [1] Per https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroU8.html:
 //
-// [1] https://doc.rust-lang.org/stable/std/num/struct.NonZeroU8.html
-// [2] https://doc.rust-lang.org/stable/std/num/struct.NonZeroI8.html
+//     `Option<NonZeroU8>` is guaranteed to be compatible with `u8`, including in FFI.
 //
-// FIXME(https://github.com/rust-lang/rust/pull/104082): Cite documentation for
-// layout guarantees.
+//     Thanks to the null pointer optimization, `NonZeroU8` and `Option<NonZeroU8>`
+//     are guaranteed to have the same size and alignment:
+//
+// [2] Per https://doc.rust-lang.org/1.81.0/std/num/type.NonZeroI8.html:
+//
+//     `Option<NonZeroI8>` is guaranteed to be compatible with `i8`, including in FFI.
+//
+//     Thanks to the null pointer optimization, `NonZeroI8` and `Option<NonZeroI8>`
+//     are guaranteed to have the same size and alignment:
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(Option<NonZeroU8>: TryFromBytes, FromZeros, FromBytes, IntoBytes, Unaligned);
     unsafe_impl!(Option<NonZeroI8>: TryFromBytes, FromZeros, FromBytes, IntoBytes, Unaligned);
@@ -318,6 +332,7 @@ const _: () = unsafe {
 //   [^extern_fn]: this remains true for `unsafe` variants, any argument/return
 //     types, and any other ABI: `[unsafe] extern "abi" fn` (_e.g._, `extern
 //     "system" fn`)
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     #[cfg(feature = "alloc")]
     unsafe_impl!(
@@ -366,6 +381,7 @@ const _: () = unsafe {
 // SAFETY: `[unsafe] [extern "C"] fn()` self-evidently do not contain
 // `UnsafeCell`s. This is not a proof, but we are accepting this as a known risk
 // per #1358.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl_for_power_set!(A, B, C, D, E, F, G, H, I, J, K, L -> M => Immutable for opt_fn!(...));
     unsafe_impl_for_power_set!(A, B, C, D, E, F, G, H, I, J, K, L -> M => Immutable for opt_unsafe_fn!(...));
@@ -374,7 +390,7 @@ const _: () = unsafe {
 };
 
 #[cfg(all(
-    zerocopy_target_has_atomics_1_60_0,
+    not(no_zerocopy_target_has_atomics_1_60_0),
     any(
         target_has_atomic = "8",
         target_has_atomic = "16",
@@ -512,6 +528,7 @@ mod atomics {
         // [3] Per https://doc.rust-lang.org/1.81.0/reference/type-layout.html#size-and-alignment:
         //
         //     The size of a value is always a multiple of its alignment.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl!(AtomicBool: Unaligned);
             unsafe_impl!(AtomicU8: Unaligned);
@@ -535,6 +552,7 @@ mod atomics {
         // [3] Per https://doc.rust-lang.org/1.85.0/std/sync/atomic/struct.AtomicBool.html:
         //
         //   This type has the same size, alignment, and bit validity a `bool`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl_transmute_from_for_atomic!(
                 => AtomicU8 [u8],
@@ -565,6 +583,7 @@ mod atomics {
         //
         //   This type has the same size and bit validity as the underlying
         //   integer type, `i16`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl_transmute_from_for_atomic!(=> AtomicU16 [u16], => AtomicI16 [i16])
         };
@@ -591,6 +610,7 @@ mod atomics {
         //
         //   This type has the same size and bit validity as the underlying
         //   integer type, `i32`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl_transmute_from_for_atomic!(=> AtomicU32 [u32], => AtomicI32 [i32])
         };
@@ -617,6 +637,7 @@ mod atomics {
         //
         //   This type has the same size and bit validity as the underlying
         //   integer type, `i64`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl_transmute_from_for_atomic!(=> AtomicU64 [u64], => AtomicI64 [i64])
         };
@@ -650,6 +671,7 @@ mod atomics {
         //
         //   This type has the same size and bit validity as the underlying
         //   integer type, `isize`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe {
             unsafe_impl_transmute_from_for_atomic!(=> AtomicUsize [usize], => AtomicIsize [isize])
         };
@@ -658,6 +680,7 @@ mod atomics {
         // https://doc.rust-lang.org/1.85.0/std/sync/atomic/struct.AtomicPtr.html:
         //
         //   This type has the same size and bit validity as a `*mut T`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         const _: () = unsafe { unsafe_impl_transmute_from_for_atomic!(T => AtomicPtr<T> [*mut T]) };
     }
 }
@@ -672,6 +695,7 @@ mod atomics {
 // - `Unaligned`: Per the preceding reference, `PhantomData` has alignment 1.
 //
 // [1] https://doc.rust-lang.org/1.81.0/std/marker/struct.PhantomData.html#layout-1
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(T: ?Sized => Immutable for PhantomData<T>);
     unsafe_impl!(T: ?Sized => TryFromBytes for PhantomData<T>);
@@ -706,6 +730,7 @@ const _: () = unsafe { unsafe_impl!(T: Unaligned => Unaligned for Wrapping<T>) }
 
 // SAFETY: `TryFromBytes` (with no validator), `FromZeros`, `FromBytes`:
 // `MaybeUninit<T>` has no restrictions on its contents.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(T => TryFromBytes for CoreMaybeUninit<T>);
     unsafe_impl!(T => FromZeros for CoreMaybeUninit<T>);
@@ -762,7 +787,7 @@ impl_for_transmute_from!(T: ?Sized + IntoBytes => IntoBytes for ManuallyDrop<T>[
 // SAFETY: `ManuallyDrop<T>` has the same layout as `T` [1], and thus has the
 // same alignment as `T`.
 //
-// [1] Per https://doc.rust-lang.org/nightly/core/mem/struct.ManuallyDrop.html:
+// [1] Per https://doc.rust-lang.org/1.81.0/std/mem/struct.ManuallyDrop.html:
 //
 //   `ManuallyDrop<T>` is guaranteed to have the same layout and bit validity as
 //   `T`
@@ -851,6 +876,7 @@ unsafe impl<T: TryFromBytes + ?Sized> TryFromBytes for UnsafeCell<T> {
 // `assert_unaligned!` uses `align_of`, which only works for `Sized` types.
 //
 // [1] https://doc.rust-lang.org/1.81.0/reference/type-layout.html#array-layout
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(const N: usize, T: Immutable => Immutable for [T; N]);
     unsafe_impl!(const N: usize, T: TryFromBytes => TryFromBytes for [T; N]; |c| {
@@ -909,8 +935,15 @@ const _: () = unsafe {
 // `IntoBytes` for raw pointers eventually, but we are holding off until we can
 // figure out how to address those footguns.
 //
-// [1] FIXME(https://github.com/rust-lang/rust/pull/116988): Cite the
-// documentation once this PR lands.
+// [1] Per https://doc.rust-lang.org/1.81.0/std/ptr/fn.null.html:
+//
+//   Creates a null raw pointer.
+//
+//   This function is equivalent to zero-initializing the pointer:
+//   `MaybeUninit::<*const T>::zeroed().assume_init()`.
+//
+//   The resulting pointer has the address 0.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(T: ?Sized => Immutable for *const T);
     unsafe_impl!(T: ?Sized => Immutable for *mut T);
@@ -925,6 +958,7 @@ const _: () = unsafe {
 const _: () = unsafe { unsafe_impl!(T: ?Sized => Immutable for NonNull<T>) };
 
 // SAFETY: Reference types do not contain any `UnsafeCell`s.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 const _: () = unsafe {
     unsafe_impl!(T: ?Sized => Immutable for &'_ T);
     unsafe_impl!(T: ?Sized => Immutable for &'_ mut T);
@@ -1026,6 +1060,7 @@ mod simd {
                 use crate::*;
                 impl_known_layout!($($typ),*);
                 // SAFETY: See comment on module definition for justification.
+                #[allow(clippy::multiple_unsafe_ops_per_block)]
                 const _: () = unsafe {
                     $( unsafe_impl!($typ: Immutable, TryFromBytes, FromZeros, FromBytes, IntoBytes); )*
                 };
@@ -1039,16 +1074,20 @@ mod simd {
             #[cfg(target_arch = "x86")]
             x86, x86, __m128, __m128d, __m128i, __m256, __m256d, __m256i
         );
+        #[cfg(not(no_zerocopy_simd_x86_avx12_1_89_0))]
         simd_arch_mod!(
-            #[cfg(all(feature = "simd-nightly", target_arch = "x86"))]
+            #[cfg(target_arch = "x86")]
+            #[cfg_attr(doc_cfg, doc(cfg(rust = "1.89.0")))]
             x86, x86_nightly, __m512bh, __m512, __m512d, __m512i
         );
         simd_arch_mod!(
             #[cfg(target_arch = "x86_64")]
             x86_64, x86_64, __m128, __m128d, __m128i, __m256, __m256d, __m256i
         );
+        #[cfg(not(no_zerocopy_simd_x86_avx12_1_89_0))]
         simd_arch_mod!(
-            #[cfg(all(feature = "simd-nightly", target_arch = "x86_64"))]
+            #[cfg(target_arch = "x86_64")]
+            #[cfg_attr(doc_cfg, doc(cfg(rust = "1.89.0")))]
             x86_64, x86_64_nightly, __m512bh, __m512, __m512d, __m512i
         );
         simd_arch_mod!(
@@ -1063,7 +1102,7 @@ mod simd {
             #[cfg(all(feature = "simd-nightly", target_arch = "powerpc64"))]
             powerpc64, powerpc64, vector_bool_long, vector_double, vector_signed_long, vector_unsigned_long
         );
-        #[cfg(zerocopy_aarch64_simd_1_59_0)]
+        #[cfg(not(no_zerocopy_aarch64_simd_1_59_0))]
         simd_arch_mod!(
             // NOTE(https://github.com/rust-lang/stdarch/issues/1484): NEON intrinsics are currently
             // broken on big-endian platforms.
@@ -2036,13 +2075,13 @@ mod tests {
             #[cfg(target_arch = "x86")]
             test_simd_arch_mod!(x86, __m128, __m128d, __m128i, __m256, __m256d, __m256i);
 
-            #[cfg(all(feature = "simd-nightly", target_arch = "x86"))]
+            #[cfg(all(not(no_zerocopy_simd_x86_avx12_1_89_0), target_arch = "x86"))]
             test_simd_arch_mod!(x86, __m512bh, __m512, __m512d, __m512i);
 
             #[cfg(target_arch = "x86_64")]
             test_simd_arch_mod!(x86_64, __m128, __m128d, __m128i, __m256, __m256d, __m256i);
 
-            #[cfg(all(feature = "simd-nightly", target_arch = "x86_64"))]
+            #[cfg(all(not(no_zerocopy_simd_x86_avx12_1_89_0), target_arch = "x86_64"))]
             test_simd_arch_mod!(x86_64, __m512bh, __m512, __m512d, __m512i);
 
             #[cfg(target_arch = "wasm32")]
@@ -2065,7 +2104,7 @@ mod tests {
                 vector_signed_long,
                 vector_unsigned_long
             );
-            #[cfg(all(target_arch = "aarch64", zerocopy_aarch64_simd_1_59_0))]
+            #[cfg(all(target_arch = "aarch64", not(no_zerocopy_aarch64_simd_1_59_0)))]
             #[rustfmt::skip]
             test_simd_arch_mod!(
                 aarch64, float32x2_t, float32x4_t, float64x1_t, float64x2_t, int8x8_t, int8x8x2_t,

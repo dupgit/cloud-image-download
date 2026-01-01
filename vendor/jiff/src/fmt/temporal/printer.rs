@@ -1,9 +1,9 @@
 use crate::{
-    civil::{Date, DateTime, Time},
-    error::{err, Error},
+    civil::{Date, DateTime, ISOWeekDate, Time},
+    error::{fmt::temporal::Error as E, Error},
     fmt::{
         temporal::{Pieces, PiecesOffset, TimeZoneAnnotationKind},
-        util::{DecimalFormatter, FractionalFormatter},
+        util::{FractionalFormatter, IntegerFormatter},
         Write, WriteExt,
     },
     span::Span,
@@ -108,11 +108,11 @@ impl DateTimePrinter {
         date: &Date,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_YEAR_POSITIVE: DecimalFormatter =
-            DecimalFormatter::new().padding(4);
-        static FMT_YEAR_NEGATIVE: DecimalFormatter =
-            DecimalFormatter::new().padding(6);
-        static FMT_TWO: DecimalFormatter = DecimalFormatter::new().padding(2);
+        static FMT_YEAR_POSITIVE: IntegerFormatter =
+            IntegerFormatter::new().padding(4);
+        static FMT_YEAR_NEGATIVE: IntegerFormatter =
+            IntegerFormatter::new().padding(6);
+        static FMT_TWO: IntegerFormatter = IntegerFormatter::new().padding(2);
 
         if date.year() >= 0 {
             wtr.write_int(&FMT_YEAR_POSITIVE, date.year())?;
@@ -132,7 +132,7 @@ impl DateTimePrinter {
         time: &Time,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_TWO: DecimalFormatter = DecimalFormatter::new().padding(2);
+        static FMT_TWO: IntegerFormatter = IntegerFormatter::new().padding(2);
         static FMT_FRACTION: FractionalFormatter = FractionalFormatter::new();
 
         wtr.write_int(&FMT_TWO, time.hour())?;
@@ -197,13 +197,7 @@ impl DateTimePrinter {
         //
         // Anyway, if you're seeing this error and think there should be a
         // different behavior, please file an issue.
-        Err(err!(
-            "time zones without IANA identifiers that aren't either \
-             fixed offsets or a POSIX time zone can't be serialized \
-             (this typically occurs when this is a system time zone \
-              derived from `/etc/localtime` on Unix systems that \
-              isn't symlinked to an entry in `/usr/share/zoneinfo`)",
-        ))
+        Err(Error::from(E::PrintTimeZoneFailure))
     }
 
     pub(super) fn print_pieces<W: Write>(
@@ -255,6 +249,34 @@ impl DateTimePrinter {
         Ok(())
     }
 
+    pub(super) fn print_iso_week_date<W: Write>(
+        &self,
+        iso_week_date: &ISOWeekDate,
+        mut wtr: W,
+    ) -> Result<(), Error> {
+        static FMT_YEAR_POSITIVE: IntegerFormatter =
+            IntegerFormatter::new().padding(4);
+        static FMT_YEAR_NEGATIVE: IntegerFormatter =
+            IntegerFormatter::new().padding(6);
+        static FMT_TWO: IntegerFormatter = IntegerFormatter::new().padding(2);
+        static FMT_ONE: IntegerFormatter = IntegerFormatter::new().padding(1);
+
+        if iso_week_date.year() >= 0 {
+            wtr.write_int(&FMT_YEAR_POSITIVE, iso_week_date.year())?;
+        } else {
+            wtr.write_int(&FMT_YEAR_NEGATIVE, iso_week_date.year())?;
+        }
+        wtr.write_str("-")?;
+        wtr.write_char(if self.lowercase { 'w' } else { 'W' })?;
+        wtr.write_int(&FMT_TWO, iso_week_date.week())?;
+        wtr.write_str("-")?;
+        wtr.write_int(
+            &FMT_ONE,
+            iso_week_date.weekday().to_monday_one_offset(),
+        )?;
+        Ok(())
+    }
+
     /// Formats the given "pieces" offset into the writer given.
     fn print_pieces_offset<W: Write>(
         &self,
@@ -282,7 +304,7 @@ impl DateTimePrinter {
         offset: &Offset,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_TWO: DecimalFormatter = DecimalFormatter::new().padding(2);
+        static FMT_TWO: IntegerFormatter = IntegerFormatter::new().padding(2);
 
         wtr.write_str(if offset.is_negative() { "-" } else { "+" })?;
         let mut hours = offset.part_hours_ranged().abs().get();
@@ -317,7 +339,7 @@ impl DateTimePrinter {
         offset: &Offset,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_TWO: DecimalFormatter = DecimalFormatter::new().padding(2);
+        static FMT_TWO: IntegerFormatter = IntegerFormatter::new().padding(2);
 
         wtr.write_str(if offset.is_negative() { "-" } else { "+" })?;
         let hours = offset.part_hours_ranged().abs().get();
@@ -405,7 +427,7 @@ impl SpanPrinter {
         span: &Span,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_INT: DecimalFormatter = DecimalFormatter::new();
+        static FMT_INT: IntegerFormatter = IntegerFormatter::new();
         static FMT_FRACTION: FractionalFormatter = FractionalFormatter::new();
 
         if span.is_negative() {
@@ -519,7 +541,7 @@ impl SpanPrinter {
         dur: &SignedDuration,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_INT: DecimalFormatter = DecimalFormatter::new();
+        static FMT_INT: IntegerFormatter = IntegerFormatter::new();
         static FMT_FRACTION: FractionalFormatter = FractionalFormatter::new();
 
         let mut non_zero_greater_than_second = false;
@@ -568,7 +590,7 @@ impl SpanPrinter {
         dur: &core::time::Duration,
         mut wtr: W,
     ) -> Result<(), Error> {
-        static FMT_INT: DecimalFormatter = DecimalFormatter::new();
+        static FMT_INT: IntegerFormatter = IntegerFormatter::new();
         static FMT_FRACTION: FractionalFormatter = FractionalFormatter::new();
 
         let mut non_zero_greater_than_second = false;
@@ -620,7 +642,10 @@ impl SpanPrinter {
 mod tests {
     use alloc::string::String;
 
-    use crate::{civil::date, span::ToSpan};
+    use crate::{
+        civil::{date, Weekday},
+        span::ToSpan,
+    };
 
     use super::*;
 
@@ -920,6 +945,24 @@ mod tests {
         insta::assert_snapshot!(
             p(u64::MAX, 999_999_999),
             @"PT5124095576030431H15.999999999S",
+        );
+    }
+
+    #[test]
+    fn print_iso_week_date() {
+        let p = |d: ISOWeekDate| -> String {
+            let mut buf = String::new();
+            DateTimePrinter::new().print_iso_week_date(&d, &mut buf).unwrap();
+            buf
+        };
+
+        insta::assert_snapshot!(
+            p(ISOWeekDate::new(2024, 52, Weekday::Monday).unwrap()),
+            @"2024-W52-1",
+        );
+        insta::assert_snapshot!(
+            p(ISOWeekDate::new(2004, 1, Weekday::Sunday).unwrap()),
+            @"2004-W01-7",
         );
     }
 }

@@ -9,8 +9,8 @@ Run-time detection on OpenBSD by is_aarch64_feature_detected is supported on Rus
 https://github.com/rust-lang/stdarch/pull/1374
 
 Refs:
-- https://developer.arm.com/documentation/ddi0601/2024-12/AArch64-Registers
-- https://github.com/torvalds/linux/blob/v6.13/Documentation/arch/arm64/cpu-feature-registers.rst
+- https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers
+- https://github.com/torvalds/linux/blob/v6.16/Documentation/arch/arm64/cpu-feature-registers.rst
 - https://github.com/rust-lang/stdarch/blob/a0c30f3e3c75adcd6ee7efc94014ebcead61c507/crates/std_detect/src/detect/os/aarch64.rs
 
 Supported platforms:
@@ -31,10 +31,10 @@ For now, this module is only used on NetBSD/OpenBSD.
 
 On Linux/Android/FreeBSD, we use auxv.rs and this module is test-only because:
 - On Linux/Android, this approach requires a higher kernel version than Rust supports,
-  and also does not work with qemu-user (as of 7.2) and Valgrind (as of 3.24).
+  and also does not work with qemu-user (as of QEMU 7.2) and Valgrind (as of Valgrind 3.24).
   (Looking into HWCAP_CPUID in auxvec, it appears that Valgrind is setting it
   to false correctly, but qemu-user is setting it to true.)
-  - qemu-user issue seem to be fixed as of 9.2.
+  - qemu-user issue seem to be fixed as of QEMU 9.2.
 - On FreeBSD, this approach does not work on FreeBSD 12 on QEMU (confirmed on
   FreeBSD 12.{2,3,4}), and we got SIGILL (worked on FreeBSD 13 and 14).
 */
@@ -61,7 +61,7 @@ fn _detect(info: &mut CpuInfo) {
     } = imp::aa64reg();
 
     // ID_AA64ISAR0_EL1, AArch64 Instruction Set Attribute Register 0
-    // https://developer.arm.com/documentation/ddi0601/2024-12/AArch64-Registers/ID-AA64ISAR0-EL1--AArch64-Instruction-Set-Attribute-Register-0
+    // https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers/ID-AA64ISAR0-EL1--AArch64-Instruction-Set-Attribute-Register-0
     // Atomic, bits [23:20]
     // > FEAT_LSE implements the functionality identified by the value 0b0010.
     // > FEAT_LSE128 implements the functionality identified by the value 0b0011.
@@ -74,18 +74,26 @@ fn _detect(info: &mut CpuInfo) {
         }
     }
     // ID_AA64ISAR1_EL1, AArch64 Instruction Set Attribute Register 1
-    // https://developer.arm.com/documentation/ddi0601/2024-12/AArch64-Registers/ID-AA64ISAR1-EL1--AArch64-Instruction-Set-Attribute-Register-1
+    // https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers/ID-AA64ISAR1-EL1--AArch64-Instruction-Set-Attribute-Register-1
     // LRCPC, bits [23:20]
     // > FEAT_LRCPC implements the functionality identified by the value 0b0001.
     // > FEAT_LRCPC2 implements the functionality identified by the value 0b0010.
     // > FEAT_LRCPC3 implements the functionality identified by the value 0b0011.
     // > From Armv8.3, the value 0b0000 is not permitted.
     // > From Armv8.4, the value 0b0001 is not permitted.
-    if extract(aa64isar1, 23, 20) >= 0b0011 {
+    let lrcpc = extract(aa64isar1, 23, 20);
+    if lrcpc >= 0b0011 {
         info.set(CpuInfoFlag::rcpc3);
     }
+    #[cfg(test)]
+    if lrcpc >= 0b0001 {
+        info.set(CpuInfoFlag::rcpc);
+        if lrcpc >= 0b0010 {
+            info.set(CpuInfoFlag::rcpc2);
+        }
+    }
     // ID_AA64ISAR3_EL1, AArch64 Instruction Set Attribute Register 3
-    // https://developer.arm.com/documentation/ddi0601/2024-12/AArch64-Registers/ID-AA64ISAR3-EL1--AArch64-Instruction-Set-Attribute-Register-3
+    // https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers/ID-AA64ISAR3-EL1--AArch64-Instruction-Set-Attribute-Register-3
     // LSFE, bits [19:16]
     // > FEAT_LSFE implements the functionality identified by the value 0b0001
     #[cfg(test)]
@@ -93,7 +101,7 @@ fn _detect(info: &mut CpuInfo) {
         info.set(CpuInfoFlag::lsfe);
     }
     // ID_AA64MMFR2_EL1, AArch64 Memory Model Feature Register 2
-    // https://developer.arm.com/documentation/ddi0601/2024-12/AArch64-Registers/ID-AA64MMFR2-EL1--AArch64-Memory-Model-Feature-Register-2
+    // https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers/ID-AA64MMFR2-EL1--AArch64-Memory-Model-Feature-Register-2
     // AT, bits [35:32]
     // > FEAT_LSE2 implements the functionality identified by the value 0b0001.
     // > From Armv8.4, the value 0b0000 is not permitted.
@@ -402,10 +410,18 @@ mod tests {
             assert_eq!(atomic, 0b0000);
         }
         let lrcpc = extract(aa64isar1, 23, 20);
-        if detect().rcpc3() {
-            assert_eq!(lrcpc, 0b0011);
+        if detect().rcpc() {
+            if detect().rcpc2() {
+                if detect().rcpc3() {
+                    assert_eq!(lrcpc, 0b0011);
+                } else {
+                    assert_eq!(lrcpc, 0b0010);
+                }
+            } else {
+                assert_eq!(lrcpc, 0b0001);
+            }
         } else {
-            assert!(lrcpc < 0b0011, "{}", lrcpc);
+            assert_eq!(lrcpc, 0b0000);
         }
         let lsfe = extract(aa64isar3, 19, 16);
         if detect().lsfe() {
@@ -438,7 +454,7 @@ mod tests {
         //
         // This is currently used only for testing.
         fn sysctl_cpu_id_no_libc(name: &[&[u8]]) -> Result<AA64Reg, c_int> {
-            // https://github.com/golang/go/blob/go1.24.0/src/syscall/asm_netbsd_arm64.s
+            // https://github.com/golang/go/blob/go1.25.0/src/syscall/asm_netbsd_arm64.s
             #[inline]
             unsafe fn sysctl(
                 name: *const c_int,
@@ -465,6 +481,7 @@ mod tests {
                         in("x3") ptr_reg!(old_len_p),
                         in("x4") ptr_reg!(new_p),
                         in("x5") new_len as u64,
+                        // Do not use `preserves_flags` because AArch64 NetBSD syscall modifies the condition flags.
                         options(nostack),
                     );
                     #[allow(clippy::cast_possible_truncation)]
@@ -472,7 +489,7 @@ mod tests {
                 }
             }
 
-            // https://github.com/golang/sys/blob/v0.31.0/cpu/cpu_netbsd_arm64.go
+            // https://github.com/golang/sys/blob/v0.35.0/cpu/cpu_netbsd_arm64.go
             fn sysctl_nodes(mib: &mut Vec<i32>) -> Result<Vec<sys::sysctlnode>, i32> {
                 mib.push(sys::CTL_QUERY);
                 let mut q_node = sys::sysctlnode {

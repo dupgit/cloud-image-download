@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.63"
 name = "hyper-util"
-version = "0.1.18"
+version = "0.1.19"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 autolib = false
@@ -61,6 +61,11 @@ client-legacy = [
     "dep:libc",
     "dep:futures-util",
 ]
+client-pool = [
+    "client",
+    "dep:futures-util",
+    "dep:tower-layer",
+]
 client-proxy = [
     "client",
     "dep:base64",
@@ -75,6 +80,7 @@ default = []
 full = [
     "client",
     "client-legacy",
+    "client-pool",
     "client-proxy",
     "client-proxy-system",
     "server",
@@ -198,6 +204,10 @@ version = "1"
 optional = true
 default-features = false
 
+[dependencies.tower-layer]
+version = "0.3"
+optional = true
+
 [dependencies.tower-service]
 version = "0.3"
 optional = true
@@ -235,6 +245,9 @@ features = [
 ]
 
 [dev-dependencies.tokio-test]
+version = "0.4"
+
+[dev-dependencies.tower-test]
 version = "0.4"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies.pnet_datalink]

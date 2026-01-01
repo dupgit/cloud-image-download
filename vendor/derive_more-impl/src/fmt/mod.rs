@@ -602,7 +602,7 @@ impl ContainsGenericsExt for syn::Type {
                 }
 
                 if let Some(ident) = path.get_ident() {
-                    type_params.iter().any(|param| *param == ident)
+                    type_params.contains(&ident)
                 } else {
                     path.contains_generics(type_params)
                 }
@@ -728,7 +728,7 @@ mod fmt_attribute_spec {
 
     fn assert<'a>(input: &'a str, parsed: impl AsRef<[&'a str]>) {
         let parsed = parsed.as_ref();
-        let attr = syn::parse_str::<FmtAttribute>(&format!("\"\", {}", input)).unwrap();
+        let attr = syn::parse_str::<FmtAttribute>(&format!("\"\", {input}")).unwrap();
         let fmt_args = attr
             .args
             .into_iter()

@@ -60,6 +60,7 @@ pub fn expand(input: &syn::DeriveInput, _: &str) -> syn::Result<TokenStream> {
     };
 
     Ok(quote! {
+        #[allow(deprecated)] // omit warnings on deprecated fields/variants
         #[allow(unreachable_code)] // omit warnings for `!` and other unreachable types
         #[automatically_derived]
         impl #impl_gens derive_more::core::fmt::Debug for #ident #ty_gens #where_clause {
@@ -183,10 +184,11 @@ fn expand_enum(
         },
     )?;
 
-    let body = match_arms
-        .is_empty()
-        .then(|| quote! { match *self {} })
-        .unwrap_or_else(|| quote! { match self { #match_arms } });
+    let body = if match_arms.is_empty() {
+        quote! { match *self {} }
+    } else {
+        quote! { match self { #match_arms } }
+    };
 
     Ok((bounds, body))
 }

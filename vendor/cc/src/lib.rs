@@ -405,7 +405,7 @@ pub struct Build {
     host: Option<Arc<str>>,
     out_dir: Option<Arc<Path>>,
     opt_level: Option<Arc<str>>,
-    debug: Option<bool>,
+    debug: Option<Arc<str>>,
     force_frame_pointer: Option<bool>,
     env: Vec<(Arc<OsStr>, Arc<OsStr>)>,
     compiler: Option<Arc<Path>>,
@@ -1180,7 +1180,23 @@ impl Build {
     /// This option is automatically scraped from the `DEBUG` environment
     /// variable by build scripts, so it's not required to call this function.
     pub fn debug(&mut self, debug: bool) -> &mut Build {
-        self.debug = Some(debug);
+        self.debug = Some(debug.to_string().into());
+        self
+    }
+
+    /// Configures whether the compiler will emit debug information when
+    /// generating object files.
+    ///
+    /// This should be one of the values accepted by Cargo's [`debug`][1]
+    /// profile setting, which cc-rs will try to map to the appropriate C
+    /// compiler flag.
+    ///
+    /// This option is automatically scraped from the `DEBUG` environment
+    /// variable by build scripts, so it's not required to call this function.
+    ///
+    /// [1]: https://doc.rust-lang.org/cargo/reference/profiles.html#debug
+    pub fn debug_str(&mut self, debug: &str) -> &mut Build {
+        self.debug = Some(debug.into());
         self
     }
 
@@ -1981,9 +1997,21 @@ impl Build {
         // CFLAGS/CXXFLAGS, since those variables presumably already contain
         // the desired set of warnings flags.
         let envflags = self.envflags(if self.cpp { "CXXFLAGS" } else { "CFLAGS" })?;
-        if self.warnings.unwrap_or(envflags.is_none()) {
-            let wflags = cmd.family.warnings_flags().into();
-            cmd.push_cc_arg(wflags);
+        match self.warnings {
+            Some(true) => {
+                let wflags = cmd.family.warnings_flags().into();
+                cmd.push_cc_arg(wflags);
+            }
+            Some(false) => {
+                let wflags = cmd.family.warnings_suppression_flags().into();
+                cmd.push_cc_arg(wflags);
+            }
+            None => {
+                if envflags.is_none() {
+                    let wflags = cmd.family.warnings_flags().into();
+                    cmd.push_cc_arg(wflags);
+                }
+            }
         }
         if self.extra_warnings.unwrap_or(envflags.is_none()) {
             if let Some(wflags) = cmd.family.extra_warnings_flags() {
@@ -2161,7 +2189,11 @@ impl Build {
                 cmd.args.push("-G".into());
             }
             let family = cmd.family;
-            family.add_debug_flags(cmd, self.get_dwarf_version());
+            family.add_debug_flags(
+                cmd,
+                self.get_debug_str().as_deref().unwrap_or_default(),
+                self.get_dwarf_version(),
+            );
         }
 
         if self.get_force_frame_pointer() {
@@ -3707,8 +3739,25 @@ impl Build {
         }
     }
 
+    /// Returns true if *any* debug info is enabled.
+    ///
+    /// [`get_debug_str`] provides more detail.
     fn get_debug(&self) -> bool {
-        self.debug.unwrap_or_else(|| self.getenv_boolean("DEBUG"))
+        match self.get_debug_str() {
+            Err(_) => false,
+            Ok(d) => match &*d {
+                // From https://doc.rust-lang.org/cargo/reference/profiles.html#debug
+                "" | "0" | "false" | "none" => false,
+                _ => true,
+            },
+        }
+    }
+
+    fn get_debug_str(&self) -> Result<Cow<'_, str>, Error> {
+        match &self.debug {
+            Some(d) => Ok(Cow::Borrowed(d)),
+            None => self.getenv_unwrap_str("DEBUG").map(Cow::Owned),
+        }
     }
 
     fn get_shell_escaped_flags(&self) -> bool {

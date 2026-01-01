@@ -1,7 +1,7 @@
 use crate::{
-    error::{err, ErrorContext},
+    error::{fmt::util::Error as E, ErrorContext},
     fmt::Parsed,
-    util::{c::Sign, escape, parse, t},
+    util::{c::Sign, parse, t},
     Error, SignedDuration, Span, Unit,
 };
 
@@ -14,52 +14,31 @@ use crate::{
 /// faster. We roll our own which is a bit slower, but gets us enough of a win
 /// to be satisfied with and with (almost) pure safe code.
 ///
-/// By default, this only includes the sign if it's negative. To always include
-/// the sign, set `force_sign` to `true`.
+/// This only includes the sign when formatting a negative signed integer.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct DecimalFormatter {
-    force_sign: Option<bool>,
+pub(crate) struct IntegerFormatter {
     minimum_digits: u8,
     padding_byte: u8,
 }
 
-impl DecimalFormatter {
-    /// Creates a new decimal formatter using the default configuration.
-    pub(crate) const fn new() -> DecimalFormatter {
-        DecimalFormatter {
-            force_sign: None,
-            minimum_digits: 0,
-            padding_byte: b'0',
-        }
+impl IntegerFormatter {
+    /// Creates a new integer formatter using the default configuration.
+    pub(crate) const fn new() -> IntegerFormatter {
+        IntegerFormatter { minimum_digits: 0, padding_byte: b'0' }
     }
 
-    /// Format the given value using this configuration as a signed decimal
+    /// Format the given value using this configuration as a signed integer
     /// ASCII number.
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub(crate) const fn format_signed(&self, value: i64) -> Decimal {
-        Decimal::signed(self, value)
+    pub(crate) const fn format_signed(&self, value: i64) -> Integer {
+        Integer::signed(self, value)
     }
 
-    /// Format the given value using this configuration as an unsigned decimal
+    /// Format the given value using this configuration as an unsigned integer
     /// ASCII number.
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub(crate) const fn format_unsigned(&self, value: u64) -> Decimal {
-        Decimal::unsigned(self, value)
-    }
-
-    /// Forces the sign to be rendered, even if it's positive.
-    ///
-    /// When `zero_is_positive` is true, then a zero value is formatted with a
-    /// positive sign. Otherwise, it is formatted with a negative sign.
-    ///
-    /// Regardless of this setting, a sign is never emitted when formatting an
-    /// unsigned integer.
-    #[cfg(test)]
-    pub(crate) const fn force_sign(
-        self,
-        zero_is_positive: bool,
-    ) -> DecimalFormatter {
-        DecimalFormatter { force_sign: Some(zero_is_positive), ..self }
+    pub(crate) const fn format_unsigned(&self, value: u64) -> Integer {
+        Integer::unsigned(self, value)
     }
 
     /// The minimum number of digits/padding that this number should be
@@ -69,181 +48,113 @@ impl DecimalFormatter {
     ///
     /// The minimum number of digits is capped at the maximum number of digits
     /// for an i64 value (19) or a u64 value (20).
-    pub(crate) const fn padding(self, mut digits: u8) -> DecimalFormatter {
-        if digits > Decimal::MAX_I64_DIGITS {
-            digits = Decimal::MAX_I64_DIGITS;
+    pub(crate) const fn padding(self, mut digits: u8) -> IntegerFormatter {
+        if digits > Integer::MAX_LEN {
+            digits = Integer::MAX_LEN;
         }
-        DecimalFormatter { minimum_digits: digits, ..self }
+        IntegerFormatter { minimum_digits: digits, ..self }
     }
 
     /// The padding byte to use when `padding` is set.
     ///
     /// The default is `0`.
-    pub(crate) const fn padding_byte(self, byte: u8) -> DecimalFormatter {
-        DecimalFormatter { padding_byte: byte, ..self }
+    pub(crate) const fn padding_byte(self, byte: u8) -> IntegerFormatter {
+        IntegerFormatter { padding_byte: byte, ..self }
     }
 
-    /// Returns the minimum number of digits for a signed value.
-    const fn get_signed_minimum_digits(&self) -> u8 {
-        if self.minimum_digits <= Decimal::MAX_I64_DIGITS {
+    /// Returns the minimum number of digits for an integer value.
+    const fn get_minimum_digits(&self) -> u8 {
+        if self.minimum_digits <= Integer::MAX_LEN {
             self.minimum_digits
         } else {
-            Decimal::MAX_I64_DIGITS
-        }
-    }
-
-    /// Returns the minimum number of digits for an unsigned value.
-    const fn get_unsigned_minimum_digits(&self) -> u8 {
-        if self.minimum_digits <= Decimal::MAX_U64_DIGITS {
-            self.minimum_digits
-        } else {
-            Decimal::MAX_U64_DIGITS
+            Integer::MAX_LEN
         }
     }
 }
 
-impl Default for DecimalFormatter {
-    fn default() -> DecimalFormatter {
-        DecimalFormatter::new()
+impl Default for IntegerFormatter {
+    fn default() -> IntegerFormatter {
+        IntegerFormatter::new()
     }
 }
 
-/// A formatted decimal number that can be converted to a sequence of bytes.
+/// A formatted integer number that can be converted to a sequence of bytes.
 #[derive(Debug)]
-pub(crate) struct Decimal {
+pub(crate) struct Integer {
     buf: [u8; Self::MAX_LEN as usize],
     start: u8,
-    end: u8,
 }
 
-impl Decimal {
+impl Integer {
     /// Discovered via
     /// `i64::MIN.to_string().len().max(u64::MAX.to_string().len())`.
     const MAX_LEN: u8 = 20;
-    /// Discovered via `i64::MAX.to_string().len()`.
-    const MAX_I64_DIGITS: u8 = 19;
-    /// Discovered via `u64::MAX.to_string().len()`.
-    const MAX_U64_DIGITS: u8 = 20;
 
     /// Using the given formatter, turn the value given into an unsigned
-    /// decimal representation using ASCII bytes.
+    /// integer representation using ASCII bytes.
     #[cfg_attr(feature = "perf-inline", inline(always))]
     const fn unsigned(
-        formatter: &DecimalFormatter,
+        formatter: &IntegerFormatter,
         mut value: u64,
-    ) -> Decimal {
-        let mut decimal = Decimal {
-            buf: [0; Self::MAX_LEN as usize],
-            start: Self::MAX_LEN,
-            end: Self::MAX_LEN,
-        };
+    ) -> Integer {
+        let mut integer =
+            Integer { buf: [0; Self::MAX_LEN as usize], start: Self::MAX_LEN };
         loop {
-            decimal.start -= 1;
+            integer.start -= 1;
 
             let digit = (value % 10) as u8;
             value /= 10;
-            decimal.buf[decimal.start as usize] = b'0' + digit;
+            integer.buf[integer.start as usize] = b'0' + digit;
             if value == 0 {
                 break;
             }
         }
 
-        while decimal.len() < formatter.get_unsigned_minimum_digits() {
-            decimal.start -= 1;
-            decimal.buf[decimal.start as usize] = formatter.padding_byte;
+        while integer.len() < formatter.get_minimum_digits() {
+            integer.start -= 1;
+            integer.buf[integer.start as usize] = formatter.padding_byte;
         }
-        decimal
+        integer
     }
 
-    /// Using the given formatter, turn the value given into a signed decimal
+    /// Using the given formatter, turn the value given into a signed integer
     /// representation using ASCII bytes.
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    const fn signed(formatter: &DecimalFormatter, mut value: i64) -> Decimal {
+    const fn signed(formatter: &IntegerFormatter, value: i64) -> Integer {
         // Specialize the common case to generate tighter codegen.
-        if value >= 0 && formatter.force_sign.is_none() {
-            let mut decimal = Decimal {
-                buf: [0; Self::MAX_LEN as usize],
-                start: Self::MAX_LEN,
-                end: Self::MAX_LEN,
-            };
-            loop {
-                decimal.start -= 1;
-
-                let digit = (value % 10) as u8;
-                value /= 10;
-                decimal.buf[decimal.start as usize] = b'0' + digit;
-                if value == 0 {
-                    break;
-                }
-            }
-
-            while decimal.len() < formatter.get_signed_minimum_digits() {
-                decimal.start -= 1;
-                decimal.buf[decimal.start as usize] = formatter.padding_byte;
-            }
-            return decimal;
+        if value >= 0 {
+            return Integer::unsigned(formatter, value.unsigned_abs());
         }
-        Decimal::signed_cold(formatter, value)
+        Integer::signed_cold(formatter, value)
     }
 
     #[cold]
     #[inline(never)]
-    const fn signed_cold(formatter: &DecimalFormatter, value: i64) -> Decimal {
-        let sign = value.signum();
-        let Some(mut value) = value.checked_abs() else {
-            let buf = [
-                b'-', b'9', b'2', b'2', b'3', b'3', b'7', b'2', b'0', b'3',
-                b'6', b'8', b'5', b'4', b'7', b'7', b'5', b'8', b'0', b'8',
-            ];
-            return Decimal { buf, start: 0, end: Self::MAX_LEN };
-        };
-        let mut decimal = Decimal {
-            buf: [0; Self::MAX_LEN as usize],
-            start: Self::MAX_LEN,
-            end: Self::MAX_LEN,
-        };
-        loop {
-            decimal.start -= 1;
-
-            let digit = (value % 10) as u8;
-            value /= 10;
-            decimal.buf[decimal.start as usize] = b'0' + digit;
-            if value == 0 {
-                break;
-            }
+    const fn signed_cold(formatter: &IntegerFormatter, value: i64) -> Integer {
+        let mut integer = Integer::unsigned(formatter, value.unsigned_abs());
+        if value < 0 {
+            integer.start -= 1;
+            integer.buf[integer.start as usize] = b'-';
         }
-        while decimal.len() < formatter.get_signed_minimum_digits() {
-            decimal.start -= 1;
-            decimal.buf[decimal.start as usize] = formatter.padding_byte;
-        }
-        if sign < 0 {
-            decimal.start -= 1;
-            decimal.buf[decimal.start as usize] = b'-';
-        } else if let Some(zero_is_positive) = formatter.force_sign {
-            let ascii_sign =
-                if sign > 0 || zero_is_positive { b'+' } else { b'-' };
-            decimal.start -= 1;
-            decimal.buf[decimal.start as usize] = ascii_sign;
-        }
-        decimal
+        integer
     }
 
     /// Returns the total number of ASCII bytes (including the sign) that are
-    /// used to represent this decimal number.
+    /// used to represent this integer number.
     #[inline]
     const fn len(&self) -> u8 {
-        self.end - self.start
+        Self::MAX_LEN - self.start
     }
 
-    /// Returns the ASCII representation of this decimal as a byte slice.
+    /// Returns the ASCII representation of this integer as a byte slice.
     ///
     /// The slice returned is guaranteed to be valid ASCII.
     #[inline]
     fn as_bytes(&self) -> &[u8] {
-        &self.buf[usize::from(self.start)..usize::from(self.end)]
+        &self.buf[usize::from(self.start)..]
     }
 
-    /// Returns the ASCII representation of this decimal as a string slice.
+    /// Returns the ASCII representation of this integer as a string slice.
     #[inline]
     pub(crate) fn as_str(&self) -> &str {
         // SAFETY: This is safe because all bytes written to `self.buf` are
@@ -462,14 +373,10 @@ impl DurationUnits {
 
         if let Some(min) = self.min {
             if min <= unit {
-                return Err(err!(
-                    "found value {value:?} with unit {unit} \
-                     after unit {prev_unit}, but units must be \
-                     written from largest to smallest \
-                     (and they can't be repeated)",
-                    unit = unit.singular(),
-                    prev_unit = min.singular(),
-                ));
+                return Err(Error::from(E::OutOfOrderUnits {
+                    found: unit,
+                    previous: min,
+                }));
             }
         }
         // Given the above check, the given unit must be smaller than any we
@@ -503,12 +410,7 @@ impl DurationUnits {
     ) -> Result<(), Error> {
         if let Some(min) = self.min {
             if min <= Unit::Hour {
-                return Err(err!(
-                    "found `HH:MM:SS` after unit {min}, \
-                             but `HH:MM:SS` can only appear after \
-                             years, months, weeks or days",
-                    min = min.singular(),
-                ));
+                return Err(Error::from(E::OutOfOrderHMS { found: min }));
             }
         }
         self.set_unit_value(Unit::Hour, hours)?;
@@ -539,15 +441,11 @@ impl DurationUnits {
     /// return an error if the minimum unit is bigger than `Unit::Hour`.
     pub(crate) fn set_fraction(&mut self, fraction: u32) -> Result<(), Error> {
         assert!(fraction <= 999_999_999);
-        if self.min == Some(Unit::Nanosecond) {
-            return Err(err!("fractional nanoseconds are not supported"));
-        }
         if let Some(min) = self.min {
-            if min > Unit::Hour {
-                return Err(err!(
-                    "fractional {plural} are not supported",
-                    plural = min.plural()
-                ));
+            if min > Unit::Hour || min == Unit::Nanosecond {
+                return Err(Error::from(E::NotAllowedFractionalUnit {
+                    found: min,
+                }));
             }
         }
         self.fraction = Some(fraction);
@@ -642,13 +540,6 @@ impl DurationUnits {
     #[cold]
     #[inline(never)]
     fn to_span_general(&self) -> Result<Span, Error> {
-        fn error_context(unit: Unit, value: i64) -> Error {
-            err!(
-                "failed to set value {value:?} as {unit} unit on span",
-                unit = unit.singular(),
-            )
-        }
-
         #[cfg_attr(feature = "perf-inline", inline(always))]
         fn set_time_unit(
             unit: Unit,
@@ -682,7 +573,7 @@ impl DurationUnits {
 
             set(span)
                 .or_else(|err| fractional_fallback(err, unit, value, span))
-                .with_context(|| error_context(unit, value))
+                .context(E::FailedValueSet { unit })
         }
 
         let (min, _) = self.get_min_max_units()?;
@@ -692,25 +583,25 @@ impl DurationUnits {
             let value = self.get_unit_value(Unit::Year)?;
             span = span
                 .try_years(value)
-                .with_context(|| error_context(Unit::Year, value))?;
+                .context(E::FailedValueSet { unit: Unit::Year })?;
         }
         if self.values[Unit::Month.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Month)?;
             span = span
                 .try_months(value)
-                .with_context(|| error_context(Unit::Month, value))?;
+                .context(E::FailedValueSet { unit: Unit::Month })?;
         }
         if self.values[Unit::Week.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Week)?;
             span = span
                 .try_weeks(value)
-                .with_context(|| error_context(Unit::Week, value))?;
+                .context(E::FailedValueSet { unit: Unit::Week })?;
         }
         if self.values[Unit::Day.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Day)?;
             span = span
                 .try_days(value)
-                .with_context(|| error_context(Unit::Day, value))?;
+                .context(E::FailedValueSet { unit: Unit::Day })?;
         }
         if self.values[Unit::Hour.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Hour)?;
@@ -822,11 +713,7 @@ impl DurationUnits {
     fn to_signed_duration_general(&self) -> Result<SignedDuration, Error> {
         let (min, max) = self.get_min_max_units()?;
         if max > Unit::Hour {
-            return Err(err!(
-                "parsing {unit} units into a `SignedDuration` is not supported \
-                 (perhaps try parsing into a `Span` instead)",
-                unit = max.singular(),
-            ));
+            return Err(Error::from(E::NotAllowedCalendarUnit { unit: max }));
         }
 
         let mut sdur = SignedDuration::ZERO;
@@ -834,85 +721,43 @@ impl DurationUnits {
             let value = self.get_unit_value(Unit::Hour)?;
             sdur = SignedDuration::try_from_hours(value)
                 .and_then(|nanos| sdur.checked_add(nanos))
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Hour.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Hour })?;
         }
         if self.values[Unit::Minute.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Minute)?;
             sdur = SignedDuration::try_from_mins(value)
                 .and_then(|nanos| sdur.checked_add(nanos))
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Minute.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Minute })?;
         }
         if self.values[Unit::Second.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Second)?;
             sdur = SignedDuration::from_secs(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Second.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Second })?;
         }
         if self.values[Unit::Millisecond.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Millisecond)?;
             sdur = SignedDuration::from_millis(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Millisecond.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Millisecond })?;
         }
         if self.values[Unit::Microsecond.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Microsecond)?;
             sdur = SignedDuration::from_micros(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Microsecond.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Microsecond })?;
         }
         if self.values[Unit::Nanosecond.as_usize()] != 0 {
             let value = self.get_unit_value(Unit::Nanosecond)?;
             sdur = SignedDuration::from_nanos(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Nanosecond.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Nanosecond })?;
         }
 
         if let Some(fraction) = self.get_fraction()? {
             sdur = sdur
                 .checked_add(fractional_duration(min, fraction)?)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `SignedDuration` of `{sdur:?}` \
-                         overflowed when adding 0.{fraction} of unit {unit}",
-                        unit = min.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnitFractional { unit: min })?;
         }
 
         Ok(sdur)
@@ -1003,19 +848,12 @@ impl DurationUnits {
         }
 
         if self.sign.is_negative() {
-            return Err(err!(
-                "cannot parse negative duration into unsigned \
-                 `std::time::Duration`",
-            ));
+            return Err(Error::from(E::NotAllowedNegative));
         }
 
         let (min, max) = self.get_min_max_units()?;
         if max > Unit::Hour {
-            return Err(err!(
-                "parsing {unit} units into a `std::time::Duration` \
-                 is not supported (perhaps try parsing into a `Span` instead)",
-                unit = max.singular(),
-            ));
+            return Err(Error::from(E::NotAllowedCalendarUnit { unit: max }));
         }
 
         let mut sdur = core::time::Duration::ZERO;
@@ -1023,73 +861,37 @@ impl DurationUnits {
             let value = self.values[Unit::Hour.as_usize()];
             sdur = try_from_hours(value)
                 .and_then(|nanos| sdur.checked_add(nanos))
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Hour.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Hour })?;
         }
         if self.values[Unit::Minute.as_usize()] != 0 {
             let value = self.values[Unit::Minute.as_usize()];
             sdur = try_from_mins(value)
                 .and_then(|nanos| sdur.checked_add(nanos))
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Minute.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Minute })?;
         }
         if self.values[Unit::Second.as_usize()] != 0 {
             let value = self.values[Unit::Second.as_usize()];
             sdur = core::time::Duration::from_secs(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Second.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Second })?;
         }
         if self.values[Unit::Millisecond.as_usize()] != 0 {
             let value = self.values[Unit::Millisecond.as_usize()];
             sdur = core::time::Duration::from_millis(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Millisecond.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Millisecond })?;
         }
         if self.values[Unit::Microsecond.as_usize()] != 0 {
             let value = self.values[Unit::Microsecond.as_usize()];
             sdur = core::time::Duration::from_micros(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                        unit = Unit::Microsecond.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Microsecond })?;
         }
         if self.values[Unit::Nanosecond.as_usize()] != 0 {
             let value = self.values[Unit::Nanosecond.as_usize()];
             sdur = core::time::Duration::from_nanos(value)
                 .checked_add(sdur)
-                .ok_or_else(|| {
-                err!(
-                    "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding {value} of unit {unit}",
-                    unit = Unit::Nanosecond.singular(),
-                )
-            })?;
+                .ok_or(E::OverflowForUnit { unit: Unit::Nanosecond })?;
         }
 
         if let Some(fraction) = self.get_fraction()? {
@@ -1097,13 +899,7 @@ impl DurationUnits {
                 .checked_add(
                     fractional_duration(min, fraction)?.unsigned_abs(),
                 )
-                .ok_or_else(|| {
-                    err!(
-                        "accumulated `std::time::Duration` of `{sdur:?}` \
-                         overflowed when adding 0.{fraction} of unit {unit}",
-                        unit = min.singular(),
-                    )
-                })?;
+                .ok_or(E::OverflowForUnitFractional { unit: Unit::Hour })?;
         }
 
         Ok(sdur)
@@ -1122,7 +918,7 @@ impl DurationUnits {
     /// were no parsed duration components.)
     fn get_min_max_units(&self) -> Result<(Unit, Unit), Error> {
         let (Some(min), Some(max)) = (self.min, self.max) else {
-            return Err(err!("no parsed duration components"));
+            return Err(Error::from(E::EmptyDuration));
         };
         Ok((min, max))
     }
@@ -1143,21 +939,12 @@ impl DurationUnits {
             }
             // Otherwise, if a conversion to `i64` fails, then that failure
             // is correct.
-            let mut value = i64::try_from(value).map_err(|_| {
-                err!(
-                    "`{sign}{value}` {unit} is too big (or small) \
-                     to fit into a signed 64-bit integer",
-                    unit = unit.plural()
-                )
-            })?;
+            let mut value = i64::try_from(value)
+                .map_err(|_| E::SignedOverflowForUnit { unit })?;
             if sign.is_negative() {
-                value = value.checked_neg().ok_or_else(|| {
-                    err!(
-                        "`{sign}{value}` {unit} is too big (or small) \
-                         to fit into a signed 64-bit integer",
-                        unit = unit.plural()
-                    )
-                })?;
+                value = value
+                    .checked_neg()
+                    .ok_or(E::SignedOverflowForUnit { unit })?;
             }
             Ok(value)
         }
@@ -1258,21 +1045,13 @@ pub(crate) fn parse_temporal_fraction<'i>(
         }
         let digits = mkdigits(input);
         if digits.is_empty() {
-            return Err(err!(
-                "found decimal after seconds component, \
-                 but did not find any decimal digits after decimal",
-            ));
+            return Err(Error::from(E::MissingFractionalDigits));
         }
         // I believe this error can never happen, since we know we have no more
         // than 9 ASCII digits. Any sequence of 9 ASCII digits can be parsed
         // into an `i64`.
-        let nanoseconds = parse::fraction(digits).map_err(|err| {
-            err!(
-                "failed to parse {digits:?} as fractional component \
-                 (up to 9 digits, nanosecond precision): {err}",
-                digits = escape::Bytes(digits),
-            )
-        })?;
+        let nanoseconds =
+            parse::fraction(digits).context(E::InvalidFraction)?;
         // OK because parsing is forcefully limited to 9 digits,
         // which can never be greater than `999_999_99`,
         // which is less than `u32::MAX`.
@@ -1411,18 +1190,10 @@ fn fractional_time_to_span(
     }
     if !sdur.is_zero() {
         let nanos = sdur.as_nanos();
-        let nanos64 = i64::try_from(nanos).map_err(|_| {
-            err!(
-                "failed to set nanosecond value {nanos} (it overflows \
-                 `i64`) on span determined from {value}.{fraction}",
-            )
-        })?;
-        span = span.try_nanoseconds(nanos64).with_context(|| {
-            err!(
-                "failed to set nanosecond value {nanos64} on span \
-                 determined from {value}.{fraction}",
-            )
-        })?;
+        let nanos64 =
+            i64::try_from(nanos).map_err(|_| E::InvalidFractionNanos)?;
+        span =
+            span.try_nanoseconds(nanos64).context(E::InvalidFractionNanos)?;
     }
 
     Ok(span)
@@ -1452,13 +1223,9 @@ fn fractional_time_to_duration(
 ) -> Result<SignedDuration, Error> {
     let sdur = duration_unit_value(unit, value)?;
     let fraction_dur = fractional_duration(unit, fraction)?;
-    sdur.checked_add(fraction_dur).ok_or_else(|| {
-        err!(
-            "accumulated `SignedDuration` of `{sdur:?}` overflowed \
-             when adding `{fraction_dur:?}` (from fractional {unit} units)",
-            unit = unit.singular(),
-        )
-    })
+    Ok(sdur
+        .checked_add(fraction_dur)
+        .ok_or(E::OverflowForUnitFractional { unit })?)
 }
 
 /// Converts the fraction of the given unit to a signed duration.
@@ -1488,10 +1255,9 @@ fn fractional_duration(
         Unit::Millisecond => fraction / t::NANOS_PER_MICRO.value(),
         Unit::Microsecond => fraction / t::NANOS_PER_MILLI.value(),
         unit => {
-            return Err(err!(
-                "fractional {unit} units are not allowed",
-                unit = unit.singular(),
-            ))
+            return Err(Error::from(E::NotAllowedFractionalUnit {
+                found: unit,
+            }));
         }
     };
     Ok(SignedDuration::from_nanos(nanos))
@@ -1516,17 +1282,13 @@ fn duration_unit_value(
         Unit::Hour => {
             let seconds = value
                 .checked_mul(t::SECONDS_PER_HOUR.value())
-                .ok_or_else(|| {
-                    err!("converting {value} hours to seconds overflows i64")
-                })?;
+                .ok_or(E::ConversionToSecondsFailed { unit: Unit::Hour })?;
             SignedDuration::from_secs(seconds)
         }
         Unit::Minute => {
             let seconds = value
                 .checked_mul(t::SECONDS_PER_MINUTE.value())
-                .ok_or_else(|| {
-                    err!("converting {value} minutes to seconds overflows i64")
-                })?;
+                .ok_or(E::ConversionToSecondsFailed { unit: Unit::Minute })?;
             SignedDuration::from_secs(seconds)
         }
         Unit::Second => SignedDuration::from_secs(value),
@@ -1534,11 +1296,9 @@ fn duration_unit_value(
         Unit::Microsecond => SignedDuration::from_micros(value),
         Unit::Nanosecond => SignedDuration::from_nanos(value),
         unsupported => {
-            return Err(err!(
-                "parsing {unit} units into a `SignedDuration` is not supported \
-                 (perhaps try parsing into a `Span` instead)",
-                unit = unsupported.singular(),
-            ));
+            return Err(Error::from(E::NotAllowedCalendarUnit {
+                unit: unsupported,
+            }))
         }
     };
     Ok(sdur)
@@ -1551,43 +1311,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decimal() {
-        let x = DecimalFormatter::new().format_signed(i64::MIN);
+    fn integer() {
+        let x = IntegerFormatter::new().format_signed(i64::MIN);
         assert_eq!(x.as_str(), "-9223372036854775808");
 
-        let x = DecimalFormatter::new().format_signed(i64::MIN + 1);
+        let x = IntegerFormatter::new().format_signed(i64::MIN + 1);
         assert_eq!(x.as_str(), "-9223372036854775807");
 
-        let x = DecimalFormatter::new().format_signed(i64::MAX);
+        let x = IntegerFormatter::new().format_signed(i64::MAX);
         assert_eq!(x.as_str(), "9223372036854775807");
 
-        let x =
-            DecimalFormatter::new().force_sign(true).format_signed(i64::MAX);
-        assert_eq!(x.as_str(), "+9223372036854775807");
-
-        let x = DecimalFormatter::new().format_signed(0);
+        let x = IntegerFormatter::new().format_signed(0);
         assert_eq!(x.as_str(), "0");
 
-        let x = DecimalFormatter::new().force_sign(true).format_signed(0);
-        assert_eq!(x.as_str(), "+0");
-
-        let x = DecimalFormatter::new().force_sign(false).format_signed(0);
-        assert_eq!(x.as_str(), "-0");
-
-        let x = DecimalFormatter::new().padding(4).format_signed(0);
+        let x = IntegerFormatter::new().padding(4).format_signed(0);
         assert_eq!(x.as_str(), "0000");
 
-        let x = DecimalFormatter::new().padding(4).format_signed(789);
+        let x = IntegerFormatter::new().padding(4).format_signed(789);
         assert_eq!(x.as_str(), "0789");
 
-        let x = DecimalFormatter::new().padding(4).format_signed(-789);
+        let x = IntegerFormatter::new().padding(4).format_signed(-789);
         assert_eq!(x.as_str(), "-0789");
 
-        let x = DecimalFormatter::new()
-            .force_sign(true)
-            .padding(4)
-            .format_signed(789);
-        assert_eq!(x.as_str(), "+0789");
+        let x = IntegerFormatter::new().padding(4).format_signed(789);
+        assert_eq!(x.as_str(), "0789");
     }
 
     #[test]

@@ -8,7 +8,7 @@ instructions that were not available on the M1 but are now available on the
 latest Apple hardware and this library currently wants to use:
 
 ```console
-$ comm -23 <(rustc --print cfg --target aarch64-apple-darwin -C target-cpu=apple-m4 | grep -F target_feature) <(rustc --print cfg --target aarch64-apple-darwin | grep -F target_feature)
+$ LC_ALL=C comm -23 <(rustc --print cfg --target aarch64-apple-darwin -C target-cpu=apple-m4 | grep -F target_feature) <(rustc --print cfg --target aarch64-apple-darwin | grep -F target_feature)
 target_feature="bf16"
 target_feature="bti"
 target_feature="ecv"
@@ -100,6 +100,10 @@ fn _detect(info: &mut CpuInfo) {
     check!(lse128, "hw.optional.arm.FEAT_LSE128");
     #[cfg(test)]
     check!(lsfe, "hw.optional.arm.FEAT_LSFE");
+    #[cfg(test)]
+    check!(rcpc, "hw.optional.arm.FEAT_LRCPC");
+    #[cfg(test)]
+    check!(rcpc2, "hw.optional.arm.FEAT_LRCPC2");
     check!(rcpc3, "hw.optional.arm.FEAT_LRCPC3");
 }
 
@@ -170,6 +174,7 @@ mod tests {
                         in("x3") ptr_reg!(old_len_p),
                         in("x4") ptr_reg!(new_p),
                         in("x5") new_len as u64,
+                        // Do not use `preserves_flags` because AArch64 Darwin syscall modifies the condition flags.
                         options(nostack),
                     );
                     if r as c_int == -1 { Err(n as c_int) } else { Ok(r as c_int) }
@@ -269,7 +274,12 @@ mod tests {
                 assert_eq!(std::io::Error::last_os_error().kind(), std::io::ErrorKind::NotFound);
             }
             if cfg!(any(target_os = "macos", target_abi = "macabi")) {
-                assert_eq!(res, expected_on_macos);
+                assert_eq!(
+                    res,
+                    expected_on_macos,
+                    "{}",
+                    str::from_utf8(name.to_bytes_with_nul()).unwrap()
+                );
             }
             if let Some(res) = res {
                 #[cfg(target_pointer_width = "64")]

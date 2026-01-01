@@ -229,6 +229,15 @@ mod _conversions {
         #[allow(clippy::wrong_self_convention)]
         pub(crate) fn as_ref(self) -> &'a T {
             let raw = self.as_inner().as_non_null();
+            // SAFETY: `self` satisfies the `Aligned` invariant, so we know that
+            // `raw` is validly-aligned for `T`.
+            #[cfg(miri)]
+            unsafe {
+                crate::util::miri_promise_symbolic_alignment(
+                    raw.as_ptr().cast(),
+                    core::mem::align_of_val_raw(raw.as_ptr()),
+                );
+            }
             // SAFETY: This invocation of `NonNull::as_ref` satisfies its
             // documented safety preconditions:
             //
@@ -323,6 +332,15 @@ mod _conversions {
         #[allow(clippy::wrong_self_convention)]
         pub(crate) fn as_mut(self) -> &'a mut T {
             let mut raw = self.as_inner().as_non_null();
+            // SAFETY: `self` satisfies the `Aligned` invariant, so we know that
+            // `raw` is validly-aligned for `T`.
+            #[cfg(miri)]
+            unsafe {
+                crate::util::miri_promise_symbolic_alignment(
+                    raw.as_ptr().cast(),
+                    core::mem::align_of_val_raw(raw.as_ptr()),
+                );
+            }
             // SAFETY: This invocation of `NonNull::as_mut` satisfies its
             // documented safety preconditions:
             //
@@ -389,8 +407,8 @@ mod _conversions {
             // SAFETY:
             // - This cast is a no-op, and so trivially preserves address,
             //   referent size, and provenance
-            // - It is trivially sound to have multiple `&T` referencing the same
-            //   referent simultaneously
+            // - It is trivially sound to have multiple `&T` referencing the
+            //   same referent simultaneously
             // - By `T: TransmuteFromPtr<T, I::Aliasing, I::Validity, V>`, it is
             //   sound to perform this transmute.
             let ptr = unsafe { self.transmute_unchecked(SizeEq::cast_from_raw) };
@@ -807,9 +825,9 @@ mod _transitions {
             I::Aliasing: Reference,
             I: Invariants<Validity = Initialized>,
         {
-            // This call may panic. If that happens, it doesn't cause any soundness
-            // issues, as we have not generated any invalid state which we need to
-            // fix before returning.
+            // This call may panic. If that happens, it doesn't cause any
+            // soundness issues, as we have not generated any invalid state
+            // which we need to fix before returning.
             if T::is_bit_valid(self.reborrow().forget_aligned()) {
                 // SAFETY: If `T::is_bit_valid`, code may assume that `self`
                 // contains a bit-valid instance of `T`. By `T:
@@ -895,7 +913,10 @@ mod _casts {
             // to `cast` which either reference a zero-sized byte range or
             // reference a byte range which is entirely contained inside of an
             // allocated object.
-            unsafe { self.transmute_unchecked(cast) }
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
+            unsafe {
+                self.transmute_unchecked(cast)
+            }
         }
 
         /// Casts to a different (unsized) target type.
@@ -1168,6 +1189,7 @@ mod _casts {
             //   inner type `T`. A consequence of this guarantee is that it is
             //   possible to convert between `T` and `UnsafeCell<T>`.
             #[allow(clippy::as_conversions)]
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             let ptr = unsafe { self.transmute_unchecked(|ptr| cast!(ptr)) };
 
             // SAFETY: `UnsafeCell<T>` has the same alignment as `T` [1],
@@ -1203,8 +1225,17 @@ mod _project {
             // 1. `elem`, conditionally, conforms to the validity invariant of
             //    `I::Alignment`. If `elem` is projected from data well-aligned
             //    for `[T]`, `elem` will be valid for `T`.
-            // 2. FIXME: Need to cite facts about `[T]`'s layout (same for the
-            //    preceding points)
+            // 2. `elem` conforms to the validity invariant of `I::Validity`.
+            //    Per https://doc.rust-lang.org/1.81.0/reference/type-layout.html#array-layout:
+            //
+            //      Slices have the same layout as the section of the array they
+            //      slice.
+            //
+            //    Arrays are laid out so that the zero-based `nth` element of
+            //    the array is offset from the start of the array by `n *
+            //    size_of::<T>()` bytes. Thus, `elem` addresses a valid `T`
+            //    within the slice. Since `self` satisfies `I::Validity`, `elem`
+            //    also satisfies `I::Validity`.
             self.as_inner().iter().map(|elem| unsafe { Ptr::from_inner(elem) })
         }
     }

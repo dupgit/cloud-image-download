@@ -59,7 +59,7 @@ impl Program {
             ImportModule::Inline(idx) => ShortHash((1, &self.inline_js[*idx])).to_string(),
             other => ShortHash((0, other)).to_string(),
         };
-        format!("__wbindgen_link_{}", hash)
+        format!("__wbindgen_link_{hash}")
     }
 }
 
@@ -82,6 +82,8 @@ pub struct Export {
     pub function: Function,
     /// The class name in JS this is attached to
     pub js_class: Option<String>,
+    /// The namespace to export the item through, if any
+    pub js_namespace: Option<Vec<String>>,
     /// The kind (static, named, regular)
     pub method_kind: MethodKind,
     /// The type of `self` (either `self`, `&self`, or `&mut self`)
@@ -119,6 +121,8 @@ pub struct Import {
     pub module: Option<ImportModule>,
     /// The namespace to access the item through, if any
     pub js_namespace: Option<Vec<String>>,
+    /// If Some, this import should be re-exported with the optional given name
+    pub reexport: Option<Option<String>>,
     /// The type of item being imported
     pub kind: ImportKind,
 }
@@ -237,6 +241,8 @@ pub struct Operation {
 pub enum OperationKind {
     /// A standard method, nothing special
     Regular,
+    /// A free function that receives JS `this` as its first parameter
+    RegularThis,
     /// A method for getting the value of the provided Ident or String
     Getter(Option<String>),
     /// A method for setting the value of the provided Ident or String
@@ -338,8 +344,8 @@ pub struct StringEnum {
     pub vis: syn::Visibility,
     /// The Rust enum's identifiers
     pub name: Ident,
-    /// The name of this string enum in JS/TS code
-    pub js_name: String,
+    /// The export name of this string enum in JS/TS code
+    pub export_name: String,
     /// The Rust identifiers for the variants
     pub variants: Vec<Ident>,
     /// The JS string values of the variants
@@ -350,6 +356,8 @@ pub struct StringEnum {
     pub rust_attrs: Vec<syn::Attribute>,
     /// Whether to generate a typescript definition for this enum
     pub generate_typescript: bool,
+    /// The namespace to export the enum through, if any
+    pub js_namespace: Option<Vec<String>>,
     /// Path to wasm_bindgen
     pub wasm_bindgen: Path,
 }
@@ -358,7 +366,7 @@ pub struct StringEnum {
 #[cfg_attr(feature = "extra-traits", derive(Debug))]
 #[derive(Clone)]
 pub struct Function {
-    /// The name of the function
+    /// The exported name of the function
     pub name: String,
     /// The span of the function's name in Rust code
     pub name_span: Span,
@@ -414,7 +422,7 @@ pub struct FunctionArgumentData {
 pub struct Struct {
     /// The name of the struct in Rust code
     pub rust_name: Ident,
-    /// The name of the struct in JS code
+    /// The export name of the struct in JS code
     pub js_name: String,
     /// All the fields of this struct to export
     pub fields: Vec<StructField>,
@@ -424,6 +432,8 @@ pub struct Struct {
     pub is_inspectable: bool,
     /// Whether to generate a typescript definition for this struct
     pub generate_typescript: bool,
+    /// The namespace to export the struct through, if any
+    pub js_namespace: Option<Vec<String>>,
     /// Path to wasm_bindgen
     pub wasm_bindgen: Path,
 }
@@ -468,7 +478,7 @@ pub struct StructField {
 pub struct Enum {
     /// The name of this enum in Rust code
     pub rust_name: Ident,
-    /// The name of this enum in JS code
+    /// The export name of this enum in JS code
     pub js_name: String,
     /// Whether the variant values and hole are signed, meaning that they
     /// represent the bits of a `i32` value.
@@ -481,6 +491,8 @@ pub struct Enum {
     pub hole: u32,
     /// Whether to generate a typescript definition for this enum
     pub generate_typescript: bool,
+    /// The namespace to export the enum through, if any
+    pub js_namespace: Option<Vec<String>>,
     /// Path to wasm_bindgen
     pub wasm_bindgen: Path,
 }
@@ -526,9 +538,15 @@ impl Export {
     /// "high level" form before calling the actual function.
     pub(crate) fn export_name(&self) -> String {
         let fn_name = self.function.name.to_string();
-        match &self.js_class {
+        let base_name = match &self.js_class {
             Some(class) => shared::struct_function_export_name(class, &fn_name),
             None => shared::free_function_export_name(&fn_name),
+        };
+
+        if let Some(ns) = &self.js_namespace {
+            format!("{}_{base_name}", ns.join("_"))
+        } else {
+            base_name
         }
     }
 }

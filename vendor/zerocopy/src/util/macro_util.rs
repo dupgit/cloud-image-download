@@ -50,7 +50,7 @@ pub unsafe trait Field<Index> {
 }
 
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(
         message = "`{T}` has {PADDING_BYTES} total byte(s) of padding",
         label = "types with padding cannot implement `IntoBytes`",
@@ -68,7 +68,7 @@ impl<T: ?Sized> PaddingFree<T, 0> for () {}
 // name) so that we can have more clear error messages.
 
 #[cfg_attr(
-    zerocopy_diagnostic_on_unimplemented_1_78_0,
+    not(no_zerocopy_diagnostic_on_unimplemented_1_78_0),
     diagnostic::on_unimplemented(
         message = "`{T}` has one or more padding bytes",
         label = "types with padding cannot implement `IntoBytes`",
@@ -332,7 +332,7 @@ pub type SizeToTag<const SIZE: usize> = <() as size_to_tag::SizeToTag<SIZE>>::Ta
 
 // We put `Sized` in its own module so it can have the same name as the standard
 // library `Sized` without shadowing it in the parent module.
-#[cfg(zerocopy_diagnostic_on_unimplemented_1_78_0)]
+#[cfg(not(no_zerocopy_diagnostic_on_unimplemented_1_78_0))]
 mod __size_of {
     #[diagnostic::on_unimplemented(
         message = "`{Self}` is unsized",
@@ -351,10 +351,10 @@ mod __size_of {
     }
 }
 
-#[cfg(not(zerocopy_diagnostic_on_unimplemented_1_78_0))]
+#[cfg(no_zerocopy_diagnostic_on_unimplemented_1_78_0)]
 pub use core::mem::size_of;
 
-#[cfg(zerocopy_diagnostic_on_unimplemented_1_78_0)]
+#[cfg(not(no_zerocopy_diagnostic_on_unimplemented_1_78_0))]
 pub use __size_of::size_of;
 
 /// How many padding bytes does the struct type `$t` have?
@@ -393,6 +393,12 @@ macro_rules! repr_c_struct_has_padding {
         );
         layout.requires_static_padding() || layout.requires_dynamic_padding()
     }};
+    (@field ([$t:ty])) => {
+        <[$t] as $crate::KnownLayout>::LAYOUT
+    };
+    (@field ($t:ty)) => {
+        $crate::DstLayout::for_unpadded_type::<$t>()
+    };
     (@field [$t:ty]) => {
         <[$t] as $crate::KnownLayout>::LAYOUT
     };
@@ -570,6 +576,7 @@ where
     //   because we assert above that the size of `Dst` equal to the size of
     //   `Src`.
     // - `p as *mut Dst` is a provenance-preserving cast
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     let c_ptr = unsafe { src.cast_unsized(|p| cast!(p)) };
 
     match c_ptr.try_into_valid() {
@@ -583,6 +590,7 @@ where
             //   `ptr`, because we assert above that the size of `Dst` is equal
             //   to the size of `Src`.
             // - `p as *mut Src` is a provenance-preserving cast
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             let ptr = unsafe { ptr.cast_unsized(|p| cast!(p)) };
             // SAFETY: `ptr` is `src`, and has the same alignment invariant.
             let ptr = unsafe { ptr.assume_alignment::<I::Alignment>() };
@@ -772,18 +780,19 @@ impl<'a, Src, Dst> Wrap<&'a Src, &'a Dst> {
         let src: *const Src = self.0;
         let dst = src.cast::<Dst>();
         // SAFETY:
-        // - We know that it is sound to view the target type of the input reference
-        //   (`Src`) as the target type of the output reference (`Dst`) because the
-        //   caller has guaranteed that `Src: IntoBytes`, `Dst: FromBytes`, and
-        //   `size_of::<Src>() == size_of::<Dst>()`.
+        // - We know that it is sound to view the target type of the input
+        //   reference (`Src`) as the target type of the output reference
+        //   (`Dst`) because the caller has guaranteed that `Src: IntoBytes`,
+        //   `Dst: FromBytes`, and `size_of::<Src>() == size_of::<Dst>()`.
         // - We know that there are no `UnsafeCell`s, and thus we don't have to
-        //   worry about `UnsafeCell` overlap, because `Src: Immutable` and `Dst:
-        //   Immutable`.
+        //   worry about `UnsafeCell` overlap, because `Src: Immutable` and
+        //   `Dst: Immutable`.
         // - The caller has guaranteed that alignment is not increased.
-        // - We know that the returned lifetime will not outlive the input lifetime
-        //   thanks to the lifetime bounds on this function.
+        // - We know that the returned lifetime will not outlive the input
+        //   lifetime thanks to the lifetime bounds on this function.
         //
-        // FIXME(#67): Once our MSRV is 1.58, replace this `transmute` with `&*dst`.
+        // FIXME(#67): Once our MSRV is 1.58, replace this `transmute` with
+        // `&*dst`.
         #[allow(clippy::transmute_ptr_to_ref)]
         unsafe {
             mem::transmute(dst)
@@ -792,8 +801,8 @@ impl<'a, Src, Dst> Wrap<&'a Src, &'a Dst> {
 }
 
 impl<'a, Src, Dst> Wrap<&'a mut Src, &'a mut Dst> {
-    /// Transmutes a mutable reference of one type to a mutable reference of another
-    /// type.
+    /// Transmutes a mutable reference of one type to a mutable reference of
+    /// another type.
     ///
     /// # PME
     ///
@@ -846,6 +855,7 @@ where
         }, "cannot transmute reference when destination type has higher alignment than source type");
 
         // SAFETY: We only use `S` as `S<Src>` and `D` as `D<Dst>`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             unsafe_with_size_eq!(<S<Src>, D<Dst>> {
                 let ptr = Ptr::from_ref(self.0)
@@ -886,6 +896,7 @@ where
         }, "cannot transmute reference when destination type has higher alignment than source type");
 
         // SAFETY: We only use `S` as `S<Src>` and `D` as `D<Dst>`.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             unsafe_with_size_eq!(<S<Src>, D<Dst>> {
                 let ptr = Ptr::from_mut(self.0)

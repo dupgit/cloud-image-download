@@ -166,11 +166,11 @@ and features.)
 */
 
 use crate::{
-    error::{err, Error},
+    error::{fmt::Error as E, Error},
     util::escape,
 };
 
-use self::util::{Decimal, DecimalFormatter, Fractional, FractionalFormatter};
+use self::util::{Fractional, FractionalFormatter, Integer, IntegerFormatter};
 
 pub mod friendly;
 mod offset;
@@ -218,12 +218,7 @@ impl<'i, V: core::fmt::Display> Parsed<'i, V> {
         if self.input.is_empty() {
             return Ok(self.value);
         }
-        Err(err!(
-            "parsed value '{value}', but unparsed input {unparsed:?} \
-             remains (expected no unparsed input)",
-            value = self.value,
-            unparsed = escape::Bytes(self.input),
-        ))
+        Err(Error::from(E::into_full_error(&self.value, self.input)))
     }
 }
 
@@ -244,12 +239,7 @@ impl<'i, V> Parsed<'i, V> {
         if self.input.is_empty() {
             return Ok(self.value);
         }
-        Err(err!(
-            "parsed value '{value}', but unparsed input {unparsed:?} \
-             remains (expected no unparsed input)",
-            value = display,
-            unparsed = escape::Bytes(self.input),
-        ))
+        Err(Error::from(E::into_full_error(&display, self.input)))
     }
 }
 
@@ -334,6 +324,17 @@ impl<W: Write> Write for &mut W {
     }
 }
 
+impl Write for &mut dyn Write {
+    fn write_str(&mut self, string: &str) -> Result<(), Error> {
+        (**self).write_str(string)
+    }
+
+    #[inline]
+    fn write_char(&mut self, char: char) -> Result<(), Error> {
+        (**self).write_char(char)
+    }
+}
+
 /// An adapter for using `std::io::Write` implementations with `fmt::Write`.
 ///
 /// This is useful when one wants to format a datetime or span directly
@@ -368,7 +369,7 @@ pub struct StdIoWrite<W>(pub W);
 impl<W: std::io::Write> Write for StdIoWrite<W> {
     #[inline]
     fn write_str(&mut self, string: &str) -> Result<(), Error> {
-        self.0.write_all(string.as_bytes()).map_err(Error::adhoc)
+        self.0.write_all(string.as_bytes()).map_err(Error::io)
     }
 }
 
@@ -411,7 +412,7 @@ impl<W: core::fmt::Write> Write for StdFmtWrite<W> {
     fn write_str(&mut self, string: &str) -> Result<(), Error> {
         self.0
             .write_str(string)
-            .map_err(|_| err!("an error occurred when formatting an argument"))
+            .map_err(|_| Error::from(E::StdFmtWriteAdapter))
     }
 }
 
@@ -433,7 +434,7 @@ trait WriteExt: Write {
     #[inline]
     fn write_int(
         &mut self,
-        formatter: &DecimalFormatter,
+        formatter: &IntegerFormatter,
         n: impl Into<i64>,
     ) -> Result<(), Error> {
         self.write_decimal(&formatter.format_signed(n.into()))
@@ -444,7 +445,7 @@ trait WriteExt: Write {
     #[inline]
     fn write_uint(
         &mut self,
-        formatter: &DecimalFormatter,
+        formatter: &IntegerFormatter,
         n: impl Into<u64>,
     ) -> Result<(), Error> {
         self.write_decimal(&formatter.format_unsigned(n.into()))
@@ -463,7 +464,7 @@ trait WriteExt: Write {
 
     /// Write the given decimal number to this buffer.
     #[inline]
-    fn write_decimal(&mut self, decimal: &Decimal) -> Result<(), Error> {
+    fn write_decimal(&mut self, decimal: &Integer) -> Result<(), Error> {
         self.write_str(decimal.as_str())
     }
 
