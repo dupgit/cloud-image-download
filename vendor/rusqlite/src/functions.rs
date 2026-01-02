@@ -855,6 +855,9 @@ where
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use regex::Regex;
     use std::ffi::c_double;
 
@@ -1179,18 +1182,20 @@ mod test {
 
     #[test]
     fn test_blob() -> Result<()> {
-        fn test_len(ctx: &Context<'_>) -> Result<usize> {
+        fn test_len(ctx: &Context<'_>) -> Result<u32> {
             let blob = ctx.get_raw(0);
-            Ok(blob.as_bytes_or_null()?.map_or(0, |b| b.len()))
+            Ok(blob
+                .as_bytes_or_null()?
+                .map_or(0, |b| b.len().try_into().unwrap()))
         }
         let db = Connection::open_in_memory()?;
         db.create_scalar_function("test_len", 1, FunctionFlags::SQLITE_DETERMINISTIC, test_len)?;
         assert_eq!(
             6,
-            db.one_column::<usize, _>("SELECT test_len(X'53514C697465');", [])?
+            db.one_column::<u32, _>("SELECT test_len(X'53514C697465');", [])?
         );
-        assert_eq!(0, db.one_column::<usize, _>("SELECT test_len(X'');", [])?);
-        assert_eq!(0, db.one_column::<usize, _>("SELECT test_len(NULL);", [])?);
+        assert_eq!(0, db.one_column::<u32, _>("SELECT test_len(X'');", [])?);
+        assert_eq!(0, db.one_column::<u32, _>("SELECT test_len(NULL);", [])?);
         Ok(())
     }
 }

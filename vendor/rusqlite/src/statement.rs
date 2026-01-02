@@ -5,7 +5,7 @@ use std::slice::from_raw_parts;
 use std::{fmt, mem, ptr, str};
 
 use super::ffi;
-use super::{len_as_c_int, str_for_sqlite};
+use super::str_for_sqlite;
 use super::{
     AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef,
 };
@@ -652,21 +652,26 @@ impl Statement<'_> {
             ValueRef::Integer(i) => unsafe { ffi::sqlite3_bind_int64(ptr, ndx as c_int, i) },
             ValueRef::Real(r) => unsafe { ffi::sqlite3_bind_double(ptr, ndx as c_int, r) },
             ValueRef::Text(s) => unsafe {
-                let (c_str, len, destructor) = str_for_sqlite(s)?;
-                // TODO sqlite3_bind_text64 // 3.8.7
-                ffi::sqlite3_bind_text(ptr, ndx as c_int, c_str, len, destructor)
+                let (c_str, len, destructor) = str_for_sqlite(s);
+                ffi::sqlite3_bind_text64(
+                    ptr,
+                    ndx as c_int,
+                    c_str,
+                    len,
+                    destructor,
+                    ffi::SQLITE_UTF8 as _,
+                )
             },
             ValueRef::Blob(b) => unsafe {
-                let length = len_as_c_int(b.len())?;
+                let length = b.len();
                 if length == 0 {
                     ffi::sqlite3_bind_zeroblob(ptr, ndx as c_int, 0)
                 } else {
-                    // TODO sqlite3_bind_blob64 // 3.8.7
-                    ffi::sqlite3_bind_blob(
+                    ffi::sqlite3_bind_blob64(
                         ptr,
                         ndx as c_int,
                         b.as_ptr().cast::<c_void>(),
-                        length,
+                        length as ffi::sqlite3_uint64,
                         ffi::SQLITE_TRANSIENT(),
                     )
                 }
@@ -737,7 +742,6 @@ impl Statement<'_> {
     /// or 2 if the statement is an EXPLAIN QUERY PLAN,
     /// or 0 if it is an ordinary statement or a NULL pointer.
     #[inline]
-    #[cfg(feature = "modern_sqlite")] // 3.28.0
     pub fn is_explain(&self) -> i32 {
         self.stmt.is_explain()
     }
@@ -752,6 +756,7 @@ impl Statement<'_> {
     /// connection has closed is illegal, but `RawStatement` does not enforce
     /// this, as it loses our protective `'conn` lifetime bound.
     #[inline]
+    #[cfg(feature = "cache")]
     pub(crate) unsafe fn into_raw(mut self) -> RawStatement {
         let mut stmt = RawStatement::new(ptr::null_mut());
         mem::swap(&mut stmt, &mut self.stmt);
@@ -904,6 +909,9 @@ pub enum StatementStatus {
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use crate::types::ToSql;
     use crate::{params_from_iter, Connection, Error, Result};
 
@@ -1365,7 +1373,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn is_explain() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let stmt = db.prepare("SELECT 1;")?;
