@@ -4,6 +4,13 @@ default:
 
 name := "cid"
 
+# Alias definitions
+
+alias t := test
+alias d := document
+alias c := coverage
+alias p := publish
+
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
     cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli cargo-nextest git-cliff
