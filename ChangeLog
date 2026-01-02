@@ -1,0 +1,21 @@
+## [0.5.2] - 2026-01-02
+
+### 🚀 Features
+
+- *(tools)* Adds git-cliff ChangeLog generation
+
+### 🐛 Bug Fixes
+
+- Clarifies project description
+- Moves checksum verification to checksum module
+
+### 🔨 Tooling
+
+- *(tools)* Adds aliases for just invocation
+- *(tools)* Uses only rust files from `src/` directory
+- *(tools)* Ignores tarpaulin's report in git
+- *(tools)* Ignores vendor work for ChangeLog generation
+
+### 🚜 Refactor
+
+- Removes duplicates hashing code
