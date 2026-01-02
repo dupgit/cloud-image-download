@@ -73,7 +73,7 @@ publish: git-publish rust-publish
 
 # Runs a coverage test and open it's result in a web browser
 coverage:
-    cargo tarpaulin --frozen -o Html
+    cargo tarpaulin --frozen -o Html --include-files src/*.rs src/bin/*.rs
     open tarpaulin-report.html
 
 # Check for typos in source tree, README.md, test_data  and .justfile
