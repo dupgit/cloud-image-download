@@ -1,12 +1,12 @@
 [private]
 default:
-  @just --list
+    @just --list
 
 name := "cid"
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
-    cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli cargo-nextest
+    cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli cargo-nextest git-cliff
 
 # Bumps {patch} (major, minor or patch) version number and does a release
 bump patch: check-typos
@@ -16,6 +16,11 @@ bump patch: check-typos
     # Checking that we do not have any untracked or uncommitted file
     git status -s | wc -l | grep '0'
 
+    # ChangeLog update
+    git-cliff -u --bump {{ patch }} -p ChangeLog
+    git add ChangeLog
+    git commit -m "fix(docs): updates ChangeLog thanks to git-cliff"
+
     # Updating all dependencies
     cargo update
 
@@ -23,7 +28,7 @@ bump patch: check-typos
     cargo vendor
 
     # Bumping release version upon what has been asked on command line (major, minor or patch)
-    cargo release version {{patch}} --no-confirm --execute
+    cargo release version {{ patch }} --no-confirm --execute
 
     # Building, testing and building doc to ensure one can build with these dependencies
     cargo build --release --offline
@@ -31,10 +36,10 @@ bump patch: check-typos
     cargo doc --no-deps
 
     # Generetaing a Software Bills of Materials in SPDX format (sorting will reduce the diff size and allow one to figure out what has really changed)
-    cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{name}}.sbom.spdx.json
+    cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{ name }}.sbom.spdx.json
 
     # Creating the release
-    git add Cargo.toml Cargo.lock {{name}}.sbom.spdx.json vendor
+    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json vendor
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
 
