@@ -35,31 +35,31 @@ impl CloudImage {
     //@todo: simplify and get it shorter
     #[must_use]
     pub fn verify(&self, destination: &Path, normalize: &Option<String>) -> bool {
-        if let Some(filename) = get_filename_destination(self, destination, normalize) {
-            match self.checksum.verify_file(&filename) {
-                Ok(no_error) => match no_error {
-                    Some(success) => {
-                        if success {
-                            info!("{} Successfully verified {filename}", "🗸".green());
-                            return true;
-                        }
-                        warn!("{} Verifying failed for {filename}", "𐄂".red());
-                        return false;
-                    }
-                    None => {
-                        // File has not been verified because it has not any associated hash
-                        // so let it be correctly not verified and return true :-)
-                        warn!("{} {filename} not verified.", "𐄂".red());
+        let Some(filename) = get_filename_destination(self, destination, normalize) else {
+            return false;
+        };
+        match self.checksum.verify_file(&filename) {
+            Ok(no_error) => match no_error {
+                Some(success) => {
+                    if success {
+                        info!("{} Successfully verified {filename}", "🗸".green());
                         return true;
                     }
-                },
-                Err(e) => {
-                    error!("Error verifying {filename}: {e}");
+                    warn!("{} Verifying failed for {filename}", "𐄂".red());
                     return false;
                 }
+                None => {
+                    // File has not been verified because it has not any associated hash
+                    // so let it be correctly not verified and return true :-)
+                    warn!("{} {filename} not verified.", "𐄂".red());
+                    return true;
+                }
+            },
+            Err(e) => {
+                error!("Error verifying {filename}: {e}");
+                return false;
             }
         }
-        false
     }
 
     pub fn is_in_db(&self, db: &DbImageHistory) -> bool {
