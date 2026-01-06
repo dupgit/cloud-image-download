@@ -161,3 +161,138 @@ pub fn are_all_checksums_in_one_file(inner: &str) -> bool {
     // SHA512SUMS is used in Debian sites
     inner.contains("-CHECKSUM") || inner == "CHECKSUM" || inner == "SHA256SUMS" || inner == "SHA512SUMS"
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    /// Helper function to create a temporary file with given content
+    fn create_temp_file(content: &[u8]) -> NamedTempFile {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+        file.write_all(content).expect("Failed to write to temp file");
+        file.flush().expect("Failed to flush temp file");
+        file
+    }
+
+    #[test]
+    fn test_verify_file_none_checksum() {
+        let file = create_temp_file(b"test content");
+        let result = CheckSums::None.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_verify_file_sha256_valid() {
+        let content = b"Hello, World!";
+        let file = create_temp_file(content);
+
+        // SHA256 hash of "Hello, World!"
+        let expected_hash = "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f";
+        let checksum = CheckSums::Sha256(expected_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_verify_file_sha256_invalid() {
+        let content = b"Hello, World!";
+        let file = create_temp_file(content);
+
+        // Incorrect hash
+        let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        let checksum = CheckSums::Sha256(wrong_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(false));
+    }
+
+    #[test]
+    fn test_verify_file_sha512_valid() {
+        let content = b"Hello, World!";
+        let file = create_temp_file(content);
+
+        // SHA512 hash of "Hello, World!"
+        let expected_hash = "374d794a95cdcfd8b35993185fef9ba368f160d8daf432d08ba9f1ed1e5abe6cc69291e0fa2fe0006a52570ef18c19def4e617c33ce52ef0a6e5fbe318cb0387";
+        let checksum = CheckSums::Sha512(expected_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_verify_file_sha512_invalid() {
+        let content = b"Hello, World!";
+        let file = create_temp_file(content);
+
+        // Incorrect hash
+        let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let checksum = CheckSums::Sha512(wrong_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(false));
+    }
+
+    #[test]
+    fn test_verify_file_nonexistent() {
+        let checksum = CheckSums::Sha256("dummy_hash".to_string());
+        let result = checksum.verify_file("/nonexistent/file/path.txt");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_file_empty_file() {
+        let file = create_temp_file(b"");
+
+        // SHA256 hash of empty string
+        let expected_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let checksum = CheckSums::Sha256(expected_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_verify_file_large_content() {
+        // Create a file larger than buffer size (16MB + some extra)
+        let large_content = vec![b'A'; 17_000_000];
+        let file = create_temp_file(&large_content);
+
+        // SHA256 hash of 17MB of 'A' characters
+        let expected_hash = "3e4d2911aa103ff4e2d19f5180d10b099469826f182f8ebc7abd292896ec3fa3";
+        let checksum = CheckSums::Sha256(expected_hash.to_string());
+
+        let result = checksum.verify_file(file.path().to_str().unwrap());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+
+    #[test]
+    fn test_verify_with_hasher_directly() {
+        let content = b"Test content";
+        let file = create_temp_file(content);
+
+        let expected_hash = "9d9595c5d94fb65b824f56e9999527dba9542481580d69feb89056aabaa0aa87";
+
+        let result = verify_with_hasher(file.path().to_str().unwrap(), Sha256::new(), expected_hash);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(true));
+    }
+}
