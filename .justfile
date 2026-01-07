@@ -9,6 +9,7 @@ name := "cid"
 alias t := test
 alias d := document
 alias c := coverage
+alias ct := check-typos
 alias p := publish
 
 # Installs all cargo tools to build a release or test coverage
