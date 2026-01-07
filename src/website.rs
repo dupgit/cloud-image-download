@@ -4,7 +4,7 @@ use crate::cloud_image::CloudImage;
 use crate::image_history::DbImageHistory;
 use futures::{StreamExt, stream};
 use httpdirectory::error::HttpDirError;
-use httpdirectory::httpdirectory::{HttpDirectory, Sorting};
+use httpdirectory::httpdirectory::HttpDirectory;
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use reqwest::header::{ACCEPT, USER_AGENT};
@@ -23,6 +23,7 @@ pub struct WebSite {
     image_name_cleanse: Option<Vec<String>>,
     pub destination: PathBuf,
     pub normalize: Option<String>,
+    timeout: Option<u64>,
 }
 
 /// Associates a list of images with the website
@@ -98,9 +99,7 @@ impl WebSite {
         for version in &self.version_list {
             let url = format!("{}/{}", self.base_url, version);
 
-            if let Some(url_checked) =
-                WebSite::check_for_directories_with_dates_or_version_numbers(&self.name, &url, version).await
-            {
+            if let Some(url_checked) = self.check_for_directories_with_dates_or_version_numbers(&url, version).await {
                 if let Some(after) = &self.after_version_url {
                     for after_version in after {
                         // valid url_checked.url has a trailing /
@@ -128,8 +127,9 @@ impl WebSite {
     /// containing that directory instead of url itself. If the url has no
     /// directories with dates then returns this url
     /// Returns None when `HttpDirectory::new()` returns an Err.
-    async fn check_for_directories_with_dates_or_version_numbers(name: &str, url: &str, version: &str) -> Option<Url> {
-        if let Ok(directory_listing) = HttpDirectory::new(url).await {
+    async fn check_for_directories_with_dates_or_version_numbers(&self, url: &str, version: &str) -> Option<Url> {
+        let name = &self.name;
+        if let Ok(directory_listing) = HttpDirectory::new(url, self.timeout).await {
             if let Ok(list_of_dates) = directory_listing.dirs().filter_by_name(r"\d{8}(?:-\d{4})?/$") {
                 if list_of_dates.is_empty() {
                     debug!("[{name}] This url ({url}) has no dates in it");
@@ -213,7 +213,7 @@ impl WebSite {
 
         // Getting all files whose name matches the regex self.image_name_filter and
         // that does not matches *any* of the cimage_name_cleanse regex vector entry
-        let url_httpdir = HttpDirectory::new(&url.url).await?;
+        let url_httpdir = HttpDirectory::new(&url.url, self.timeout).await?;
         let http_image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
         debug!(
             "[{}] Retrieved {} files filtered with '{}' filter from {}",
@@ -224,8 +224,8 @@ impl WebSite {
         );
         let http_image_list = self.clean_httpdir_from_image_name_cleanse_regex(http_image_list);
 
-        // Keeping only the newest entry from that list
-        if let Some(image) = http_image_list.sort_by_date(Sorting::Descending).first()
+        // Keeping only the newest entry from that list (sorted in descending order)
+        if let Some(image) = http_image_list.sort_by_date(false).first()
             && let Some(image_name) = image.name()
             && let Some(date) = image.date()
         {
@@ -376,7 +376,8 @@ pub fn vec_ws_image_lists_is_empty(all_ws_image_lists: &Vec<WSImageList>) -> boo
 /// Returns an url formed with the last directory name found
 /// in the `list_of_entries` if any.
 fn url_with_latest_directory_name(name: &str, list_of_entries: HttpDirectory, url: &str) -> Option<(String, String)> {
-    if let Some(entry) = list_of_entries.sort_by_name(Sorting::Descending).first() {
+    // Sorting in descending order
+    if let Some(entry) = list_of_entries.sort_by_name(false).first() {
         if let Some(dirname) = entry.dirname() {
             debug!("[{name}] Adding {dirname}");
             Some((format!("{url}/{dirname}"), sanitize_string(dirname)))

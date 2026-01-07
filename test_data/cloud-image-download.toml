@@ -2,6 +2,7 @@ db_path = "~/.cache/"
 
 [[sites]]
 name = "Centos"
+timeout = 60
 version_list = ["9-stream", "10-stream"]
 base_url = "http://cloud.centos.org/centos"
 after_version_url = ["x86_64/images"]
@@ -11,6 +12,7 @@ destination = "/dev/shm/centos"
 
 [[sites]]
 name = "Ubuntu"
+timeout = 45
 version_list = ["focal", "jammy", "noble"]
 base_url = "https://cloud-images.ubuntu.com"
 image_name_filter = "server-cloudimg-amd64.img"
@@ -19,6 +21,7 @@ normalize = "Ubuntu-{version}-{date}.qcow2"
 
 [[sites]]
 name = "Fedora"
+timeout = 30
 version_list = ["releases"]
 base_url = "https://mirrors.ircam.fr/pub/fedora/linux"
 after_version_url = ["Cloud/x86_64/images", "Cloud/aarch64/images"]
