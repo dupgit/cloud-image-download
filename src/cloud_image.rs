@@ -46,18 +46,18 @@ impl CloudImage {
                         return true;
                     }
                     warn!("{} Verifying failed for {filename}", "𐄂".red());
-                    return false;
+                    false
                 }
                 None => {
                     // File has not been verified because it has not any associated hash
                     // so let it be correctly not verified and return true :-)
-                    warn!("{} {filename} not verified.", "𐄂".red());
-                    return true;
+                    warn!("{} {filename} not verified.", "𐄂".yellow());
+                    true
                 }
             },
             Err(e) => {
                 error!("Error verifying {filename}: {e}");
-                return false;
+                false
             }
         }
     }
