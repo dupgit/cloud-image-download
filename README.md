@@ -29,6 +29,9 @@ the following keys:
   string to customize the image name after these variable.
 - `destination` is a directory where to store the downloaded
   images.
+- `timeout` stands for a global timeout for requests made to
+  get the directory files and directories. It is not used when
+  downloading the files.
 
 [test_data/cloud-image-download.toml] is a configuration
 file example used for testing
