@@ -41,9 +41,8 @@ fn verify_with_hasher<D: Digest>(
     let mut buffer = vec![0; HASH_BUFFER_SIZE];
 
     loop {
-        let count = reader.read(&mut buffer).map_err(|e| {
-            error!("Error while reading file {filename}. Skipped");
-            e
+        let count = reader.read(&mut buffer).inspect_err(|e| {
+            error!("Error while reading file {filename} skipped: {e}");
         })?;
 
         if count == 0 {
