@@ -1,3 +1,25 @@
+## [0.5.3] - 2026-01-11
+
+### 🚀 Features
+
+- Adds tests for verify_file() function
+
+### 🐛 Bug Fixes
+
+- Yellow color to indicate that the file hasn't been verified
+- Clippy's advice
+
+### 🔨 Tooling
+
+- *(tools)* Adds ct alias for check-typos
+
+### 🚜 Refactor
+
+- Simplifies verify() method
+
+### 📚 Documentation
+
+- *(docs)* Adds timeout optional parameter
 ## [0.5.2] - 2026-01-02
 
 ### 🚀 Features
