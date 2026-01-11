@@ -13,7 +13,7 @@ use core::{
 };
 
 use crate::{
-    pointer::{invariant::*, PtrInner},
+    pointer::{cast, invariant::*},
     FromBytes, Immutable, IntoBytes, Unalign,
 };
 
@@ -218,7 +218,9 @@ where
 {
 }
 
-pub(crate) enum BecauseInvariantsEq {}
+#[allow(missing_debug_implementations, missing_copy_implementations)]
+#[doc(hidden)]
+pub enum BecauseInvariantsEq {}
 
 macro_rules! unsafe_impl_invariants_eq {
     ($tyvar:ident => $t:ty, $u:ty) => {{
@@ -290,24 +292,20 @@ pub unsafe trait TransmuteFrom<Src: ?Sized, SV, DV> {}
 /// `T` and `Self` must have the same vtable kind (`Sized`, slice DST, `dyn`,
 /// etc) and have the same size. In particular:
 /// - If `T: Sized` and `Self: Sized`, then their sizes must be equal
-/// - If `T: ?Sized` and `Self: ?Sized`, then it must be the case that, given
-///   any `t: PtrInner<'_, T>`, `<Self as SizeEq<T>>::cast_from_raw(t)` produces
-///   a pointer which addresses the same number of bytes as `t`. *Note that it
-///   is **not** guaranteed that an `as` cast preserves referent size: it may be
-///   the case that `cast_from_raw` modifies the pointer's metadata in order to
-///   preserve referent size, which an `as` cast does not do.*
+/// - If `T: ?Sized` and `Self: ?Sized`, then `Self::CastFrom` must be a
+///   size-preserving cast. *Note that it is **not** guaranteed that an `as`
+///   cast preserves referent size: it may be the case that `Self::CastFrom`
+///   modifies the pointer's metadata in order to preserve referent size, which
+///   an `as` cast does not do.*
 pub unsafe trait SizeEq<T: ?Sized> {
-    fn cast_from_raw(t: PtrInner<'_, T>) -> PtrInner<'_, Self>;
+    type CastFrom: cast::Cast<T, Self>;
 }
 
 // SAFETY: `T` trivially has the same size and vtable kind as `T`, and since
 // pointer `*mut T -> *mut T` pointer casts are no-ops, this cast trivially
 // preserves referent size (when `T: ?Sized`).
 unsafe impl<T: ?Sized> SizeEq<T> for T {
-    #[inline(always)]
-    fn cast_from_raw(t: PtrInner<'_, T>) -> PtrInner<'_, T> {
-        t
-    }
+    type CastFrom = cast::IdCast;
 }
 
 // SAFETY: Since `Src: IntoBytes`, the set of valid `Src`'s is the set of
@@ -366,13 +364,13 @@ where
 //   `ManuallyDrop<T>` is guaranteed to have the same layout and bit validity as
 //   `T`
 #[allow(clippy::multiple_unsafe_ops_per_block)]
-const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T: ?Sized => ManuallyDrop<T>) };
+const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(pub T: ?Sized => ManuallyDrop<T>) };
 
 // SAFETY:
 // - `Unalign<T>` promises to have the same size as `T`.
 // - `Unalign<T>` promises to have the same validity as `T`.
 #[allow(clippy::multiple_unsafe_ops_per_block)]
-const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T => Unalign<T>) };
+const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(pub T => Unalign<T>) };
 // SAFETY: `Unalign<T>` promises to have the same size and validity as `T`.
 // Given `u: &Unalign<T>`, it is already possible to obtain `let t =
 // u.try_deref().unwrap()`. Because `Unalign<T>` has the same size as `T`, the
@@ -405,7 +403,7 @@ const _: () = unsafe { unsafe_impl_invariants_eq!(T => T, Unalign<T>) };
 //   pub struct Wrapping<T>(pub T);
 //   ```
 #[allow(clippy::multiple_unsafe_ops_per_block)]
-const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T => Wrapping<T>) };
+const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(pub T => Wrapping<T>) };
 
 // SAFETY: By the preceding safety proof, `Wrapping<T>` and `T` have the same
 // layout and bit validity. Since a `Wrapping<T>`'s `T` field is `pub`, given
@@ -427,7 +425,7 @@ const _: () = unsafe { unsafe_impl_invariants_eq!(T => T, Wrapping<T>) };
 //   `T`. A consequence of this guarantee is that it is possible to convert
 //   between `T` and `UnsafeCell<T>`.
 #[allow(clippy::multiple_unsafe_ops_per_block)]
-const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T: ?Sized => UnsafeCell<T>) };
+const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(pub T: ?Sized => UnsafeCell<T>) };
 
 // SAFETY:
 // - `Cell<T>` has the same size as `T` [1].
@@ -449,7 +447,7 @@ const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T: ?Sized => UnsafeC
 //   `T`. A consequence of this guarantee is that it is possible to convert
 //   between `T` and `UnsafeCell<T>`.
 #[allow(clippy::multiple_unsafe_ops_per_block)]
-const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(T: ?Sized => Cell<T>) };
+const _: () = unsafe { unsafe_impl_for_transparent_wrapper!(pub T: ?Sized => Cell<T>) };
 
 impl_transitive_transmute_from!(T: ?Sized => Cell<T> => T => UnsafeCell<T>);
 impl_transitive_transmute_from!(T: ?Sized => UnsafeCell<T> => T => Cell<T>);
@@ -467,26 +465,62 @@ unsafe impl<T> TransmuteFrom<T, Uninit, Valid> for MaybeUninit<T> {}
 //   `MaybeUninit<T>` is guaranteed to have the same size, alignment, and ABI as
 //   `T`
 unsafe impl<T> SizeEq<T> for MaybeUninit<T> {
-    #[inline(always)]
-    fn cast_from_raw(t: PtrInner<'_, T>) -> PtrInner<'_, MaybeUninit<T>> {
-        // SAFETY: Per preceding safety comment, `MaybeUninit<T>` and `T` have
-        // the same size, and so this cast preserves referent size.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            cast!(t)
-        }
-    }
+    type CastFrom = cast::CastSized;
 }
 
 // SAFETY: See previous safety comment.
 unsafe impl<T> SizeEq<MaybeUninit<T>> for T {
-    #[inline(always)]
-    fn cast_from_raw(t: PtrInner<'_, MaybeUninit<T>>) -> PtrInner<'_, T> {
-        // SAFETY: Per preceding safety comment, `MaybeUninit<T>` and `T` have
-        // the same size, and so this cast preserves referent size.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            cast!(t)
-        }
+    type CastFrom = cast::CastSized;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pointer::cast::Project as _;
+
+    fn test_size_eq<Src, Dst: SizeEq<Src>>(mut src: Src) {
+        let _: *mut Dst =
+            <Dst as SizeEq<Src>>::CastFrom::project(crate::pointer::PtrInner::from_mut(&mut src));
+    }
+
+    #[test]
+    fn test_transmute_coverage() {
+        // SizeEq<T> for MaybeUninit<T>
+        test_size_eq::<u8, MaybeUninit<u8>>(0u8);
+
+        // SizeEq<MaybeUninit<T>> for T
+        test_size_eq::<MaybeUninit<u8>, u8>(MaybeUninit::<u8>::new(0));
+
+        // Transitive: MaybeUninit<T> -> Wrapping<T>
+        // T => MaybeUninit<T> => T => Wrapping<T>
+        test_size_eq::<u8, Wrapping<u8>>(0u8);
+
+        // T => Wrapping<T> => T => MaybeUninit<T>
+        test_size_eq::<Wrapping<u8>, MaybeUninit<u8>>(Wrapping(0u8));
+
+        // T: ?Sized => Cell<T> => T => UnsafeCell<T>
+        test_size_eq::<Cell<u8>, UnsafeCell<u8>>(Cell::new(0u8));
+
+        // T: ?Sized => UnsafeCell<T> => T => Cell<T>
+        test_size_eq::<UnsafeCell<u8>, Cell<u8>>(UnsafeCell::new(0u8));
+    }
+
+    #[cfg(not(no_zerocopy_target_has_atomics_1_60_0))]
+    #[cfg(target_has_atomic = "8")]
+    #[test]
+    fn test_atomic_u8_transmutes() {
+        use core::sync::atomic::AtomicU8;
+
+        // 1. Atomic -> Prim (SizeEq<Atomic> for Prim)
+        test_size_eq::<AtomicU8, u8>(AtomicU8::new(0));
+
+        // 2. Prim -> Atomic (SizeEq<Prim> for Atomic)
+        test_size_eq::<u8, AtomicU8>(0u8);
+
+        // 3. Atomic -> UnsafeCell<Prim> (SizeEq<Atomic> for UnsafeCell<Prim>)
+        test_size_eq::<AtomicU8, UnsafeCell<u8>>(AtomicU8::new(0));
+
+        // 4. UnsafeCell<Prim> -> Atomic (SizeEq<UnsafeCell<Prim>> for Atomic)
+        test_size_eq::<UnsafeCell<u8>, AtomicU8>(UnsafeCell::new(0u8));
     }
 }

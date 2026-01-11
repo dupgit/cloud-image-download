@@ -1,13 +1,16 @@
-use crate::error::HttpDirError;
-use crate::httpdirectoryentry::{CompareField, HttpDirectoryEntry};
-use crate::requests::{Request, join_url};
-use crate::scrape::scrape_body;
-use crate::stats::Stats;
-use log::{debug, error, trace};
+use crate::{
+    error::{ParseResultExt, RegexResultExt, ReqwestResultExt, Result},
+    httpdirectoryentry::{CompareField, HttpDirectoryEntry},
+    requests::Request,
+    scrape::scrape_body,
+    stats::Stats,
+};
 use regex::Regex;
+use reqwest::Url;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{debug, error, trace};
 
 /// Main structure that provides methods to access, parse a directory
 /// webpage and fill that structure.
@@ -35,15 +38,12 @@ impl Timings {
     }
 }
 
-pub enum Sorting {
-    Ascending,
-    Descending,
-}
-
 // @todo: ? implement an iterator ?
 impl HttpDirectory {
     /// Crawls the `url` and returns (if no error occurred) the
-    /// `HttpDirectory` of that url
+    /// `HttpDirectory` of that url. `timeout_s` optionally defines
+    /// a global request timeout in seconds. `None` is no timeout
+    /// at all.
     ///
     /// # Errors
     ///
@@ -51,15 +51,15 @@ impl HttpDirectory {
     /// or that the request to the url did not return correctly
     /// with a 200 HTTP status code
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    pub async fn new(url: &str) -> Result<Self, HttpDirError> {
+    pub async fn new(url: &str, timeout_s: Option<u64>) -> Result<Self> {
         let now = Instant::now();
-        let client = Request::new()?;
+        let client = Request::new(timeout_s)?;
         let response = client.get(url).await?;
         let http_request = now.elapsed();
         trace!("Response to get '{url}': {response:?}");
 
         let now = Instant::now();
-        let entries = get_entries_from_body(&response.text().await?);
+        let entries = get_entries_from_body(&response.text().await.with_url(url)?);
         let get_entries = now.elapsed();
         let timings = Timings::new(http_request, get_entries);
 
@@ -77,21 +77,22 @@ impl HttpDirectory {
     /// # Errors
     ///
     /// Will return an error if:
-    /// - the request engine has not been selected (a default one should
-    ///   have been selected for you)
     /// - an error occurred while trying to retrieve data from the new
     ///   directory
     /// - the web server did not respond with 200 HTTP status code
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    pub async fn cd(mut self, dir: &str) -> Result<Self, HttpDirError> {
-        let url = join_url(&self.url, dir)?;
+    pub async fn cd(mut self, dir: &str) -> Result<Self> {
+        let url =
+            Url::parse(&self.url).with_url(&self.url)?.join(dir).with_url(&format!("{}/{dir}", &self.url))?.to_string();
         debug!("cd is going to {url}");
         let now = Instant::now();
         let response = self.request.get(&url).await?;
         let http_request = now.elapsed();
+
         let now = Instant::now();
-        let entries = get_entries_from_body(&response.text().await?);
+        let entries = get_entries_from_body(&response.text().await.with_url(&self.url)?);
         let get_entries = now.elapsed();
+
         let timings = Timings::new(http_request, get_entries);
         self.entries = entries;
         self.timings = Arc::new(timings);
@@ -99,28 +100,31 @@ impl HttpDirectory {
         Ok(self)
     }
 
-    /// Sorts the Directory entries by their names
+    /// Sorts the Directory entries by their names in ascending order when
+    /// `ascending` is `true`, in descending order otherwise
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn sort_by_name(mut self, order: Sorting) -> Self {
-        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Name, &order));
+    pub fn sort_by_name(mut self, ascending: bool) -> Self {
+        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Name, ascending));
         self
     }
 
-    /// Sorts the Directory entries by their dates
+    /// Sorts the Directory entries by their dates in ascending order when
+    /// `ascending` is `true`, in descending order otherwise
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn sort_by_date(mut self, order: Sorting) -> Self {
-        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Date, &order));
+    pub fn sort_by_date(mut self, ascending: bool) -> Self {
+        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Date, ascending));
         self
     }
 
-    /// Sorts the Directory entries by their sizes
+    /// Sorts the Directory entries by their sizes in ascending order when
+    /// `ascending` is `true`, in descending order otherwise
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    pub fn sort_by_size(mut self, order: Sorting) -> Self {
-        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Size, &order));
+    pub fn sort_by_size(mut self, ascending: bool) -> Self {
+        self.entries.sort_by(|a, b| a.cmp_by_field(b, &CompareField::Size, ascending));
         self
     }
 
@@ -181,8 +185,12 @@ impl HttpDirectory {
     #[must_use]
     pub fn stats(&self) -> Stats {
         let mut stats = Stats::new();
-        for e in self.entries() {
-            stats.count(e);
+        for entry in self.entries() {
+            match entry {
+                HttpDirectoryEntry::ParentDirectory(_) => stats.add_parent_directory(),
+                HttpDirectoryEntry::Directory(dir) => stats.add_directory(dir.date()),
+                HttpDirectoryEntry::File(file) => stats.add_file(file.date(), file.size()),
+            };
         }
         stats
     }
@@ -195,8 +203,8 @@ impl HttpDirectory {
     /// Will return an error if the regular expression can not be
     /// compiled (invalid pattern, or size limit exceeded). For more
     /// information see  [`Regex`][regex::Regex::new()]
-    pub fn filter_by_name(&self, regex: &str) -> Result<Self, HttpDirError> {
-        let re = Regex::new(regex)?;
+    pub fn filter_by_name(&self, regex: &str) -> Result<Self> {
+        let re = Regex::new(regex).with_regex(regex)?;
         Ok(self.filtering(|e| e.is_match_by_name(&re)))
     }
 
@@ -267,12 +275,13 @@ impl fmt::Display for HttpDirectory {
 
 impl Default for HttpDirectory {
     /// Returns an `HttpDirectory` initialized with default
-    /// values (empty vector, empty url and no `HttpEngine`)
+    /// values (empty vector, empty url and defaults Request
+    /// and Timings)
     fn default() -> Self {
         HttpDirectory {
             entries: vec![],
             url: Arc::new(String::new()),
-            request: Arc::new(Request::None),
+            request: Arc::new(Request::default()),
             timings: Arc::new(Timings::default()),
         }
     }
@@ -288,11 +297,14 @@ fn entries_from_body(body: &str) -> Vec<HttpDirectoryEntry> {
     }
 }
 
+/// feature gated to be used only in tests - this method
+/// should not be public
 #[cfg(any(test, feature = "test-helpers"))]
 pub fn get_entries_from_body(body: &str) -> Vec<HttpDirectoryEntry> {
     entries_from_body(body)
 }
 
+/// feature gated for production use
 #[cfg(not(any(test, feature = "test-helpers")))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub(crate) fn get_entries_from_body(body: &str) -> Vec<HttpDirectoryEntry> {
@@ -302,27 +314,13 @@ pub(crate) fn get_entries_from_body(body: &str) -> Vec<HttpDirectoryEntry> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{HttpDirectory, HttpDirectoryEntry, Request},
+        super::{HttpDirectory, HttpDirectoryEntry},
         crate::{
-            httpdirectory::Sorting,
             httpdirectoryentry::{EntryType, assert_entry},
+            stats::Stats,
         },
-        std::sync::Arc,
         unwrap_unreachable::UnwrapUnreachable,
     };
-
-    #[test]
-    fn test_httpdirectory_default() {
-        let httpdir = HttpDirectory::default();
-        assert!(httpdir.is_empty());
-        assert_eq!(httpdir.url, Arc::new("".to_string()));
-
-        match Arc::into_inner(httpdir.request) {
-            Some(Request::Reqwest(request)) => panic!("{request:?} should be None"),
-            Some(Request::None) => (),
-            None => panic!("Arc should return Some(Request::None) and not None"),
-        }
-    }
 
     #[tokio::test]
     async fn test_httpdirectory_no_base_url() {
@@ -330,7 +328,7 @@ mod tests {
 
         match httpdir.cd("/dir").await {
             Ok(_) => panic!("This test should return Err()"),
-            Err(e) => assert_eq!(e.to_string(), "Error: relative URL without a base"),
+            Err(e) => assert_eq!(e.to_string(), "Error while parsing url '':\n -> relative URL without a base"),
         }
     }
 
@@ -436,7 +434,7 @@ DIR          -  2025-01-02 12:32  entry4
             Ok(_) => panic!("This call must return an Err(), not Ok()"),
             Err(e) => assert_eq!(
                 e.to_string(),
-                "Error: regex parse error:\n    deb-[n+-*\n          ^^^\nerror: invalid character class range, the start must be <= the end"
+                "Regular expression failed to compile 'deb-[n+-*':\n -> regex parse error:\n    deb-[n+-*\n          ^^^\nerror: invalid character class range, the start must be <= the end"
             ),
         }
     }
@@ -475,7 +473,7 @@ DIR          -  2025-01-02 12:32  entry4
 
     #[test]
     fn test_httpdirectory_sort_by_name() {
-        let httpdir = prepare_httpdir().sort_by_name(Sorting::Ascending);
+        let httpdir = prepare_httpdir().sort_by_name(true);
 
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
@@ -503,7 +501,7 @@ FILE      2345  2023-01-01 00:00  files2
 DIR          -  2025-02-16 13:37  test2
 "##
         );
-        let httpdir = httpdir.sort_by_name(Sorting::Descending);
+        let httpdir = httpdir.sort_by_name(false);
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
         assert_entry(&entries[1], &EntryType::Directory, "test2", 0, "2025-02-16 13:37");
@@ -534,7 +532,7 @@ DIR          -  2025-03-01 07:11  debian3
 
     #[test]
     fn test_httpdirectory_sort_by_date() {
-        let httpdir = prepare_httpdir().sort_by_date(Sorting::Ascending);
+        let httpdir = prepare_httpdir().sort_by_date(true);
 
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
@@ -562,7 +560,7 @@ DIR          -  2025-03-01 07:11  debian3
 FILE       67K  2025-07-17 23:59  entry3
 "##
         );
-        let httpdir = httpdir.sort_by_date(Sorting::Descending);
+        let httpdir = httpdir.sort_by_date(false);
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
         assert_entry(&entries[1], &EntryType::File, "entry3", 68_608, "2025-07-17 23:59");
@@ -593,7 +591,7 @@ FILE       123  1987-10-09 04:37  file1
 
     #[test]
     fn test_httpdirectory_sort_by_size() {
-        let httpdir = prepare_httpdir().sort_by_size(Sorting::Ascending);
+        let httpdir = prepare_httpdir().sort_by_size(true);
 
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
@@ -621,7 +619,7 @@ FILE       67K  2025-07-17 23:59  entry3
 FILE      123M  2024-12-08 08:22  debian4
 "##
         );
-        let httpdir = httpdir.sort_by_size(Sorting::Descending);
+        let httpdir = httpdir.sort_by_size(false);
         let entries = httpdir.entries();
         assert_entry(&entries[0], &EntryType::ParentDirectory, "../", 0, "0000-00-00 00:00");
         assert_entry(&entries[1], &EntryType::File, "debian4", 128_974_848, "2024-12-08 08:22");
@@ -659,5 +657,99 @@ DIR          -  2025-01-02 12:32  entry4
         assert_eq!(stats.dirs, 4);
         assert_eq!(stats.files, 4);
         assert_eq!(stats.total_size, 129_045_924);
+    }
+
+    // Testing Stats
+
+    #[test]
+    fn test_stats_new() {
+        let stats = Stats::new();
+
+        assert_eq!(stats.parent_dir, 0);
+        assert_eq!(stats.dirs, 0);
+        assert_eq!(stats.files, 0);
+        assert_eq!(stats.total_size, 0);
+        assert_eq!(stats.with_date, 0);
+        assert_eq!(stats.total_size, 0);
+    }
+
+    #[test]
+    fn test_stats_count() {
+        let httpdirectoryentry = HttpDirectoryEntry::new("name", "2025-05-31 16:58", "-", "name/");
+        let mut httpdirectory = HttpDirectory::default();
+        httpdirectory.entries = vec![httpdirectoryentry];
+        let stats = httpdirectory.stats();
+
+        assert_eq!(stats.parent_dir, 0);
+        assert_eq!(stats.dirs, 1);
+        assert_eq!(stats.files, 0);
+        assert_eq!(stats.total_size, 0);
+        assert_eq!(stats.with_date, 1);
+        assert_eq!(stats.without_date, 0);
+
+        let httpdirectoryentry = HttpDirectoryEntry::new("name", "2025-05-31 16:58", "3.1K", "name/");
+        httpdirectory.entries.push(httpdirectoryentry);
+        let stats = httpdirectory.stats();
+
+        assert_eq!(stats.parent_dir, 0);
+        assert_eq!(stats.dirs, 1);
+        assert_eq!(stats.files, 1);
+        assert_eq!(stats.total_size, 3174);
+        assert_eq!(stats.with_date, 2);
+        assert_eq!(stats.without_date, 0);
+
+        let httpdirectoryentry = HttpDirectoryEntry::new("Parent Directory", "2025-05-31 16:58", "-", "../");
+        httpdirectory.entries.push(httpdirectoryentry);
+        let stats = httpdirectory.stats();
+
+        assert_eq!(stats.parent_dir, 1);
+        assert_eq!(stats.dirs, 1);
+        assert_eq!(stats.files, 1);
+        assert_eq!(stats.total_size, 3174);
+        assert_eq!(stats.with_date, 2);
+        assert_eq!(stats.without_date, 1);
+    }
+
+    #[test]
+    fn test_stats_output() {
+        let httpdirectoryentry = HttpDirectoryEntry::new("name", "2025-05-31 16:58", "3.1K", "name/");
+        let mut httpdirectory = HttpDirectory::default();
+        httpdirectory.entries = vec![httpdirectoryentry];
+        let stats = httpdirectory.stats();
+        let output = r##"Parent directory: 0
+Directories: 0
+Files: 1
+Total apparent file sizes: 3174
+Entries with dates: 1
+Entries without any date: 0
+"##;
+
+        assert_eq!(stats.to_string(), output);
+    }
+
+    #[test]
+    fn test_stats_count_no_date() {
+        let httpdirectoryentry = HttpDirectoryEntry::new("name", "", "-", "name/");
+        let mut httpdirectory = HttpDirectory::default();
+        httpdirectory.entries = vec![httpdirectoryentry];
+        let mut stats = httpdirectory.stats();
+
+        assert_eq!(stats.parent_dir, 0);
+        assert_eq!(stats.dirs, 1);
+        assert_eq!(stats.files, 0);
+        assert_eq!(stats.total_size, 0);
+        assert_eq!(stats.with_date, 0);
+        assert_eq!(stats.without_date, 1);
+
+        let httpdirectoryentry = HttpDirectoryEntry::new("name", "", "3.1K", "name/");
+        httpdirectory.entries.push(httpdirectoryentry);
+        stats = httpdirectory.stats();
+
+        assert_eq!(stats.parent_dir, 0);
+        assert_eq!(stats.dirs, 1);
+        assert_eq!(stats.files, 1);
+        assert_eq!(stats.total_size, 3174);
+        assert_eq!(stats.with_date, 0);
+        assert_eq!(stats.without_date, 2);
     }
 }

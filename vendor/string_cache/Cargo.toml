@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.70.0"
 name = "string_cache"
-version = "0.8.9"
+version = "0.9.0"
 authors = ["The Servo Project Developers"]
 build = false
 autolib = false
@@ -52,7 +52,7 @@ version = "1.0.2"
 version = "0.12"
 
 [dependencies.phf_shared]
-version = "0.11"
+version = "0.13"
 
 [dependencies.precomputed-hash]
 version = "0.1"

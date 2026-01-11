@@ -70,10 +70,8 @@
 //! * `CFLAGS` - a series of space separated flags passed to compilers. Note that
 //!   individual flags cannot currently contain spaces, so doing
 //!   something like: `-L=foo\ bar` is not possible.
-//! * `CC` - the actual C compiler used. Note that this is used as an exact
-//!   executable name, so (for example) no extra flags can be passed inside
-//!   this variable, and the builder must ensure that there aren't any
-//!   trailing spaces. This compiler must understand the `-c` flag. For
+//! * `CC` - the actual C compiler used. Note that this supports passing a known
+//!   wrapper via `sccache cc`. This compiler must understand the `-c` flag. For
 //!   certain `TARGET`s, it also is assumed to know about other flags (most
 //!   common is `-fPIC`).
 //!   ccache, distcc, sccache, icecc, cachepot and buildcache are supported,
@@ -1672,6 +1670,10 @@ impl Build {
                 if cfg!(target_os = "linux") {
                     libdir.push("targets");
                     libdir.push(format!("{}-linux", target.arch));
+                    if !libdir.exists() && target.arch == "aarch64" {
+                        libdir.pop();
+                        libdir.push("sbsa-linux");
+                    }
                     libdir.push("lib");
                     libtst = true;
                 } else if cfg!(target_env = "msvc") {
@@ -3153,12 +3155,8 @@ impl Build {
         // If this is an exact path on the filesystem we don't want to do any
         // interpretation at all, just pass it on through. This'll hopefully get
         // us to support spaces-in-paths.
-        if Path::new(tool).exists() {
-            return Some((
-                PathBuf::from(tool),
-                self.rustc_wrapper_fallback(),
-                Vec::new(),
-            ));
+        if let Some(exe) = check_exe(Path::new(tool).into()) {
+            return Some((exe, self.rustc_wrapper_fallback(), Vec::new()));
         }
 
         // Ok now we want to handle a couple of scenarios. We'll assume from
@@ -4188,13 +4186,6 @@ impl Build {
     }
 
     fn which(&self, tool: &Path, path_entries: Option<&OsStr>) -> Option<PathBuf> {
-        fn check_exe(mut exe: PathBuf) -> Option<PathBuf> {
-            let exe_ext = std::env::consts::EXE_EXTENSION;
-            let check =
-                exe.exists() || (!exe_ext.is_empty() && exe.set_extension(exe_ext) && exe.exists());
-            check.then_some(exe)
-        }
-
         // Loop through PATH entries searching for the |tool|.
         let find_exe_in_path = |path_entries: &OsStr| -> Option<PathBuf> {
             env::split_paths(path_entries).find_map(|path_entry| check_exe(path_entry.join(tool)))
@@ -4467,6 +4458,12 @@ fn check_disabled() -> Result<(), Error> {
         ));
     }
     Ok(())
+}
+
+fn check_exe(mut exe: PathBuf) -> Option<PathBuf> {
+    let exe_ext = std::env::consts::EXE_EXTENSION;
+    let check = exe.exists() || (!exe_ext.is_empty() && exe.set_extension(exe_ext) && exe.exists());
+    check.then_some(exe)
 }
 
 #[cfg(test)]

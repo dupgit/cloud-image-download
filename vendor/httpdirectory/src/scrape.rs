@@ -1,11 +1,11 @@
 use crate::{
     detect::{PureHtml, SiteType},
-    error::HttpDirError,
+    error::{Result, SelectorResultExt},
     httpdirectoryentry::HttpDirectoryEntry,
     scrapers::{h5ai::scrape_h5ai, miniserve::scrape_miniserve, snt::scrape_snt, ul::scrape_ul},
 };
-use log::{debug, info, trace, warn};
 use scraper::{ElementRef, Html, Selector};
+use tracing::{debug, info, trace, warn};
 use unwrap_unreachable::UnwrapUnreachable;
 
 // @todo: add some validation statistics to decide if
@@ -47,7 +47,7 @@ pub(crate) fn are_table_headers_present(table: ElementRef) -> bool {
 // it may be that this is in fact the name & link
 // column
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub(crate) fn scrape_table(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
+pub(crate) fn scrape_table(body: &str) -> Vec<HttpDirectoryEntry> {
     let mut http_dir_entry = vec![];
 
     let html = Html::parse_document(body);
@@ -129,19 +129,19 @@ pub(crate) fn scrape_table(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDi
         }
     }
 
-    Ok(http_dir_entry)
+    http_dir_entry
 }
 
 // Tries to search in a <pre> formatted table that
 // contains <img> tag that represents the icon of
 // the file
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn scrape_pre_with_img(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
+fn scrape_pre_with_img(body: &str) -> Result<Vec<HttpDirectoryEntry>> {
     let mut should_be_considered_valid = false;
     let mut http_dir_entry = vec![];
 
     let html = Html::parse_document(body);
-    let pre_selector = Selector::parse("pre")?;
+    let pre_selector = Selector::parse("pre").with_selector("pre")?;
     let pre_iter = html.select(&pre_selector);
 
     for pre in pre_iter {
@@ -279,11 +279,11 @@ fn strip_until_stop<'a>(line: &'a str, stop: &str, remove: bool) -> &'a str {
 // Tries to search in a basic <pre> formatted table
 // without any <img> tag
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn scrape_pre_simple(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
+fn scrape_pre_simple(body: &str) -> Result<Vec<HttpDirectoryEntry>> {
     let mut http_dir_entry = vec![];
 
     let html = Html::parse_document(body);
-    let pre_selector = Selector::parse("pre")?;
+    let pre_selector = Selector::parse("pre").with_selector("pre")?;
     let pre_iter = html.select(&pre_selector);
 
     for pre in pre_iter {
@@ -315,7 +315,7 @@ fn scrape_pre_simple(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError
 // to recognize (if possible) entries of files, directories or
 // a parent directory and fill a vector of `HttpDirectoryEntry`
 // accordingly
-pub fn scrape_body(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> {
+pub fn scrape_body(body: &str) -> Result<Vec<HttpDirectoryEntry>> {
     match SiteType::detect(body) {
         SiteType::H5ai(version) => {
             info!("H5ai powered version {version} website detected");
@@ -332,7 +332,7 @@ pub fn scrape_body(body: &str) -> Result<Vec<HttpDirectoryEntry>, HttpDirError> 
         SiteType::NotNamed(html) => match html {
             PureHtml::Table => {
                 info!("Body has <table> tag");
-                scrape_table(body)
+                Ok(scrape_table(body))
             }
             PureHtml::Pre => {
                 info!("Body has <pre> tag");

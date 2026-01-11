@@ -1,8 +1,8 @@
 # *httpdirectory*'s readme
 
-This project is in an early stage of development but is already
-correct on many websites: the ~400 debian mirrors I could join
-were correctly interpreted
+This project can interpret correctly roughly 400 debian mirrors in
+the wild. It has a coverage percentage above 90%.
+Contributions are very welcomed.
 
 ## Description
 
@@ -46,18 +46,20 @@ DIR       -  2023-07-25 07:43  trixie/
 
 ## Usage
 
-First obtain a directory from an url using `HttpDirectory::new(url)`
-method, then you can use `dirs()`, `files()`, `parent_directory()` or
-`filter_by_name()`, `cd()`, `sort_by_name()`, `sort_by_date()`,
-`sort_by_size()` to get respectively all directories, all files, the
-`ParentDirectory`, filtering by the name (with a Regex), changing
+First obtain a directory from an url using `HttpDirectory::new(url, timeout_s)`
+method where url is a `&str` representing the HTTP url and `timeout_s` is an
+`Option<u64>` timeout value where `None` is no timeout at all or fix a timeout
+in seconds (ie: `Some(30)` for instance). Once done then you can use `dirs()`,
+`files()`, `parent_directory()` or `filter_by_name()`, `cd()`, `sort_by_name()`,
+`sort_by_date()`, `sort_by_size()` to get respectively all directories, all files,
+the `ParentDirectory`, filtering by the name (with a Regex), changing
 directory, sorting by name, by date or by size of this `HttpDirectory`
 listing entries:
 
 ```rust
   use httpdirectory::httpdirectory::HttpDirectory;
   async fn first_example() {
-    if let Ok(httpdir) = HttpDirectory::new("https://cloud.debian.org/images/cloud/").await {
+    if let Ok(httpdir) = HttpDirectory::new("https://cloud.debian.org/images/cloud/", Some(30)).await {
         println!("{:?}", httpdir.dirs());
     }
   }

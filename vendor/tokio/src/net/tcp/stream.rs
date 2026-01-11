@@ -1070,6 +1070,13 @@ impl TcpStream {
     /// Successive calls return the same data. This is accomplished by passing
     /// `MSG_PEEK` as a flag to the underlying `recv` system call.
     ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. If the method is used as the event in a
+    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// completes first, then it is guaranteed that no peek was performed, and
+    /// that `buf` has not been modified.
+    ///
     /// # Examples
     ///
     /// ```no_run
@@ -1278,9 +1285,20 @@ impl TcpStream {
         /// If `SO_LINGER` is not specified, and the stream is closed, the system handles the call in a
         /// way that allows the process to continue as quickly as possible.
         ///
+        /// This option is deprecated because setting `SO_LINGER` on a socket used with Tokio is
+        /// always incorrect as it leads to blocking the thread when the socket is closed. For more
+        /// details, please see:
+        ///
+        /// > Volumes of communications have been devoted to the intricacies of `SO_LINGER` versus
+        /// > non-blocking (`O_NONBLOCK`) sockets. From what I can tell, the final word is: don't
+        /// > do it. Rely on the `shutdown()`-followed-by-`read()`-eof technique instead.
+        /// >
+        /// > From [The ultimate `SO_LINGER` page, or: why is my tcp not reliable](https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable)
+        ///
         /// # Examples
         ///
         /// ```no_run
+        /// # #![allow(deprecated)]
         /// use tokio::net::TcpStream;
         ///
         /// # async fn dox() -> Result<(), Box<dyn std::error::Error>> {
@@ -1290,6 +1308,7 @@ impl TcpStream {
         /// # Ok(())
         /// # }
         /// ```
+        #[deprecated = "`SO_LINGER` causes the socket to block the thread on drop"]
         pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
             socket2::SockRef::from(self).set_linger(dur)
         }

@@ -24,6 +24,9 @@ enum Output {
     Text,
 }
 
+// Based on sysexits.h
+const USAGE: i32 = 64;
+
 fn query<T: Read>(input: &Input, output: &Output, selector: &Selector, file: &mut T) -> bool {
     let mut html = String::new();
     file.read_to_string(&mut html).unwrap();
@@ -66,17 +69,25 @@ fn main() {
     opts.optflag("t", "text", "output text of elements");
     opts.optflag("h", "help", "this cruft");
     opts.optopt("", "install-man-page", "install real documentation", "PATH");
+    opts.optflag("", "version", "output version number");
 
     let args: Vec<String> = env::args().collect();
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
-        Err(f) => panic!("{}", f.to_string()),
+        Err(f) => {
+            eprintln!("{}", f);
+            process::exit(USAGE);
+        }
     };
     if matches.opt_present("h") {
         print!(
             "{}",
             opts.usage("Usage: scraper [options] SELECTOR [FILE ...]")
         );
+        return;
+    }
+    if matches.opt_present("version") {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         return;
     }
 
@@ -113,10 +124,16 @@ fn main() {
         Output::Html
     };
 
-    let selector = matches.free.first().expect("missing selector");
+    let selector = matches.free.first().unwrap_or_else(|| {
+        eprintln!("missing selector");
+        process::exit(USAGE);
+    });
     let files = &matches.free[1..];
 
-    let selector = Selector::parse(selector).unwrap();
+    let selector = Selector::parse(selector).unwrap_or_else(|e| {
+        eprintln!("failed to parse selector: {}", e);
+        process::exit(USAGE);
+    });
 
     let matched = if files.is_empty() {
         query(&input, &output, &selector, &mut io::stdin())

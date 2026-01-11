@@ -35,7 +35,8 @@ use crate::{
     FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout, Ptr, TryFromBytes, ValidityError,
 };
 
-/// Projects the type of the field at `Index` in `Self`.
+/// Projects the type of the field at `Index` in `Self` without regard for field
+/// privacy.
 ///
 /// The `Index` parameter is any sort of handle that identifies the field; its
 /// definition is the obligation of the implementer.
@@ -529,6 +530,63 @@ macro_rules! assert_size_eq {
     }};
 }
 
+/// Translates an identifier or tuple index into a numeric identifier.
+#[doc(hidden)] // `#[macro_export]` bypasses this module's `#[doc(hidden)]`.
+#[macro_export]
+macro_rules! ident_id {
+    ($field:ident) => {
+        $crate::util::macro_util::hash_name(stringify!($field))
+    };
+    ($field:literal) => {
+        $field
+    };
+}
+
+/// Computes the hash of a string.
+///
+/// NOTE(#2749) on hash collisions: This function's output only needs to be
+/// deterministic within a particular compilation. Thus, if a user ever reports
+/// a hash collision (very unlikely given the <= 16-byte special case), we can
+/// strengthen the hash function at that point and publish a new version. Since
+/// this is computed at compile time on small strings, we can easily use more
+/// expensive and higher-quality hash functions if need be.
+#[inline(always)]
+#[must_use]
+#[allow(clippy::as_conversions, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+pub const fn hash_name(name: &str) -> i128 {
+    let name = name.as_bytes();
+
+    // We guarantee freedom from hash collisions between any two strings of
+    // length 16 or less by having the hashes of such strings be equal to
+    // their value. There is still a possibility that such strings will have
+    // the same value as the hash of a string of length > 16.
+    if name.len() <= size_of::<u128>() {
+        let mut bytes = [0u8; 16];
+
+        let mut i = 0;
+        while i < name.len() {
+            bytes[i] = name[i];
+            i += 1;
+        }
+
+        return i128::from_ne_bytes(bytes);
+    };
+
+    // An implementation of FxHasher, although returning a u128. Probably
+    // not as strong as it could be, but probably more collision resistant
+    // than normal 64-bit FxHasher.
+    let mut hash = 0u128;
+    let mut i = 0;
+    while i < name.len() {
+        // This is just FxHasher's `0x517cc1b727220a95` constant
+        // concatenated back-to-back.
+        const K: u128 = 0x517cc1b727220a95517cc1b727220a95;
+        hash = (hash.rotate_left(5) ^ (name[i] as u128)).wrapping_mul(K);
+        i += 1;
+    }
+    i128::from_ne_bytes(hash.to_ne_bytes())
+}
+
 /// Is a given source a valid instance of `Dst`?
 ///
 /// If so, returns `src` casted to a `Ptr<Dst, _>`. Otherwise returns `None`.
@@ -571,27 +629,14 @@ where
 {
     static_assert!(Src, Dst => mem::size_of::<Dst>() == mem::size_of::<Src>());
 
-    // SAFETY: This is a pointer cast, satisfying the following properties:
-    // - `p as *mut Dst` addresses a subset of the `bytes` addressed by `src`,
-    //   because we assert above that the size of `Dst` equal to the size of
-    //   `Src`.
-    // - `p as *mut Dst` is a provenance-preserving cast
-    #[allow(clippy::multiple_unsafe_ops_per_block)]
-    let c_ptr = unsafe { src.cast_unsized(|p| cast!(p)) };
+    let c_ptr = src.cast::<_, crate::pointer::cast::CastSized, _>();
 
     match c_ptr.try_into_valid() {
         Ok(ptr) => Ok(ptr),
         Err(err) => {
             // Re-cast `Ptr<Dst>` to `Ptr<Src>`.
             let ptr = err.into_src();
-            // SAFETY: This is a pointer cast, satisfying the following
-            // properties:
-            // - `p as *mut Src` addresses a subset of the `bytes` addressed by
-            //   `ptr`, because we assert above that the size of `Dst` is equal
-            //   to the size of `Src`.
-            // - `p as *mut Src` is a provenance-preserving cast
-            #[allow(clippy::multiple_unsafe_ops_per_block)]
-            let ptr = unsafe { ptr.cast_unsized(|p| cast!(p)) };
+            let ptr = ptr.cast::<_, crate::pointer::cast::CastSized, _>();
             // SAFETY: `ptr` is `src`, and has the same alignment invariant.
             let ptr = unsafe { ptr.assume_alignment::<I::Alignment>() };
             // SAFETY: `ptr` is `src` and has the same validity invariant.
@@ -637,18 +682,7 @@ where
     // initialized.
     let ptr = unsafe { ptr.assume_validity::<invariant::Initialized>() };
 
-    // SAFETY: `MaybeUninit<T>` and `T` have the same size [1], so this cast
-    // preserves the referent's size. This cast preserves provenance.
-    //
-    // [1] Per https://doc.rust-lang.org/1.81.0/std/mem/union.MaybeUninit.html#layout-1:
-    //
-    //   `MaybeUninit<T>` is guaranteed to have the same size, alignment, and
-    //   ABI as `T`
-    let ptr: Ptr<'_, Dst, _> = unsafe {
-        ptr.cast_unsized(|ptr: crate::pointer::PtrInner<'_, mem::MaybeUninit<Dst>>| {
-            ptr.cast_sized()
-        })
-    };
+    let ptr: Ptr<'_, Dst, _> = ptr.cast::<_, crate::pointer::cast::CastSized, _>();
 
     if Dst::is_bit_valid(ptr.forget_aligned()) {
         // SAFETY: Since `Dst::is_bit_valid`, we know that `ptr`'s referent is

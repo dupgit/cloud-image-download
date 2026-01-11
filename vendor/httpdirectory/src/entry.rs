@@ -1,9 +1,8 @@
-use crate::httpdirectory::Sorting;
 use chrono::NaiveDateTime;
-use log::{error, trace};
 use regex::Regex;
 use std::sync::LazyLock;
 use std::{cmp::Ordering, fmt};
+use tracing::{error, trace};
 use unwrap_unreachable::UnwrapUnreachable;
 
 /// Defines an Entry for a file or a directory
@@ -146,6 +145,43 @@ fn capture_size_and_unit(size: &str) -> Option<(String, usize)> {
     }
 }
 
+// new_size must contain a number with a dot ie: 423.3
+// real_size contains the value of a modifier: k or Kib stands for 1024 bytes
+// see capture_size_and_unit() function above.
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation)]
+fn parse_float_to_usize(new_size: &str, real_size: usize) -> usize {
+    match new_size.parse::<f64>() {
+        Ok(number) => {
+            if number.signum().is_finite()
+                && number < 18_446_744_073_709_551_615.0
+                && number > -18_446_744_073_709_551_615.0
+            {
+                // number is not Nan nor ∞
+                // We know that .abs() will return a positive value
+                // if number is greater than `usize::MAX` then number
+                // is truncated to usize::MAX
+                return real_size * ((number.abs() * 10.0) as usize) / 10;
+            }
+            0
+        }
+        Err(e) => {
+            error!("error parsing '{new_size}' into usize: {e}");
+            0
+        }
+    }
+}
+
+fn parse_to_usize(new_size: &str, real_size: usize) -> usize {
+    match new_size.parse::<usize>() {
+        Ok(number) => real_size * number,
+        Err(e) => {
+            error!("error parsing '{new_size}' into usize: {e}");
+            0
+        }
+    }
+}
+
 /// Returns the apparent size as a usize number.
 /// It is not an accurate size as 42K results in
 /// 42 * 1024 = 43008 (the real size in bytes may
@@ -153,55 +189,33 @@ fn capture_size_and_unit(size: &str) -> Option<(String, usize)> {
 /// In case the size is greater than `usize::MAX`
 /// it may be truncated to that value
 #[must_use]
-#[allow(clippy::cast_sign_loss)]
-#[allow(clippy::cast_possible_truncation)]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn apparent_size(size: &str) -> usize {
+    // Shortly determine if size is from a directory
+    if size.contains('-') {
+        return 0;
+    }
+
     let real_size: usize;
     let new_size: String;
-    let my_size = size.to_lowercase();
 
-    if my_size.contains('-') {
-        // Directory
-        return 0;
-    } else if let Some((captured_size, captured_modifier)) = capture_size_and_unit(&my_size) {
-        trace!("Detected size: {captured_size}, modifier: {captured_modifier}");
-        real_size = captured_modifier;
-        new_size = captured_size;
-    } else {
-        return 0;
+    match capture_size_and_unit(&size.to_lowercase()) {
+        Some((captured_size, captured_modifier)) => {
+            trace!("Detected size: {captured_size}, modifier: {captured_modifier}");
+            real_size = captured_modifier;
+            new_size = captured_size.trim().to_string();
+        }
+        None => {
+            return 0;
+        }
     }
 
-    let new_size = new_size.trim();
     if new_size.contains('.') {
-        match new_size.parse::<f64>() {
-            Ok(number) => {
-                if number.signum().is_finite()
-                    && number < 18_446_744_073_709_551_615.0
-                    && number > -18_446_744_073_709_551_615.0
-                {
-                    // number is not Nan nor ∞
-                    // We know that .abs() will return a positive value
-                    // if number is greater than `usize::MAX` then number
-                    // is truncated to usize::MAX
-                    return real_size * ((number.abs() * 10.0) as usize) / 10;
-                }
-                return 0;
-            }
-            Err(e) => {
-                error!("error parsing '{new_size}' into usize: {e}");
-                return 0;
-            }
-        }
+        return parse_float_to_usize(&new_size, real_size);
     } else if !new_size.is_empty() {
-        match new_size.parse::<usize>() {
-            Ok(number) => return real_size * number,
-            Err(e) => {
-                error!("error parsing '{new_size}' into usize: {e}");
-                return 0;
-            }
-        }
+        return parse_to_usize(&new_size, real_size);
     }
+
     0
 }
 
@@ -271,28 +285,31 @@ impl Entry {
 
     /// Compares two `Entry` by name and returns an `Ordering`
     #[must_use]
-    pub fn cmp_by_name(&self, other: &Self, order: &Sorting) -> Ordering {
-        match order {
-            Sorting::Ascending => self.name.cmp(&other.name),
-            Sorting::Descending => other.name.cmp(&self.name),
+    pub fn cmp_by_name(&self, other: &Self, ascending: bool) -> Ordering {
+        if ascending {
+            self.name.cmp(&other.name)
+        } else {
+            other.name.cmp(&self.name)
         }
     }
 
     /// Compares two `Entry` by date and returns an `Ordering`
     #[must_use]
-    pub fn cmp_by_date(&self, other: &Self, order: &Sorting) -> Ordering {
-        match order {
-            Sorting::Ascending => self.date.cmp(&other.date),
-            Sorting::Descending => other.date.cmp(&self.date),
+    pub fn cmp_by_date(&self, other: &Self, ascending: bool) -> Ordering {
+        if ascending {
+            self.date.cmp(&other.date)
+        } else {
+            other.date.cmp(&self.date)
         }
     }
 
     /// Compares two `Entry` by size and returns an `Ordering`
     #[must_use]
-    pub fn cmp_by_size(&self, other: &Self, order: &Sorting) -> Ordering {
-        match order {
-            Sorting::Ascending => self.size.cmp(&other.size),
-            Sorting::Descending => other.size.cmp(&self.size),
+    pub fn cmp_by_size(&self, other: &Self, ascending: bool) -> Ordering {
+        if ascending {
+            self.size.cmp(&other.size)
+        } else {
+            other.size.cmp(&self.size)
         }
     }
 }
@@ -308,7 +325,7 @@ impl fmt::Display for Entry {
 
 #[cfg(test)]
 mod tests {
-    use {super::Entry, crate::httpdirectory::Sorting, std::cmp::Ordering, unwrap_unreachable::UnwrapUnreachable};
+    use {super::Entry, std::cmp::Ordering, unwrap_unreachable::UnwrapUnreachable};
     #[test]
     fn test_apparent_size_float() {
         let entry = Entry::new("name", "link", "2025-05-20 20:19", "5.0K");
@@ -486,10 +503,10 @@ mod tests {
         let entry1 = Entry::new("name", "link", "2025-05-20 20:19", "112");
         let entry2 = Entry::new("othername", "link", "2025-05-20 20:19", "112");
 
-        assert_eq!(entry1.cmp_by_name(&entry2, &Sorting::Ascending), Ordering::Less);
-        assert_eq!(entry2.cmp_by_name(&entry1, &Sorting::Ascending), Ordering::Greater);
-        assert_eq!(entry1.cmp_by_name(&entry2, &Sorting::Descending), Ordering::Greater);
-        assert_eq!(entry2.cmp_by_name(&entry1, &Sorting::Descending), Ordering::Less);
+        assert_eq!(entry1.cmp_by_name(&entry2, true), Ordering::Less);
+        assert_eq!(entry2.cmp_by_name(&entry1, true), Ordering::Greater);
+        assert_eq!(entry1.cmp_by_name(&entry2, false), Ordering::Greater);
+        assert_eq!(entry2.cmp_by_name(&entry1, false), Ordering::Less);
     }
 
     #[test]
@@ -497,10 +514,10 @@ mod tests {
         let entry1 = Entry::new("name", "link", "2025-05-21 03:45", "112");
         let entry2 = Entry::new("othername", "link", "2025-05-20 20:19", "112");
 
-        assert_eq!(entry1.cmp_by_date(&entry2, &Sorting::Ascending), Ordering::Greater);
-        assert_eq!(entry2.cmp_by_date(&entry1, &Sorting::Ascending), Ordering::Less);
-        assert_eq!(entry1.cmp_by_date(&entry2, &Sorting::Descending), Ordering::Less);
-        assert_eq!(entry2.cmp_by_date(&entry1, &Sorting::Descending), Ordering::Greater);
+        assert_eq!(entry1.cmp_by_date(&entry2, true), Ordering::Greater);
+        assert_eq!(entry2.cmp_by_date(&entry1, true), Ordering::Less);
+        assert_eq!(entry1.cmp_by_date(&entry2, false), Ordering::Less);
+        assert_eq!(entry2.cmp_by_date(&entry1, false), Ordering::Greater);
     }
 
     #[test]
@@ -508,10 +525,10 @@ mod tests {
         let entry1 = Entry::new("name", "link", "2025-05-21 03:45", "4.0k");
         let entry2 = Entry::new("othername", "link", "2025-05-20 20:19", "112");
 
-        assert_eq!(entry1.cmp_by_size(&entry2, &Sorting::Ascending), Ordering::Greater);
-        assert_eq!(entry2.cmp_by_size(&entry1, &Sorting::Ascending), Ordering::Less);
-        assert_eq!(entry1.cmp_by_size(&entry2, &Sorting::Descending), Ordering::Less);
-        assert_eq!(entry2.cmp_by_size(&entry1, &Sorting::Descending), Ordering::Greater);
+        assert_eq!(entry1.cmp_by_size(&entry2, true), Ordering::Greater);
+        assert_eq!(entry2.cmp_by_size(&entry1, true), Ordering::Less);
+        assert_eq!(entry1.cmp_by_size(&entry2, false), Ordering::Less);
+        assert_eq!(entry2.cmp_by_size(&entry1, false), Ordering::Greater);
     }
 
     #[test]

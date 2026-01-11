@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "base16ct"
-version = "0.3.0"
+version = "1.0.0"
 authors = ["RustCrypto Developers"]
 build = false
 autolib = false

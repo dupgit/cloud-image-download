@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.71.0"
 name = "html5ever"
-version = "0.35.0"
+version = "0.36.1"
 authors = ["The html5ever Project Developers"]
 build = false
 autolib = false
@@ -36,6 +36,9 @@ categories = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/servo/html5ever"
+
+[features]
+trace_tokenizer = []
 
 [lib]
 name = "html5ever"
@@ -70,16 +73,10 @@ harness = false
 version = "0.4"
 
 [dependencies.markup5ever]
-version = "0.35.0"
-
-[dependencies.match_token]
-version = "0.35.0"
+version = "0.36.1"
 
 [dev-dependencies.criterion]
-version = "0.6"
+version = "0.7"
 
 [dev-dependencies.typed-arena]
 version = "2.0.2"
-
-[features]
-trace_tokenizer = []

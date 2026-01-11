@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "scraper"
-version = "0.24.0"
+version = "0.25.0"
 authors = ["June McEnroe <june@causal.agency>"]
 build = false
 autolib = false
@@ -29,7 +29,7 @@ keywords = [
     "scraping",
 ]
 license = "ISC"
-repository = "https://github.com/causal-agent/scraper"
+repository = "https://github.com/rust-scraper/scraper"
 
 [features]
 atomic = []
@@ -60,30 +60,30 @@ name = "fragment"
 path = "examples/fragment.rs"
 
 [dependencies.cssparser]
-version = "0.35.0"
+version = "0.36.0"
 
 [dependencies.ego-tree]
 version = "0.10.0"
 
 [dependencies.getopts]
-version = "0.2.22"
+version = "0.2.24"
 optional = true
 
 [dependencies.html5ever]
-version = "0.35.0"
+version = "0.36.0"
 
 [dependencies.indexmap]
-version = "2.7.1"
+version = "2.12.1"
 optional = true
 
 [dependencies.precomputed-hash]
 version = "0.1.1"
 
 [dependencies.selectors]
-version = "0.31.0"
+version = "0.33.0"
 
 [dependencies.serde]
-version = "1.0.218"
+version = "1.0.228"
 optional = true
 
 [dependencies.tendril]

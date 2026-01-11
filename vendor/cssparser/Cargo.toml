@@ -11,9 +11,9 @@
 
 [package]
 edition = "2018"
-rust-version = "1.63"
+rust-version = "1.68"
 name = "cssparser"
-version = "0.35.0"
+version = "0.36.0"
 authors = ["Simon Sapin <simon.sapin@exyr.org>"]
 build = false
 exclude = [
@@ -36,9 +36,10 @@ keywords = [
 license = "MPL-2.0"
 repository = "https://github.com/servo/rust-cssparser"
 
-[profile.profiling]
-debug = 2
-inherits = "release"
+[features]
+bench = []
+dummy_match_byte = []
+skip_long_tests = []
 
 [lib]
 name = "cssparser"
@@ -59,7 +60,7 @@ optional = true
 default-features = false
 
 [dependencies.phf]
-version = "0.11.2"
+version = "0.13.1"
 features = ["macros"]
 
 [dependencies.serde]
@@ -79,7 +80,6 @@ version = "0.8"
 [dev-dependencies.serde_json]
 version = "1.0.25"
 
-[features]
-bench = []
-dummy_match_byte = []
-skip_long_tests = []
+[profile.profiling]
+debug = 2
+inherits = "release"

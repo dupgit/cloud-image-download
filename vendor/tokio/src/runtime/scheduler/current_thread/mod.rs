@@ -387,12 +387,7 @@ impl Context {
             core.metrics.about_to_park();
             core.submit_metrics(handle);
 
-            let (c, ()) = self.enter(core, || {
-                driver.park(&handle.driver);
-                self.defer.wake();
-            });
-
-            core = c;
+            core = self.park_internal(core, handle, &mut driver, None);
 
             core.metrics.unparked();
             core.submit_metrics(handle);
@@ -413,12 +408,27 @@ impl Context {
 
         core.submit_metrics(handle);
 
-        let (mut core, ()) = self.enter(core, || {
-            driver.park_timeout(&handle.driver, Duration::from_millis(0));
+        core = self.park_internal(core, handle, &mut driver, Some(Duration::from_millis(0)));
+
+        core.driver = Some(driver);
+        core
+    }
+
+    fn park_internal(
+        &self,
+        core: Box<Core>,
+        handle: &Handle,
+        driver: &mut Driver,
+        duration: Option<Duration>,
+    ) -> Box<Core> {
+        let (core, ()) = self.enter(core, || {
+            match duration {
+                Some(dur) => driver.park_timeout(&handle.driver, dur),
+                None => driver.park(&handle.driver),
+            }
             self.defer.wake();
         });
 
-        core.driver = Some(driver);
         core
     }
 
@@ -474,6 +484,7 @@ impl Handle {
     /// Spawn a task which isn't safe to send across thread boundaries onto the runtime.
     ///
     /// # Safety
+    ///
     /// This should only be used when this is a `LocalRuntime` or in another case where the runtime
     /// provably cannot be driven from or moved to different threads from the one on which the task
     /// is spawned.
@@ -488,10 +499,12 @@ impl Handle {
         F: crate::future::Future + 'static,
         F::Output: 'static,
     {
-        let (handle, notified) = me
-            .shared
-            .owned
-            .bind_local(future, me.clone(), id, spawned_at);
+        // Safety: the caller guarantees that the this is only called on a `LocalRuntime`.
+        let (handle, notified) = unsafe {
+            me.shared
+                .owned
+                .bind_local(future, me.clone(), id, spawned_at)
+        };
 
         me.task_hooks.spawn(&TaskMeta {
             id,
@@ -616,13 +629,11 @@ cfg_unstable_metrics! {
     }
 }
 
-cfg_unstable! {
-    use std::num::NonZeroU64;
+use std::num::NonZeroU64;
 
-    impl Handle {
-        pub(crate) fn owned_id(&self) -> NonZeroU64 {
-            self.shared.owned.id
-        }
+impl Handle {
+    pub(crate) fn owned_id(&self) -> NonZeroU64 {
+        self.shared.owned.id
     }
 }
 

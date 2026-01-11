@@ -1,23 +1,30 @@
 [private]
 default:
-  @just --list
+    @just --list
 
 name := "httpdirectory"
 
-# Alias definitions
+# Alias definitions for humans
+
 alias t := test
 alias d := document
 alias c := coverage
+alias ct := check-typos
+alias cc := check-commits
 alias p := publish
 alias e := example
 alias b := bench
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
-    cargo install cargo-release cargo-sbom cargo-tarpaulin cargo-nextest typos-cli
+    cargo install cargo-release cargo-sbom cargo-tarpaulin cargo-nextest typos-cli conventional_commits_linter
+
+# Linting commits from latest tag
+check-commits:
+    conventional_commits_linter --max-commit-title-length 75 $(git rev-list --tags --max-count=1)
 
 # Bumps {patch} (major, minor or patch) version number and does a release
-bump patch: check-typos
+bump patch: check-typos check-commits
     # Verifying that the MSRV is still Ok.
     cargo msrv verify
 
@@ -31,7 +38,7 @@ bump patch: check-typos
     cargo update
 
     # Bumping release version upon what has been asked on command line (major, minor or patch)
-    cargo release version {{patch}} --no-confirm --execute
+    cargo release version {{ patch }} --no-confirm --execute
 
     # Building, testing and building doc to ensure one can build with these dependencies
     cargo build --release
@@ -39,10 +46,10 @@ bump patch: check-typos
     cargo doc --no-deps
 
     # Generetaing a Software Bills of Materials in SPDX∘format (sorting will reduce the diff size and allow one to figure out what has really changed)
-    cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{name}}.sbom.spdx.json
+    cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{ name }}.sbom.spdx.json
 
     # Creating the release
-    git add Cargo.toml Cargo.lock {{name}}.sbom.spdx.json
+    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
 
@@ -74,7 +81,7 @@ coverage:
 
 # Runs benches (use module name in benches/ as bench_name)
 bench bench_name='integration_bench':
-    cargo bench --bench {{bench_name}} --features test-helpers
+    cargo bench --bench {{ bench_name }} --features test-helpers
 
 # Check for typos
 check-typos:
@@ -86,4 +93,4 @@ clippy:
 
 # Run examples with hotpath feature
 example example="debug_me":
-    cargo r --release --example {{example}} --features=hotpath
+    cargo r --release --example {{ example }} --features=hotpath

@@ -1,6 +1,6 @@
 [package]
 name = "scraper"
-version = "0.24.0"
+version = "0.25.0"
 edition = "2021"
 
 description = "HTML parsing and querying with CSS selectors"
@@ -9,21 +9,21 @@ keywords = ["html", "css", "selector", "scraping"]
 authors = ["June McEnroe <june@causal.agency>"]
 license = "ISC"
 
-repository = "https://github.com/causal-agent/scraper"
+repository = "https://github.com/rust-scraper/scraper"
 readme = "README.md"
 
 [dependencies]
-cssparser = "0.35.0"
+cssparser = "0.36.0"
 ego-tree = "0.10.0"
-html5ever = "0.35.0"
-indexmap = { version = "2.7.1", optional = true }
+html5ever = "0.36.0"
+indexmap = { version = "2.12.1", optional = true }
 precomputed-hash = "0.1.1"
-selectors = "0.31.0"
-serde = { version = "1.0.218", optional = true }
+selectors = "0.33.0"
+serde = { version = "1.0.228", optional = true }
 tendril = "0.4.3"
 
 [dependencies.getopts]
-version = "0.2.22"
+version = "0.2.24"
 optional = true
 
 [features]

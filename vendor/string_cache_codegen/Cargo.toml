@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "string_cache_codegen"
-version = "0.5.4"
+version = "0.6.1"
 authors = ["The Servo Project Developers"]
 build = false
 autolib = false
@@ -31,10 +31,10 @@ name = "string_cache_codegen"
 path = "lib.rs"
 
 [dependencies.phf_generator]
-version = "0.11"
+version = "0.13"
 
 [dependencies.phf_shared]
-version = "0.11"
+version = "0.13"
 
 [dependencies.proc-macro2]
 version = "1"

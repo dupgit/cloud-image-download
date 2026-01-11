@@ -22,6 +22,8 @@
     clippy::multiple_unsafe_ops_per_block,
     clippy::undocumented_unsafe_blocks
 )]
+// We defer to own discretion on type complexity.
+#![allow(clippy::type_complexity)]
 // Inlining format args isn't supported on our MSRV.
 #![allow(clippy::uninlined_format_args)]
 #![deny(
@@ -35,17 +37,24 @@
 )]
 #![recursion_limit = "128"]
 
+macro_rules! ident {
+    (($fmt:literal $(, $arg:expr)*), $span:expr) => {
+        syn::Ident::new(&format!($fmt $(, crate::ext::to_ident_str($arg))*), $span)
+    };
+}
+
 mod r#enum;
 mod ext;
 #[cfg(test)]
 mod output_tests;
 mod repr;
 
-use proc_macro2::{Span, TokenStream, TokenTree};
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
-    parse_quote, Attribute, Data, DataEnum, DataStruct, DataUnion, DeriveInput, Error, Expr,
-    ExprLit, ExprUnary, GenericParam, Ident, Lit, Meta, Path, Type, UnOp, WherePredicate,
+    parse_quote, spanned::Spanned as _, Attribute, Data, DataEnum, DataStruct, DataUnion,
+    DeriveInput, Error, Expr, ExprLit, ExprUnary, GenericParam, Ident, Lit, Meta, Path, Type, UnOp,
+    WherePredicate,
 };
 
 use crate::{ext::*, repr::*};
@@ -319,10 +328,8 @@ fn derive_known_layout_inner(
 
             // Generate a valid ident for a type-level handle to a field of a
             // given `name`.
-            let field_index = |name: &TokenStream| {
-                let name = to_ident_str(name);
-                Ident::new(&format!("__Zerocopy_Field_{}", name), ident.span())
-            };
+            let field_index =
+                |name: &TokenStream| ident!(("__Zerocopy_Field_{}", name), ident.span());
 
             let field_indices: Vec<_> =
                 fields.iter().map(|(_vis, name, _ty)| field_index(name)).collect();
@@ -337,6 +344,14 @@ fn derive_known_layout_inner(
 
             let field_impls = field_indices.iter().zip(&fields).map(|(idx, (_, _, ty))| quote! {
                 // SAFETY: `#ty` is the type of `#ident`'s field at `#idx`.
+                //
+                // We implement `Field` for each field of the struct to create a
+                // projection from the field index to its type. This allows us
+                // to refer to the field's type in a way that respects `Self`
+                // hygiene. If we just copy-pasted the tokens of `#ty`, we
+                // would not respect `Self` hygiene, as `Self` would refer to
+                // the helper struct we are generating, not the derive target
+                // type.
                 #[allow(deprecated)]
                 unsafe impl #impl_generics #zerocopy_crate::util::macro_util::Field<#idx> for #ident #ty_generics
                 where
@@ -350,6 +365,10 @@ fn derive_known_layout_inner(
             let leading_field_indices =
                 leading_fields.iter().map(|(_vis, name, _ty)| field_index(name));
 
+            // We use `Field` to project the type of the trailing field. This is
+            // required to ensure that if the field type uses `Self`, it
+            // resolves to the derive target type, not the helper struct we are
+            // generating.
             let trailing_field_ty = quote! {
                 <#ident #ty_generics as
                     #zerocopy_crate::util::macro_util::Field<#trailing_field_index>
@@ -464,11 +483,12 @@ fn derive_known_layout_inner(
 
     Ok(match &ast.data {
         Data::Struct(strct) => {
-            let require_trait_bound_on_field_types = if self_bounds == SelfBounds::SIZED {
-                FieldBounds::None
-            } else {
-                FieldBounds::TRAILING_SELF
-            };
+            let require_trait_bound_on_field_types =
+                if matches!(self_bounds, SelfBounds::All(&[Trait::Sized])) {
+                    FieldBounds::None
+                } else {
+                    FieldBounds::TRAILING_SELF
+                };
 
             // A bound on the trailing field is required, since structs are
             // unsized if their trailing field is unsized. Reflecting the layout
@@ -737,6 +757,125 @@ fn derive_split_at_inner(
     .build())
 }
 
+fn derive_has_field_struct_union(
+    ast: &DeriveInput,
+    data: &dyn DataExt,
+    zerocopy_crate: &Path,
+) -> TokenStream {
+    let fields = ast.data.fields();
+    if fields.is_empty() {
+        return quote! {};
+    }
+
+    let field_tokens = fields.iter().map(|(vis, ident, _)| {
+        let ident = ident!(("ẕ{}", ident), ident.span());
+        quote!(
+            #vis enum #ident {}
+        )
+    });
+
+    let variant_id: Box<Expr> = match &ast.data {
+        Data::Struct(_) => parse_quote!({ #zerocopy_crate::STRUCT_VARIANT_ID }),
+        Data::Union(_) => parse_quote!({ #zerocopy_crate::UNION_VARIANT_ID }),
+        _ => unreachable!(),
+    };
+
+    let is_repr_c_union = match &ast.data {
+        Data::Union(..) => {
+            StructUnionRepr::from_attrs(&ast.attrs).map(|repr| repr.is_c()).unwrap_or(false)
+        }
+        Data::Enum(..) | Data::Struct(..) => false,
+    };
+    let has_fields = fields.iter().map(move |(_, ident, ty)| {
+        let field_token = ident!(("ẕ{}", ident), ident.span());
+        let field: Box<Type> = parse_quote!(#field_token);
+        let field_id: Box<Expr> = parse_quote!({ #zerocopy_crate::ident_id!(#ident) });
+        ImplBlockBuilder::new(
+            ast,
+            data,
+            Trait::HasField {
+                variant_id: variant_id.clone(),
+                field: field.clone(),
+                field_id: field_id.clone(),
+            },
+            FieldBounds::None,
+            zerocopy_crate,
+        )
+        .inner_extras(quote! {
+            type Type = #ty;
+
+            #[inline(always)]
+            fn project(slf: #zerocopy_crate::pointer::PtrInner<'_, Self>) -> *mut Self::Type {
+                let slf = slf.as_ptr();
+                // SAFETY: By invariant on `PtrInner`, `slf` is a non-null
+                // pointer whose referent is zero-sized or lives in a valid
+                // allocation. Since `#ident` is a struct or union field of
+                // `Self`, this projection preserves or shrinks the referent
+                // size, and so the resulting referent also fits in the same
+                // allocation.
+                unsafe { #zerocopy_crate::util::macro_util::core_reexport::ptr::addr_of_mut!((*slf).#ident) }
+            }
+        }).outer_extras(if is_repr_c_union {
+            let ident = &ast.ident;
+            let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+            quote! {
+                // SAFETY: All `repr(C)` union fields exist at offset 0 within
+                // the union [1], and so any union projection is actually a cast
+                // (ie, preserves address).
+                //
+                // [1] Per
+                //     https://doc.rust-lang.org/1.92.0/reference/type-layout.html#reprc-unions,
+                //     it's not *technically* guaranteed that non-maximally-
+                //     sized fields are at offset 0, but it's clear that this is
+                //     the intention of `repr(C)` unions. It says:
+                //
+                //     > A union declared with `#[repr(C)]` will have the same
+                //     > size and alignment as an equivalent C union declaration
+                //     > in the C language for the target platform.
+                //
+                //     Note that this only mentions size and alignment, not layout.
+                //     However, C unions *do* guarantee that all fields start at
+                //     offset 0. [2]
+                //
+                //     This is also reinforced by
+                //     https://doc.rust-lang.org/1.92.0/reference/items/unions.html#r-items.union.fields.offset:
+                //
+                //     > Fields might have a non-zero offset (except when the C
+                //     > representation is used); in that case the bits starting
+                //     > at the offset of the fields are read
+                //
+                // [2] Per https://port70.net/~nsz/c/c11/n1570.html#6.7.2.1p16:
+                //
+                //     > The size of a union is sufficient to contain the
+                //     > largest of its members. The value of at most one of the
+                //     > members can be stored in a union object at any time. A
+                //     > pointer to a union object, suitably converted, points
+                //     > to each of its members (or if a member is a bit- field,
+                //     > then to the unit in which it resides), and vice versa.
+                //
+                // FIXME(https://github.com/rust-lang/unsafe-code-guidelines/issues/595):
+                // Cite the documentation once it's updated.
+                unsafe impl #impl_generics #zerocopy_crate::pointer::cast::Cast<#ident #ty_generics, #ty>
+                    for #zerocopy_crate::pointer::cast::Projection<#field, { #zerocopy_crate::UNION_VARIANT_ID }, #field_id>
+                #where_clause
+                {
+                }
+            }
+        } else {
+            quote! {}
+        })
+        .build()
+    });
+
+    quote! {
+        #[allow(non_camel_case_types)]
+        const _: () = {
+            #(#field_tokens)*
+            #(#has_fields)*
+        };
+    }
+}
+
 /// A struct is `TryFromBytes` if:
 /// - all fields are `TryFromBytes`
 fn derive_try_from_bytes_struct(
@@ -766,41 +905,10 @@ fn derive_try_from_bytes_struct(
                     use #zerocopy_crate::pointer::PtrInner;
 
                     true #(&& {
-                        // SAFETY:
-                        // - `project` is a field projection, and so it
-                        //   addresses a subset of the bytes addressed by `slf`
-                        // - ..., and so it preserves provenance
-                        // - ..., and `*slf` is a struct, so `UnsafeCell`s exist
-                        //   at the same byte ranges in the returned pointer's
-                        //   referent as they do in `*slf`
-                        let field_candidate = unsafe {
-                            let project = |slf: PtrInner<'_, Self>| {
-                                let slf = slf.as_non_null().as_ptr();
-                                let field = core_reexport::ptr::addr_of_mut!((*slf).#field_names);
-                                // SAFETY: `cast_unsized_unchecked` promises
-                                // that `slf` will either reference a zero-sized
-                                // byte range, or else will reference a byte
-                                // range that is entirely contained within an
-                                // allocated object. In either case, this
-                                // guarantees that field projection will not
-                                // wrap around the address space, and so `field`
-                                // will be non-null.
-                                let ptr = unsafe { core_reexport::ptr::NonNull::new_unchecked(field) };
-                                // SAFETY:
-                                // 0. `ptr` addresses a subset of the bytes of
-                                //    `slf`, so by invariant on `slf: PtrInner`,
-                                //    if `ptr`'s referent is not zero sized,
-                                //    then `ptr` has valid provenance for its
-                                //    referent, which is entirely contained in
-                                //    some Rust allocation, `A`.
-                                // 1. By invariant on `slf: PtrInner`, if
-                                //    `ptr`'s referent is not zero sized, `A` is
-                                //    guaranteed to live for at least `'a`.
-                                unsafe { PtrInner::new(ptr) }
-                            };
-
-                            candidate.reborrow().cast_unsized_unchecked(project)
-                        };
+                        let field_candidate = candidate.reborrow().project::<
+                            _,
+                            { #zerocopy_crate::ident_id!(#field_names) }
+                        >();
 
                         <#field_tys as #zerocopy_crate::TryFromBytes>::is_bit_valid(field_candidate)
                     })*
@@ -815,6 +923,7 @@ fn derive_try_from_bytes_struct(
         zerocopy_crate,
     )
     .inner_extras(extras)
+    .outer_extras(derive_has_field_struct_union(ast, strct, zerocopy_crate))
     .build())
 }
 
@@ -851,40 +960,19 @@ fn derive_try_from_bytes_union(
 
                     false #(|| {
                         // SAFETY:
-                        // - `project` is a field projection, and so it
-                        //   addresses a subset of the bytes addressed by `slf`
-                        // - ..., and so it preserves provenance
                         // - Since `Self: Immutable` is enforced by
                         //   `self_type_trait_bounds`, neither `*slf` nor the
                         //   returned pointer's referent contain any
                         //   `UnsafeCell`s
+                        // - Both source and destination validity are
+                        //   `Initialized`, which is always a sound
+                        //   transmutation.
                         let field_candidate = unsafe {
-                            let project = |slf: PtrInner<'_, Self>| {
-                                let slf = slf.as_non_null().as_ptr();
-                                let field = core_reexport::ptr::addr_of_mut!((*slf).#field_names);
-                                // SAFETY: `cast_unsized_unchecked` promises
-                                // that `slf` will either reference a zero-sized
-                                // byte range, or else will reference a byte
-                                // range that is entirely contained within an
-                                // allocated object. In either case, this
-                                // guarantees that field projection will not
-                                // wrap around the address space, and so `field`
-                                // will be non-null.
-                                let ptr = unsafe { core_reexport::ptr::NonNull::new_unchecked(field) };
-                                // SAFETY:
-                                // 0. `ptr` addresses a subset of the bytes of
-                                //    `slf`, so by invariant on `slf: PtrInner`,
-                                //    if `ptr`'s referent is not zero sized,
-                                //    then `ptr` has valid provenance for its
-                                //    referent, which is entirely contained in
-                                //    some Rust allocation, `A`.
-                                // 1. By invariant on `slf: PtrInner`, if
-                                //    `ptr`'s referent is not zero sized, `A` is
-                                //    guaranteed to live for at least `'a`.
-                                unsafe { PtrInner::new(ptr) }
-                            };
-
-                            candidate.reborrow().cast_unsized_unchecked(project)
+                            candidate.reborrow().project_transmute_unchecked::<
+                                _,
+                                _,
+                                #zerocopy_crate::pointer::cast::Projection<_, { #zerocopy_crate::UNION_VARIANT_ID }, { #zerocopy_crate::ident_id!(#field_names) }>
+                            >()
                         };
 
                         <#field_tys as #zerocopy_crate::TryFromBytes>::is_bit_valid(field_candidate)
@@ -894,6 +982,7 @@ fn derive_try_from_bytes_union(
         });
     ImplBlockBuilder::new(ast, unn, Trait::TryFromBytes, field_type_trait_bounds, zerocopy_crate)
         .inner_extras(extras)
+        .outer_extras(derive_has_field_struct_union(ast, unn, zerocopy_crate))
         .build()
 }
 
@@ -921,7 +1010,7 @@ fn derive_try_from_bytes_enum(
         // required by `gen_trivial_is_bit_valid_unchecked`.
         (None, true) => unsafe { gen_trivial_is_bit_valid_unchecked(zerocopy_crate) },
         (None, false) => {
-            r#enum::derive_is_bit_valid(&ast.ident, &repr, &ast.generics, enm, zerocopy_crate)?
+            r#enum::derive_is_bit_valid(ast, &ast.ident, &repr, &ast.generics, enm, zerocopy_crate)?
         }
     };
 
@@ -964,7 +1053,7 @@ fn try_gen_trivial_is_bit_valid(
     // make this no longer true. To hedge against these, we include an explicit
     // `Self: FromBytes` check in the generated `is_bit_valid`, which is
     // bulletproof.
-    if top_level == Trait::FromBytes && ast.generics.params.is_empty() {
+    if matches!(top_level, Trait::FromBytes) && ast.generics.params.is_empty() {
         Some(quote!(
             // SAFETY: See inline.
             fn is_bit_valid<___ZerocopyAliasing>(
@@ -1533,9 +1622,10 @@ impl PaddingCheck {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 enum Trait {
     KnownLayout,
+    HasField { variant_id: Box<Expr>, field: Box<Type>, field_id: Box<Expr> },
     Immutable,
     TryFromBytes,
     FromZeros,
@@ -1560,6 +1650,7 @@ impl ToTokens for Trait {
         // [1] https://doc.rust-lang.org/1.81.0/std/fmt/trait.Debug.html#stability
         // [2] https://doc.rust-lang.org/beta/unstable-book/compiler-flags/fmt-debug.html
         let s = match self {
+            Trait::HasField { .. } => "HasField",
             Trait::KnownLayout => "KnownLayout",
             Trait::Immutable => "Immutable",
             Trait::TryFromBytes => "TryFromBytes",
@@ -1573,7 +1664,23 @@ impl ToTokens for Trait {
             Trait::SplitAt => "SplitAt",
         };
         let ident = Ident::new(s, Span::call_site());
-        tokens.extend(core::iter::once(TokenTree::Ident(ident)));
+        let arguments: Option<syn::AngleBracketedGenericArguments> = match self {
+            Trait::HasField { variant_id, field, field_id } => {
+                Some(parse_quote!(<#field, #variant_id, #field_id>))
+            }
+            Trait::KnownLayout
+            | Trait::Immutable
+            | Trait::TryFromBytes
+            | Trait::FromZeros
+            | Trait::FromBytes
+            | Trait::IntoBytes
+            | Trait::Unaligned
+            | Trait::Sized
+            | Trait::ByteHash
+            | Trait::ByteEq
+            | Trait::SplitAt => None,
+        };
+        tokens.extend(quote!(#ident #arguments));
     }
 }
 
@@ -1588,7 +1695,6 @@ impl Trait {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
 enum TraitBound {
     Slf,
     Other(Trait),
@@ -1606,7 +1712,6 @@ impl<'a> FieldBounds<'a> {
     const TRAILING_SELF: FieldBounds<'a> = FieldBounds::Trailing(&[TraitBound::Slf]);
 }
 
-#[derive(Debug, Eq, PartialEq)]
 enum SelfBounds<'a> {
     None,
     All(&'a [Trait]),
@@ -1620,16 +1725,19 @@ impl<'a> SelfBounds<'a> {
 }
 
 /// Normalizes a slice of bounds by replacing [`TraitBound::Slf`] with `slf`.
-fn normalize_bounds(slf: Trait, bounds: &[TraitBound]) -> impl '_ + Iterator<Item = Trait> {
+fn normalize_bounds<'a>(
+    slf: &'a Trait,
+    bounds: &'a [TraitBound],
+) -> impl 'a + Iterator<Item = Trait> {
     bounds.iter().map(move |bound| match bound {
-        TraitBound::Slf => slf,
-        TraitBound::Other(trt) => *trt,
+        TraitBound::Slf => slf.clone(),
+        TraitBound::Other(trt) => trt.clone(),
     })
 }
 
-struct ImplBlockBuilder<'a, D: DataExt> {
+struct ImplBlockBuilder<'a> {
     input: &'a DeriveInput,
-    data: &'a D,
+    data: &'a dyn DataExt,
     trt: Trait,
     field_type_trait_bounds: FieldBounds<'a>,
     zerocopy_crate: &'a Path,
@@ -1639,10 +1747,10 @@ struct ImplBlockBuilder<'a, D: DataExt> {
     outer_extras: Option<TokenStream>,
 }
 
-impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
+impl<'a> ImplBlockBuilder<'a> {
     fn new(
         input: &'a DeriveInput,
-        data: &'a D,
+        data: &'a dyn DataExt,
         trt: Trait,
         field_type_trait_bounds: FieldBounds<'a>,
         zerocopy_crate: &'a Path,
@@ -1759,12 +1867,12 @@ impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
             (FieldBounds::All(traits), _) => fields
                 .iter()
                 .map(|(_vis, _name, ty)| {
-                    bound_tt(ty, normalize_bounds(self.trt, traits), zerocopy_crate)
+                    bound_tt(ty, normalize_bounds(&self.trt, traits), zerocopy_crate)
                 })
                 .collect(),
             (FieldBounds::None, _) | (FieldBounds::Trailing(..), []) => vec![],
             (FieldBounds::Trailing(traits), [.., last]) => {
-                vec![bound_tt(last.2, normalize_bounds(self.trt, traits), zerocopy_crate)]
+                vec![bound_tt(last.2, normalize_bounds(&self.trt, traits), zerocopy_crate)]
             }
             (FieldBounds::Explicit(bounds), _) => bounds,
         };
@@ -1775,8 +1883,8 @@ impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
             .padding_check
             .and_then(|check| (!fields.is_empty()).then_some(check))
             .map(|check| {
-                let variant_types = variants.iter().map(|var| {
-                    let types = var.iter().map(|(_vis, _name, ty)| ty);
+                let variant_types = variants.iter().map(|(_, fields)| {
+                    let types = fields.iter().map(|(_vis, _name, ty)| ty);
                     quote!([#((#types)),*])
                 });
                 let validator_context = check.validator_macro_context();
@@ -1796,7 +1904,7 @@ impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
         let self_bounds: Option<WherePredicate> = match self.self_type_trait_bounds {
             SelfBounds::None => None,
             SelfBounds::All(traits) => {
-                Some(bound_tt(&parse_quote!(Self), traits.iter().copied(), zerocopy_crate))
+                Some(bound_tt(&parse_quote!(Self), traits.iter().cloned(), zerocopy_crate))
             }
         };
 
@@ -1841,7 +1949,7 @@ impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
 
         let inner_extras = self.inner_extras;
         let impl_tokens = quote! {
-            #[allow(deprecated)]
+            #[allow(deprecated, non_local_definitions)]
             // While there are not currently any warnings that this suppresses
             // (that we're aware of), it's good future-proofing hygiene.
             #[automatically_derived]
@@ -1855,10 +1963,14 @@ impl<'a, D: DataExt> ImplBlockBuilder<'a, D> {
             }
         };
 
-        if let Some(outer_extras) = self.outer_extras {
+        if let Some(outer_extras) = self.outer_extras.filter(|e| !e.is_empty()) {
             // So that any items defined in `#outer_extras` don't conflict with
             // existing names defined in this scope.
             quote! {
+                #[allow(deprecated, non_local_definitions)]
+                // While there are not currently any warnings that this suppresses
+                // (that we're aware of), it's good future-proofing hygiene.
+                #[automatically_derived]
                 const _: () = {
                     #impl_tokens
 

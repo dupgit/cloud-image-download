@@ -319,12 +319,16 @@
     any(__ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS, miri),
     feature(layout_for_ptr)
 )]
+#![cfg_attr(all(test, __ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS), feature(test))]
 
 // This is a hack to allow zerocopy-derive derives to work in this crate. They
 // assume that zerocopy is linked as an extern crate, so they access items from
 // it as `zerocopy::Xxx`. This makes that still work.
 #[cfg(any(feature = "derive", test))]
 extern crate self as zerocopy;
+
+#[cfg(all(test, __ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS))]
+extern crate test;
 
 #[doc(hidden)]
 #[macro_use]
@@ -372,6 +376,8 @@ use core::{
 use std::io;
 
 use crate::pointer::invariant::{self, BecauseExclusive};
+#[doc(hidden)]
+pub use crate::pointer::PtrInner;
 pub use crate::{
     byte_slice::*,
     byteorder::*,
@@ -1086,6 +1092,60 @@ const _: () = unsafe {
 const _: () = unsafe {
     unsafe_impl_known_layout!(T: ?Sized + KnownLayout => #[repr(T::MaybeUninit)] MaybeUninit<T>)
 };
+
+// FIXME(#196, #2856): Eventually, we'll want to support enums variants and
+// union fields being treated uniformly since they behave similarly to each
+// other in terms of projecting validity – specifically, for a type `T` with
+// validity `V`, if `T` is a struct type, then its fields straightforwardly also
+// have validity `V`. By contrast, if `T` is an enum or union type, then
+// validity is not straightforwardly recursive in this way.
+#[doc(hidden)]
+pub const STRUCT_VARIANT_ID: i128 = -1;
+#[doc(hidden)]
+pub const UNION_VARIANT_ID: i128 = -2;
+
+/// Projects a given field from `Self`.
+///
+/// All implementations of `HasField` for a particular field `f` in `Self`
+/// should use the same `Field` type; this ensures that `Field` is inferable
+/// given an explicit `VARIANT_ID` and `FIELD_ID`.
+///
+/// # Safety
+///
+/// A field `f` is `HasField` for `Self` if and only if:
+///
+/// - If `Self` is a struct or union type, then `VARIANT_ID` is
+///   `STRUCT_VARIANT_ID` or `UNION_VARIANT_ID` respectively; otherwise, if
+///   `Self` is an enum type, `VARIANT_ID` is the numerical index of the enum
+///   variant in which `f` appears.
+/// - If `f` has name `n`, `FIELD_ID` is `zerocopy::ident_id!(n)`; otherwise,
+///   if `f` is at index `i`, `FIELD_ID` is `zerocopy::ident_id!(i)`.
+/// - `Field` is a type with the same visibility as `f`.
+/// - `Type` has the same type as `f`.
+///
+/// The caller must **not** assume that a pointer's referent being aligned
+/// implies that calling `project` on that pointer will result in a pointer to
+/// an aligned referent. For example, `HasField` may be implemented for
+/// `#[repr(packed)]` structs.
+///
+/// The implementation of `project` must satisfy its safety post-condition.
+#[doc(hidden)]
+pub unsafe trait HasField<Field, const VARIANT_ID: i128, const FIELD_ID: i128> {
+    fn only_derive_is_allowed_to_implement_this_trait()
+    where
+        Self: Sized;
+
+    /// The type of the field.
+    type Type: ?Sized;
+
+    /// Projects from `slf` to the field.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer refers to a non-strict subset of the bytes of
+    /// `slf`'s referent, and has the same provenance as `slf`.
+    fn project(slf: PtrInner<'_, Self>) -> *mut Self::Type;
+}
 
 /// Analyzes whether a type is [`FromZeros`].
 ///
@@ -6771,5 +6831,77 @@ mod tests {
                 Err(AllocError)
             );
         }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_deprecated_from_bytes() {
+        let val = 0u32;
+        let bytes = val.as_bytes();
+
+        assert!(u32::ref_from(bytes).is_some());
+        // mut_from needs mut bytes
+        let mut val = 0u32;
+        let mut_bytes = val.as_mut_bytes();
+        assert!(u32::mut_from(mut_bytes).is_some());
+
+        assert!(u32::read_from(bytes).is_some());
+
+        let (slc, rest) = <u32>::slice_from_prefix(bytes, 0).unwrap();
+        assert!(slc.is_empty());
+        assert_eq!(rest.len(), 4);
+
+        let (rest, slc) = <u32>::slice_from_suffix(bytes, 0).unwrap();
+        assert!(slc.is_empty());
+        assert_eq!(rest.len(), 4);
+
+        let (slc, rest) = <u32>::mut_slice_from_prefix(mut_bytes, 0).unwrap();
+        assert!(slc.is_empty());
+        assert_eq!(rest.len(), 4);
+
+        let (rest, slc) = <u32>::mut_slice_from_suffix(mut_bytes, 0).unwrap();
+        assert!(slc.is_empty());
+        assert_eq!(rest.len(), 4);
+    }
+
+    #[test]
+    fn test_try_ref_from_prefix_suffix() {
+        use crate::util::testutil::Align;
+        let bytes = &Align::<[u8; 4], u32>::new([0u8; 4]).t[..];
+        let (r, rest): (&u32, &[u8]) = u32::try_ref_from_prefix(bytes).unwrap();
+        assert_eq!(*r, 0);
+        assert_eq!(rest.len(), 0);
+
+        let (rest, r): (&[u8], &u32) = u32::try_ref_from_suffix(bytes).unwrap();
+        assert_eq!(*r, 0);
+        assert_eq!(rest.len(), 0);
+    }
+
+    #[test]
+    fn test_raw_dangling() {
+        use crate::util::AsAddress;
+        let ptr: NonNull<u32> = u32::raw_dangling();
+        assert_eq!(AsAddress::addr(ptr), 1);
+
+        let ptr: NonNull<[u32]> = <[u32]>::raw_dangling();
+        assert_eq!(AsAddress::addr(ptr), 1);
+    }
+
+    #[test]
+    fn test_try_ref_from_prefix_with_elems() {
+        use crate::util::testutil::Align;
+        let bytes = &Align::<[u8; 8], u32>::new([0u8; 8]).t[..];
+        let (r, rest): (&[u32], &[u8]) = <[u32]>::try_ref_from_prefix_with_elems(bytes, 2).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(rest.len(), 0);
+    }
+
+    #[test]
+    fn test_try_ref_from_suffix_with_elems() {
+        use crate::util::testutil::Align;
+        let bytes = &Align::<[u8; 8], u32>::new([0u8; 8]).t[..];
+        let (rest, r): (&[u8], &[u32]) = <[u32]>::try_ref_from_suffix_with_elems(bytes, 2).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(rest.len(), 0);
     }
 }

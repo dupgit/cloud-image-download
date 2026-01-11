@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.10+spec-1.1.0"
+version = "0.9.11+spec-1.1.0"
 dependencies = [
  "anstream",
  "anstyle",

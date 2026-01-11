@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.71.0"
 name = "markup5ever"
-version = "0.35.0"
+version = "0.36.1"
 authors = ["The html5ever Project Developers"]
 build = false
 autolib = false
@@ -39,7 +39,7 @@ path = "lib.rs"
 version = "0.4"
 
 [dependencies.tendril]
-version = "0.4"
+version = "0.4.3"
 
 [dependencies.web_atoms]
-version = "0.1"
+version = "0.2"
