@@ -1,5 +1,22 @@
 # CHANGELOG
 
+0.2.19 (2026-02-05)
+===================
+This is a small release with a performance optimization (with respect to doing
+heavily contended arithmetic on `Zoned` values) and a bug fix for a panic
+that can occur when using `%2s` in `strftime`.
+
+Enhancements:
+
+* [#491](https://github.com/BurntSushi/jiff/issues/491):
+Avoid cloning `TimeZone` for consuming operations on `Zoned`.
+
+Bug fixes:
+
+* [#497](https://github.com/BurntSushi/jiff/issues/497):
+Fix a panic in `timestamp.strftime("%2s")`.
+
+
 0.2.18 (2026-01-05)
 ===================
 This release ships a sizeable refactor to the RFC 2822, RFC 9110, RC

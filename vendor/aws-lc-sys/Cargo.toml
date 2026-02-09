@@ -13,10 +13,10 @@
 edition = "2021"
 rust-version = "1.70.0"
 name = "aws-lc-sys"
-version = "0.35.0"
+version = "0.37.0"
 authors = ["AWS-LC"]
 build = "builder/main.rs"
-links = "aws_lc_0_35_0"
+links = "aws_lc_0_37_0"
 include = [
     "LICENSE",
     "/aws-lc/**/*.c",
@@ -61,7 +61,6 @@ include = [
     "/Cargo.toml",
     "/generated-include/**",
     "/include/**",
-    "/rust_wrapper.c",
     "/src/**/*.rs",
     "/tests/**/*.rs",
 ]
@@ -76,13 +75,14 @@ license = "ISC AND (Apache-2.0 OR ISC) AND OpenSSL"
 repository = "https://github.com/aws/aws-lc-rs"
 
 [package.metadata.aws-lc-sys]
-commit-hash = "c23b2ae88deec89091d8eeb37178fbef24c96919"
+commit-hash = "bee13c3051b4cdc568d4c358660aeeb734157804"
 
 [features]
 all-bindings = []
 asan = []
 bindgen = ["dep:bindgen"]
 default = ["all-bindings"]
+disable-prebuilt-nasm = []
 prebuilt-nasm = []
 ssl = [
     "bindgen",

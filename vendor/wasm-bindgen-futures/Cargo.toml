@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "wasm-bindgen-futures"
-version = "0.4.56"
+version = "0.4.58"
 authors = ["The wasm-bindgen Developers"]
 build = false
 include = [
@@ -46,6 +46,7 @@ std = [
     "wasm-bindgen/std",
     "js-sys/std",
     "web-sys/std",
+    "futures-util",
 ]
 
 [lib]
@@ -60,8 +61,14 @@ version = "0.3.8"
 optional = true
 default-features = false
 
+[dependencies.futures-util]
+version = "0.3.31"
+features = ["std"]
+optional = true
+default-features = false
+
 [dependencies.js-sys]
-version = "=0.3.83"
+version = "=0.3.85"
 default-features = false
 
 [dependencies.once_cell]
@@ -69,7 +76,7 @@ version = "1.12"
 default-features = false
 
 [dependencies.wasm-bindgen]
-version = "=0.2.106"
+version = "=0.2.108"
 default-features = false
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.futures-channel]
@@ -80,7 +87,7 @@ version = "2"
 default-features = false
 
 [target.'cfg(target_feature = "atomics")'.dependencies.web-sys]
-version = "=0.3.83"
+version = "=0.3.85"
 features = [
     "MessageEvent",
     "Worker",

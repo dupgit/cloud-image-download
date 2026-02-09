@@ -23,11 +23,7 @@ Refs:
 - atomic-maybe-uninit
   https://github.com/taiki-e/atomic-maybe-uninit
 
-Generated asm:
-- riscv64gc https://godbolt.org/z/Ws933n9jE
-- riscv64gc (+zabha) https://godbolt.org/z/zEKPPW11f
-- riscv32imac https://godbolt.org/z/TKbYdbaE9
-- riscv32imac (+zabha) https://godbolt.org/z/TnePfK6co
+See tests/asm-test/asm/portable-atomic for generated assembly.
 */
 
 // TODO: Zacas/Zalrsc extension
@@ -352,10 +348,7 @@ macro_rules! atomic {
                 #[inline]
                 pub(crate) fn fetch_not(&self, order: Ordering) -> $value_type {
                     let dst = self.v.get();
-                    #[cfg(target_arch = "riscv32")]
-                    let val: u32 = !0;
-                    #[cfg(target_arch = "riscv64")]
-                    let val: u64 = !0;
+                    let val: crate::utils::RegSize = !0;
                     // SAFETY: any data races are prevented by atomic intrinsics and the raw
                     // pointer passed in is valid because we got it from a reference.
                     unsafe { atomic_rmw_amo!(xor, dst, val, order, $size) }
@@ -548,9 +541,11 @@ mod tests {
             }
         };
         ($atomic_type:ty) => {
-            use crate::tests::helper;
             #[allow(unused_imports)]
-            use sptr::Strict as _; // for old rustc
+            use sptr::Strict as _;
+
+            use crate::tests::helper; // for old rustc
+
             ::quickcheck::quickcheck! {
                 fn quickcheck_swap(x: usize, y: usize) -> bool {
                     let x = sptr::invalid_mut(x);

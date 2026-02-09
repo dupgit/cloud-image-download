@@ -1,8 +1,8 @@
 [package]
 name = "aws-lc-sys"
 description = "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project."
-version = "0.35.0"
-links = "aws_lc_0_35_0"
+version = "0.37.0"
+links = "aws_lc_0_37_0"
 authors = ["AWS-LC"]
 edition = "2021"
 repository = "https://github.com/aws/aws-lc-rs"
@@ -52,7 +52,6 @@ include = [
     "/Cargo.toml",
     "/generated-include/**",
     "/include/**",
-    "/rust_wrapper.c",
     "/src/**/*.rs",
     "/tests/**/*.rs",
 ]
@@ -62,6 +61,7 @@ build = "builder/main.rs"
 asan = []
 ssl = ['bindgen', 'all-bindings']
 bindgen = ["dep:bindgen"] # Generate the bindings on the targeted platform as a fallback mechanism.
+disable-prebuilt-nasm = []
 prebuilt-nasm = []
 all-bindings = []
 default = ['all-bindings']
@@ -74,4 +74,4 @@ cc = { workspace = true, features = ["parallel"] }
 bindgen = { workspace = true, optional = true }
 
 [package.metadata.aws-lc-sys]
-commit-hash = "c23b2ae88deec89091d8eeb37178fbef24c96919"
+commit-hash = "bee13c3051b4cdc568d4c358660aeeb734157804"

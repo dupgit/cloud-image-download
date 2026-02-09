@@ -10,8 +10,7 @@ Refs:
 
 See also src/imp/riscv.rs.
 
-Generated asm:
-- riscv64gc https://godbolt.org/z/zTrzT1Ee7
+See tests/asm-test/asm/portable-atomic for generated assembly.
 */
 
 #[cfg(not(portable_atomic_no_asm))]
@@ -27,39 +26,43 @@ use core::arch::asm;
 )]
 pub(super) use super::super::riscv as atomic;
 
-// Status register
-#[cfg(not(portable_atomic_s_mode))]
-macro_rules! status {
-    () => {
-        "mstatus"
-    };
-}
-#[cfg(portable_atomic_s_mode)]
-macro_rules! status {
-    () => {
-        "sstatus"
-    };
-}
+cfg_sel!({
+    // Supervisor-mode (S-mode)
+    #[cfg(portable_atomic_s_mode)]
+    {
+        // Status register
+        macro_rules! status {
+            () => {
+                "sstatus"
+            };
+        }
+        // SIE (Supervisor Interrupt Enable) bit (1 << 1)
+        #[cfg(portable_atomic_s_mode)]
+        macro_rules! mask {
+            () => {
+                "0x2"
+            };
+        }
+    }
+    // Machine-mode (M-mode)
+    #[cfg(else)]
+    {
+        // Status register
+        macro_rules! status {
+            () => {
+                "mstatus"
+            };
+        }
+        // MIE (Machine Interrupt Enable) bit (1 << 3)
+        macro_rules! mask {
+            () => {
+                "0x8"
+            };
+        }
+    }
+});
 
-// MIE (Machine Interrupt Enable) bit (1 << 3)
-#[cfg(not(portable_atomic_s_mode))]
-macro_rules! mask {
-    () => {
-        "0x8"
-    };
-}
-// SIE (Supervisor Interrupt Enable) bit (1 << 1)
-#[cfg(portable_atomic_s_mode)]
-macro_rules! mask {
-    () => {
-        "0x2"
-    };
-}
-
-#[cfg(target_arch = "riscv32")]
-pub(crate) type State = u32;
-#[cfg(target_arch = "riscv64")]
-pub(crate) type State = u64;
+pub(crate) type State = crate::utils::RegSize;
 
 /// Disables interrupts and returns the previous interrupt state.
 #[inline(always)]

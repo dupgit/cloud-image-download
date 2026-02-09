@@ -61,8 +61,12 @@
 //! in the browser.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![warn(unreachable_pub, clippy::use_self)]
-#![deny(missing_docs)]
+#![warn(
+    missing_docs,
+    clippy::exhaustive_enums,
+    clippy::exhaustive_structs,
+    clippy::use_self
+)]
 #![cfg_attr(rustls_pki_types_docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]
@@ -502,6 +506,7 @@ impl fmt::Debug for PrivatePkcs8KeyDer<'_> {
 /// The most common way to get one of these is to call [`rustls_webpki::anchor_from_trusted_cert()`].
 ///
 /// [`rustls_webpki::anchor_from_trusted_cert()`]: https://docs.rs/rustls-webpki/latest/webpki/fn.anchor_from_trusted_cert.html
+#[allow(clippy::exhaustive_structs)]
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TrustAnchor<'a> {
     /// Value of the `subject` field of the trust anchor
@@ -923,6 +928,14 @@ pub trait SignatureVerificationAlgorithm: Send + Sync + fmt::Debug {
     /// for signature verification.
     fn signature_alg_id(&self) -> AlgorithmIdentifier;
 
+    /// Return the FIPS status of this algorithm or implementation.
+    fn fips_status(&self) -> FipsStatus {
+        match self.fips() {
+            true => FipsStatus::Pending,
+            false => FipsStatus::Unvalidated,
+        }
+    }
+
     /// Return `true` if this is backed by a FIPS-approved implementation.
     fn fips(&self) -> bool {
         false
@@ -930,6 +943,7 @@ pub trait SignatureVerificationAlgorithm: Send + Sync + fmt::Debug {
 }
 
 /// A detail-less error when a signature is not valid.
+#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, Copy, Clone)]
 pub struct InvalidSignature;
 
@@ -1067,6 +1081,22 @@ impl PartialEq for BytesInner<'_> {
 }
 
 impl Eq for BytesInner<'_> {}
+
+/// FIPS validation status of an algorithm or implementation.
+#[allow(clippy::exhaustive_enums)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FipsStatus {
+    /// Not FIPS tested, or unapproved algorithm.
+    Unvalidated,
+    /// In queue for FIPS validation.
+    Pending,
+    /// FIPS certified, with named certificate.
+    #[non_exhaustive]
+    Certified {
+        /// A name, number or URL referencing the FIPS certificate.
+        certificate: &'static str,
+    },
+}
 
 // Format an iterator of u8 into a hex string
 fn hex<'a>(f: &mut fmt::Formatter<'_>, payload: impl IntoIterator<Item = &'a u8>) -> fmt::Result {

@@ -51,7 +51,7 @@ portable-atomic = { version = "1.3", default-features = false, features = ["requ
 
 ## 128-bit atomics support
 
-Native 128-bit atomic operations are available on x86_64 (Rust 1.59+), AArch64 (Rust 1.59+), riscv64 (Rust 1.59+), Arm64EC (Rust 1.84+), s390x (Rust 1.84+), and powerpc64 (nightly only), otherwise the fallback implementation is used.
+Native 128-bit atomic operations are available on x86_64 (Rust 1.59+), AArch64 (Rust 1.59+), riscv64 (Rust 1.59+), Arm64EC (Rust 1.84+), s390x (Rust 1.84+), and powerpc64 (Rust 1.95+), otherwise the fallback implementation is used.
 
 On x86_64, even if `cmpxchg16b` is not available at compile-time (Note: `cmpxchg16b` target feature is enabled by default only on Apple, Windows (except Windows 7), and Fuchsia targets), run-time detection checks whether `cmpxchg16b` is available. If `cmpxchg16b` is not available at either compile-time or run-time detection, the fallback implementation is used. See also [`portable_atomic_no_outline_atomics`](#optional-cfg-no-outline-atomics) cfg.
 
@@ -87,7 +87,7 @@ RUSTFLAGS="--cfg portable_atomic_unsafe_assume_single_core" cargo ...
 - <a name="optional-features-fallback"></a>**`fallback` feature** *(enabled by default)*<br>
   Enable fallback implementations.
 
-  This enables atomic types with larger than the width supported by atomic instructions available on the current target. If the current target supports 128-bit atomics, this is no-op.
+  This enables atomic types with larger than the width supported by atomic instructions available on the current target. If the current target [supports 128-bit atomics](#128-bit-atomics-support), this is no-op.
 
   This uses fallback implementation that using global locks by default. The following features/cfgs change this behavior:
   - [`unsafe-assume-single-core` feature / `portable_atomic_unsafe_assume_single_core` cfg](#optional-features-unsafe-assume-single-core): Use fallback implementations that disabling interrupts instead of using global locks.
@@ -297,7 +297,7 @@ See also the [`interrupt` module's readme](https://github.com/taiki-e/portable-a
 #![allow(clippy::inline_always, clippy::used_underscore_items)]
 // asm_experimental_arch
 // AVR, MSP430, and Xtensa are tier 3 platforms and require nightly anyway.
-// On tier 2 platforms (powerpc64), we use cfg set by build script to
+// On tier 2 platforms (currently N/A), we use cfg set by build script to
 // determine whether this feature is available or not.
 #![cfg_attr(
     all(
@@ -312,7 +312,6 @@ See also the [`interrupt` module's readme](https://github.com/taiki-e/portable-a
                     portable_atomic_unsafe_assume_privileged,
                 ),
             ),
-            all(target_arch = "powerpc64", portable_atomic_unstable_asm_experimental_arch),
         ),
     ),
     feature(asm_experimental_arch)
@@ -325,7 +324,7 @@ See also the [`interrupt` module's readme](https://github.com/taiki-e/portable-a
 // These features are already stabilized or have already been removed from compilers,
 // and can safely be enabled for old nightly as long as version detection works.
 // - cfg(target_has_atomic)
-// - asm! on AArch64, Arm, RISC-V, x86, x86_64, Arm64EC, s390x
+// - asm! on AArch64, Arm, RISC-V, x86, x86_64, Arm64EC, s390x, PowerPC64
 // - llvm_asm! on AVR (tier 3) and MSP430 (tier 3)
 // - #[instruction_set] on non-Linux/Android pre-v6 Arm (tier 3)
 // This also helps us test that our assembly code works with the minimum external
@@ -348,7 +347,7 @@ See also the [`interrupt` module's readme](https://github.com/taiki-e/portable-a
 #![cfg_attr(
     all(
         portable_atomic_unstable_asm_experimental_arch,
-        any(target_arch = "arm64ec", target_arch = "s390x"),
+        any(target_arch = "arm64ec", target_arch = "s390x", target_arch = "powerpc64"),
     ),
     feature(asm_experimental_arch)
 )]
@@ -617,12 +616,18 @@ mod tests;
 #[doc(no_inline)]
 pub use core::sync::atomic::Ordering;
 
-// LLVM doesn't support fence/compiler_fence for MSP430.
-#[cfg(target_arch = "msp430")]
-pub use self::imp::msp430::{compiler_fence, fence};
-#[doc(no_inline)]
-#[cfg(not(target_arch = "msp430"))]
-pub use core::sync::atomic::{compiler_fence, fence};
+cfg_sel!({
+    // LLVM doesn't support fence/compiler_fence for MSP430.
+    #[cfg(target_arch = "msp430")]
+    {
+        pub use self::imp::msp430::{compiler_fence, fence};
+    }
+    #[cfg(else)]
+    {
+        #[doc(no_inline)]
+        pub use core::sync::atomic::{compiler_fence, fence};
+    }
+});
 
 mod imp;
 

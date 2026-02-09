@@ -12,8 +12,7 @@ this module and use CAS loop instead.
 Refs:
 - x86 and amd64 instruction reference https://www.felixcloutier.com/x86
 
-Generated asm:
-- x86_64 https://godbolt.org/z/ETa1MGTP3
+See tests/asm-test/asm/portable-atomic for generated assembly.
 */
 
 #[cfg(not(portable_atomic_no_asm))]
@@ -60,15 +59,15 @@ pub(crate) fn sc_fence() {
         #[cfg(target_pointer_width = "64")]
         asm!(
             concat!("xchg qword ptr [{p", ptr_modifier!(), "}], {tmp}"),
-            p = inout(reg) p.get() => _,
-            tmp = lateout(reg) _,
+            p = in(reg) p.get(),
+            tmp = out(reg) _,
             options(nostack, preserves_flags),
         );
         #[cfg(target_pointer_width = "32")]
         asm!(
             concat!("xchg dword ptr [{p", ptr_modifier!(), "}], {tmp:e}"),
-            p = inout(reg) p.get() => _,
-            tmp = lateout(reg) _,
+            p = in(reg) p.get(),
+            tmp = out(reg) _,
             options(nostack, preserves_flags),
         );
     }

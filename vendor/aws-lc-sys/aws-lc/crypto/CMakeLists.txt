@@ -442,11 +442,6 @@ add_library(
   ex_data.c
   hpke/hpke.c
   hrss/hrss.c
-  kyber/kyber512r3_ref.c
-  kyber/kyber768r3_ref.c
-  kyber/kyber1024r3_ref.c
-  kyber/pqcrystals_kyber_ref_common/fips202.c
-  kyber/kem_kyber.c
   lhash/lhash.c
   mem.c
   obj/obj.c
@@ -817,6 +812,7 @@ if(BUILD_TESTING)
     evp_extra/p_pqdsa_test.cc
     evp_extra/p_kem_test.cc
     evp_extra/scrypt_test.cc
+    evp_extra/mldsa_test.cc
     fips_callback_test.cc
     fipsmodule/aes/aes_test.cc
     fipsmodule/bn/bn_test.cc

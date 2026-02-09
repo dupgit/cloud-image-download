@@ -5,20 +5,24 @@
 // produced by the CMake. Changes to CMake relating to compiler checks and/or special build flags
 // may require modifications to the logic in this module.
 
-mod aarch64_apple_darwin;
-mod aarch64_unknown_linux_gnu;
-mod aarch64_unknown_linux_musl;
-mod i686_unknown_linux_gnu;
-mod riscv64gc_unknown_linux_gnu;
-mod x86_64_apple_darwin;
-mod x86_64_unknown_linux_gnu;
-mod x86_64_unknown_linux_musl;
+mod apple_aarch64;
+mod apple_x86_64;
+mod linux_aarch64;
+mod linux_arm;
+mod linux_ppc64le;
+mod linux_x86;
+mod linux_x86_64;
+mod universal;
+mod win_aarch64;
+mod win_x86;
+mod win_x86_64;
 
+use crate::nasm_builder::NasmBuilder;
 use crate::{
-    cargo_env, disable_jitter_entropy, effective_target, emit_warning, env_var_to_bool,
-    execute_command, get_crate_cflags, is_no_asm, optional_env_optional_crate_target,
-    optional_env_target, out_dir, requested_c_std, set_env_for_target, target, target_arch,
-    target_env, target_os, CStdRequested, OutputLibType,
+    cargo_env, disable_jitter_entropy, emit_warning, env_var_to_bool, execute_command,
+    get_crate_cflags, is_no_asm, optional_env_optional_crate_target, optional_env_target, out_dir,
+    requested_c_std, set_env_for_target, target, target_arch, target_env, target_os, target_vendor,
+    test_clang_cl_command, CStdRequested, OutputLibType,
 };
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -40,62 +44,50 @@ pub(crate) struct CcBuilder {
 
 use std::fs;
 
-pub(crate) struct Library {
-    name: &'static str,
-    flags: &'static [&'static str],
-    sources: &'static [&'static str],
-}
-
-#[allow(non_camel_case_types)]
-enum PlatformConfig {
-    aarch64_apple_darwin,
-    aarch64_unknown_linux_gnu,
-    aarch64_unknown_linux_musl,
-    riscv64gc_unknown_linux_gnu,
-    x86_64_apple_darwin,
-    x86_64_unknown_linux_gnu,
-    x86_64_unknown_linux_musl,
-    i686_unknown_linux_gnu,
-}
-
-impl PlatformConfig {
-    fn libcrypto(&self) -> Library {
-        match self {
-            PlatformConfig::aarch64_apple_darwin => aarch64_apple_darwin::CRYPTO_LIBRARY,
-            PlatformConfig::aarch64_unknown_linux_gnu => aarch64_unknown_linux_gnu::CRYPTO_LIBRARY,
-            PlatformConfig::aarch64_unknown_linux_musl => {
-                aarch64_unknown_linux_musl::CRYPTO_LIBRARY
-            }
-            PlatformConfig::riscv64gc_unknown_linux_gnu => {
-                riscv64gc_unknown_linux_gnu::CRYPTO_LIBRARY
-            }
-            PlatformConfig::x86_64_apple_darwin => x86_64_apple_darwin::CRYPTO_LIBRARY,
-            PlatformConfig::x86_64_unknown_linux_gnu => x86_64_unknown_linux_gnu::CRYPTO_LIBRARY,
-            PlatformConfig::x86_64_unknown_linux_musl => x86_64_unknown_linux_musl::CRYPTO_LIBRARY,
-            PlatformConfig::i686_unknown_linux_gnu => i686_unknown_linux_gnu::CRYPTO_LIBRARY,
+fn identify_sources() -> Vec<&'static str> {
+    let mut source_files: Vec<&'static str> = vec![];
+    source_files.append(&mut Vec::from(universal::CRYPTO_LIBRARY));
+    let mut target_specific_source_found = true;
+    if target_os() == "windows" {
+        if target_arch() == "x86_64" {
+            source_files.append(&mut Vec::from(win_x86_64::CRYPTO_LIBRARY));
+        } else if target_arch() == "aarch64" {
+            source_files.append(&mut Vec::from(win_aarch64::CRYPTO_LIBRARY));
+        } else if target_arch() == "x86" {
+            source_files.append(&mut Vec::from(win_x86::CRYPTO_LIBRARY));
+        } else {
+            target_specific_source_found = false;
         }
-    }
-
-    fn default_for(target: &str) -> Option<Self> {
-        println!("default_for Target: '{target}'");
-        match target {
-            "aarch64-apple-darwin" => Some(PlatformConfig::aarch64_apple_darwin),
-            "aarch64-unknown-linux-gnu" => Some(PlatformConfig::aarch64_unknown_linux_gnu),
-            "aarch64-unknown-linux-musl" => Some(PlatformConfig::aarch64_unknown_linux_musl),
-            "riscv64gc-unknown-linux-gnu" => Some(PlatformConfig::riscv64gc_unknown_linux_gnu),
-            "x86_64-apple-darwin" => Some(PlatformConfig::x86_64_apple_darwin),
-            "x86_64-unknown-linux-gnu" => Some(PlatformConfig::x86_64_unknown_linux_gnu),
-            "x86_64-unknown-linux-musl" => Some(PlatformConfig::x86_64_unknown_linux_musl),
-            "i686-unknown-linux-gnu" => Some(PlatformConfig::i686_unknown_linux_gnu),
-            _ => None,
+    } else if target_vendor() == "apple" {
+        if target_arch() == "x86_64" {
+            source_files.append(&mut Vec::from(apple_x86_64::CRYPTO_LIBRARY));
+        } else if target_arch() == "aarch64" {
+            source_files.append(&mut Vec::from(apple_aarch64::CRYPTO_LIBRARY));
+        } else {
+            target_specific_source_found = false;
         }
+    } else if target_arch() == "x86_64" {
+        source_files.append(&mut Vec::from(linux_x86_64::CRYPTO_LIBRARY));
+    } else if target_arch() == "aarch64" {
+        source_files.append(&mut Vec::from(linux_aarch64::CRYPTO_LIBRARY));
+    } else if target_arch() == "arm" {
+        source_files.append(&mut Vec::from(linux_arm::CRYPTO_LIBRARY));
+    } else if target_arch() == "x86" {
+        source_files.append(&mut Vec::from(linux_x86::CRYPTO_LIBRARY));
+    } else if target_arch() == "powerpc64" {
+        source_files.append(&mut Vec::from(linux_ppc64le::CRYPTO_LIBRARY));
+    } else {
+        target_specific_source_found = false;
     }
-}
+    if !target_specific_source_found {
+        emit_warning(format!(
+            "No target-specific source found: {}-{}",
+            target_os(),
+            target_arch()
+        ));
+    }
 
-impl Default for PlatformConfig {
-    fn default() -> Self {
-        Self::default_for(&effective_target()).unwrap()
-    }
+    source_files
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -164,6 +156,15 @@ impl BuildOption {
             }
         }
     }
+
+    pub(crate) fn apply_nasm<'a>(&self, nasm_builder: &'a mut NasmBuilder) -> &'a mut NasmBuilder {
+        match self {
+            BuildOption::FLAG(val) => nasm_builder.flag(val),
+            BuildOption::DEFINE(key, val) => nasm_builder.define(key, Some(val.as_str())),
+            BuildOption::INCLUDE(path) => nasm_builder.include(path.as_path()),
+            BuildOption::STD(_) => nasm_builder, // STD ignored for NASM
+        }
+    }
 }
 
 impl CcBuilder {
@@ -185,6 +186,7 @@ impl CcBuilder {
     pub(crate) fn collect_universal_build_options(
         &self,
         cc_build: &cc::Build,
+        do_quote_paths: bool,
     ) -> (bool, Vec<BuildOption>) {
         let mut build_options: Vec<BuildOption> = Vec::new();
 
@@ -241,13 +243,19 @@ impl CcBuilder {
                     "AWS_LC_SYS_NO_ASM only allowed for debug builds!"
                 );
                 if !compiler_is_msvc {
-                    let flag = format!("-ffile-prefix-map={}=", self.manifest_dir.display());
+                    let path_str = if do_quote_paths {
+                        format!("\"{}\"", self.manifest_dir.display())
+                    } else {
+                        format!("{}", self.manifest_dir.display())
+                    };
+
+                    let flag = format!("-ffile-prefix-map={path_str}=");
                     if let Ok(true) = cc_build.is_flag_supported(&flag) {
                         emit_warning(format!("Using flag: {}", &flag));
                         build_options.push(BuildOption::flag(&flag));
                     } else {
                         emit_warning("NOTICE: Build environment source paths might be visible in release binary.");
-                        let flag = format!("-fdebug-prefix-map={}=", self.manifest_dir.display());
+                        let flag = format!("-fdebug-prefix-map={path_str}=");
                         if let Ok(true) = cc_build.is_flag_supported(&flag) {
                             emit_warning(format!("Using flag: {}", &flag));
                             build_options.push(BuildOption::flag(&flag));
@@ -283,19 +291,19 @@ impl CcBuilder {
         };
         if !is_like_msvc {
             build_options.push(BuildOption::flag("-Wno-unused-parameter"));
-            if target_os() == "linux"
-                || target_os().ends_with("bsd")
-                || target_env() == "gnu"
-                || target_env() == "musl"
-            {
+            build_options.push(BuildOption::flag("-pthread"));
+            if target_os() == "linux" {
                 build_options.push(BuildOption::define("_XOPEN_SOURCE", "700"));
-                build_options.push(BuildOption::flag("-pthread"));
+            } else if target_vendor() != "apple" {
+                // Needed by illumos
+                build_options.push(BuildOption::define("__EXTENSIONS__", "1"));
             }
         }
         if Some(true) == disable_jitter_entropy() {
             build_options.push(BuildOption::define("DISABLE_CPU_JITTER_ENTROPY", "1"));
         }
         self.add_includes(&mut build_options);
+        self.add_defines(&mut build_options, is_like_msvc);
 
         build_options
     }
@@ -356,7 +364,7 @@ impl CcBuilder {
         }
 
         let mut cc_build = self.create_builder();
-        let (_, build_options) = self.collect_universal_build_options(&cc_build);
+        let (_, build_options) = self.collect_universal_build_options(&cc_build, false);
         for option in build_options {
             option.apply_cc(&mut cc_build);
         }
@@ -383,29 +391,59 @@ impl CcBuilder {
         source_feature_map
     }
 
-    fn prepare_jitter_entropy_builder(&self) -> cc::Build {
+    #[allow(clippy::unused_self)]
+    fn add_defines(&self, build_options: &mut Vec<BuildOption>, is_like_msvc: bool) {
+        // WIN32_LEAN_AND_MEAN and NOMINMAX are needed for all Windows targets to avoid
+        // header type definition errors, no matter the compiler. This matches the behavior
+        // in aws-lc/CMakeLists.txt, which defines these for all WIN32 targets
+        if target_os() == "windows" {
+            build_options.push(BuildOption::define("WIN32_LEAN_AND_MEAN", ""));
+            build_options.push(BuildOption::define("NOMINMAX", ""));
+        }
+
+        if is_like_msvc {
+            build_options.push(BuildOption::define("_HAS_EXCEPTIONS", "0"));
+            build_options.push(BuildOption::define("_CRT_SECURE_NO_WARNINGS", "0"));
+            build_options.push(BuildOption::define(
+                "_STL_EXTRA_DISABLED_WARNINGS",
+                "4774 4987",
+            ));
+
+            if target().ends_with("-win7-windows-msvc") {
+                // 0x0601 is the value of `_WIN32_WINNT_WIN7`
+                build_options.push(BuildOption::define("_WIN32_WINNT", "0x0601"));
+                emit_warning(format!(
+                    "Setting _WIN32_WINNT to _WIN32_WINNT_WIN7 for {} target",
+                    target()
+                ));
+            }
+        }
+    }
+
+    fn prepare_jitter_entropy_builder(&self, is_like_msvc: bool) -> cc::Build {
         // See: https://github.com/aws/aws-lc/blob/2294510cd0ecb2d5946461e3dbb038363b7b94cb/third_party/jitterentropy/CMakeLists.txt#L19-L35
         let mut build_options: Vec<BuildOption> = Vec::new();
         self.add_includes(&mut build_options);
+        self.add_defines(&mut build_options, is_like_msvc);
 
         let mut je_builder = cc::Build::new();
         for option in build_options {
             option.apply_cc(&mut je_builder);
         }
 
-        let compiler = if let Some(original_cflags) = optional_env_target("CFLAGS") {
+        if let Some(original_cflags) = optional_env_target("CFLAGS") {
             let mut new_cflags = original_cflags.clone();
-            // The `_FORTIFY_SOURCE` macro often requires optimizations to also be enabled, so unset it.
-            new_cflags.push_str(" -O0 -Wp,-U_FORTIFY_SOURCE");
+            if is_like_msvc {
+                new_cflags.push_str(" -Od");
+            } else {
+                new_cflags.push_str(" -O0 -Wp,-U_FORTIFY_SOURCE");
+            }
             set_env_for_target("CFLAGS", &new_cflags);
             // cc-rs currently prioritizes flags provided by CFLAGS over the flags provided by the build script.
             // The environment variables used by the compiler are set when `get_compiler` is called.
-            let compiler = je_builder.get_compiler();
+            je_builder.get_compiler();
             set_env_for_target("CFLAGS", &original_cflags);
-            compiler
-        } else {
-            je_builder.get_compiler()
-        };
+        }
 
         je_builder.define("AWSLC", "1");
         if target_os() == "macos" || target_os() == "darwin" {
@@ -413,8 +451,8 @@ impl CcBuilder {
             je_builder.define("_DARWIN_C_SOURCE", "1");
         }
         je_builder.pic(true);
-        if target_os() == "windows" && compiler.is_like_msvc() {
-            je_builder.flag("/Od").flag("/W4").flag("/DYNAMICBASE");
+        if is_like_msvc {
+            je_builder.flag("-Od").flag("-W4").flag("-DYNAMICBASE");
         } else {
             je_builder
                 .flag("-fwrapv")
@@ -436,8 +474,7 @@ impl CcBuilder {
         je_builder
     }
 
-    fn add_all_files(&self, lib: &Library, cc_build: &mut cc::Build) {
-        use core::str::FromStr;
+    fn add_all_files(&self, sources: &[&'static str], cc_build: &mut cc::Build) {
         let compiler = cc_build.get_compiler();
 
         let force_include_option = if compiler.is_like_msvc() {
@@ -459,7 +496,8 @@ impl CcBuilder {
         s2n_bignum_builder.define("S2N_BN_HIDE_SYMBOLS", "1");
 
         // CPU Jitter Entropy is compiled separately due to needing specific flags
-        let mut jitter_entropy_builder = self.prepare_jitter_entropy_builder();
+        let mut jitter_entropy_builder =
+            self.prepare_jitter_entropy_builder(compiler.is_like_msvc());
         jitter_entropy_builder.flag(format!(
             "{}{}",
             force_include_option,
@@ -470,9 +508,17 @@ impl CcBuilder {
                 .display()
         ));
 
+        let mut build_options = vec![];
+        self.add_includes(&mut build_options);
+        let mut nasm_builder = NasmBuilder::new(self.manifest_dir.clone(), self.out_dir.clone());
+
+        for option in &build_options {
+            option.apply_nasm(&mut nasm_builder);
+        }
+
         let s2n_bignum_source_feature_map = Self::build_s2n_bignum_source_feature_map();
         let compiler_features = self.compiler_features.take();
-        for source in lib.sources {
+        for source in sources {
             let source_path = self.manifest_dir.join("aws-lc").join(source);
             let is_s2n_bignum = std::path::Path::new(source).starts_with("third_party/s2n-bignum");
             let is_jitter_entropy =
@@ -507,6 +553,8 @@ impl CcBuilder {
                 if Some(true) != disable_jitter_entropy() {
                     jitter_entropy_builder.file(source_path);
                 }
+            } else if source_path.extension() == Some("asm".as_ref()) {
+                nasm_builder.file(source_path);
             } else {
                 cc_build.file(source_path);
             }
@@ -522,21 +570,21 @@ impl CcBuilder {
                 cc_build.object(object);
             }
         }
-        cc_build.file(PathBuf::from_str("rust_wrapper.c").unwrap());
+        let nasm_object_files = nasm_builder.compile_intermediates();
+        for object in nasm_object_files {
+            cc_build.object(object);
+        }
     }
 
-    fn build_library(&self, lib: &Library) {
+    fn build_library(&self, sources: &[&'static str]) {
         let mut cc_build = self.prepare_builder();
-        for flag in lib.flags {
-            cc_build.flag(flag);
-        }
         self.run_compiler_checks(&mut cc_build);
 
-        self.add_all_files(lib, &mut cc_build);
+        self.add_all_files(sources, &mut cc_build);
         if let Some(prefix) = &self.build_prefix {
             cc_build.compile(format!("{}_crypto", prefix.as_str()).as_str());
         } else {
-            cc_build.compile(lib.name);
+            cc_build.compile("crypto");
         }
     }
 
@@ -692,7 +740,7 @@ impl CcBuilder {
             self.compiler_features.set(compiler_features);
             cc_build.define("MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION", Some("1"));
         }
-        if target_os() == "linux" {
+        if target_os() == "linux" || target_os() == "android" {
             if self.compiler_check("linux_random_h", Vec::<&'static str>::new()) {
                 cc_build.define("HAVE_LINUX_RANDOM_H", Some("1"));
             } else if self.compiler_check("linux_random_h", vec!["-DDEFINE_U32"]) {
@@ -711,8 +759,8 @@ impl crate::Builder for CcBuilder {
             return Err("CcBuilder only supports static builds".to_string());
         }
 
-        if PlatformConfig::default_for(&effective_target()).is_none() {
-            return Err(format!("Platform not supported: {}", effective_target()));
+        if target_env() == "ohos" {
+            return Err("OpenHarmony targets must be built with CMake.".to_string());
         }
 
         if Some(true) == env_var_to_bool("CARGO_FEATURE_SSL") {
@@ -723,10 +771,18 @@ impl crate::Builder for CcBuilder {
     }
 
     fn build(&self) -> Result<(), String> {
+        if target_os() == "windows"
+            && target_arch() == "aarch64"
+            && target_env() == "msvc"
+            && optional_env_optional_crate_target("CC").is_none()
+            && test_clang_cl_command()
+        {
+            set_env_for_target("CC", "clang-cl");
+        }
+
         println!("cargo:root={}", self.out_dir.display());
-        let platform_config = PlatformConfig::default();
-        let libcrypto = platform_config.libcrypto();
-        self.build_library(&libcrypto);
+        let sources = crate::cc_builder::identify_sources();
+        self.build_library(sources.as_slice());
         Ok(())
     }
 

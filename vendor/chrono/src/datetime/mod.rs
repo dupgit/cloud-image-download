@@ -21,8 +21,8 @@ use crate::format::Locale;
 #[cfg(feature = "alloc")]
 use crate::format::{DelayedFormat, SecondsFormat, write_rfc2822, write_rfc3339};
 use crate::format::{
-    Fixed, Item, ParseError, ParseResult, Parsed, StrftimeItems, TOO_LONG, parse,
-    parse_and_remainder, parse_rfc3339,
+    Fixed, Item, ParseError, ParseResult, Parsed, StrftimeItems, parse, parse_and_remainder,
+    parse_rfc3339,
 };
 use crate::naive::{Days, IsoWeek, NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "clock")]
@@ -414,7 +414,7 @@ impl<Tz: TimeZone> DateTime<Tz> {
     }
 
     /// Fix the offset from UTC to its current value, dropping the associated timezone information.
-    /// This it useful for converting a generic `DateTime<Tz: Timezone>` to `DateTime<FixedOffset>`.
+    /// This is useful for converting a generic `DateTime<Tz: Timezone>` to `DateTime<FixedOffset>`.
     #[inline]
     #[must_use]
     pub fn fixed_offset(&self) -> DateTime<FixedOffset> {
@@ -1068,12 +1068,7 @@ impl DateTime<FixedOffset> {
     /// also simultaneously valid RFC 3339 values, but not all RFC 3339 values are valid ISO 8601
     /// values (or the other way around).
     pub fn parse_from_rfc3339(s: &str) -> ParseResult<DateTime<FixedOffset>> {
-        let mut parsed = Parsed::new();
-        let (s, _) = parse_rfc3339(&mut parsed, s)?;
-        if !s.is_empty() {
-            return Err(TOO_LONG);
-        }
-        parsed.to_datetime()
+        parse_rfc3339(s)
     }
 
     /// Parses a string from a user-specified format into a `DateTime<FixedOffset>` value.
@@ -1523,7 +1518,7 @@ impl<Tz: TimeZone> hash::Hash for DateTime<Tz> {
 /// Add `TimeDelta` to `DateTime`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `NaiveDateTime` itself represents a leap  second in which case
+/// second ever**, except when the `NaiveDateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1542,7 +1537,7 @@ impl<Tz: TimeZone> Add<TimeDelta> for DateTime<Tz> {
 /// Add `std::time::Duration` to `DateTime`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `NaiveDateTime` itself represents a leap  second in which case
+/// second ever**, except when the `NaiveDateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1563,7 +1558,7 @@ impl<Tz: TimeZone> Add<Duration> for DateTime<Tz> {
 /// Add-assign `chrono::Duration` to `DateTime`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `NaiveDateTime` itself represents a leap  second in which case
+/// second ever**, except when the `NaiveDateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1583,7 +1578,7 @@ impl<Tz: TimeZone> AddAssign<TimeDelta> for DateTime<Tz> {
 /// Add-assign `std::time::Duration` to `DateTime`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `NaiveDateTime` itself represents a leap  second in which case
+/// second ever**, except when the `NaiveDateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1683,7 +1678,7 @@ impl<Tz: TimeZone> Sub<Duration> for DateTime<Tz> {
 /// This is the same as the addition with a negated `TimeDelta`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `DateTime` itself represents a leap  second in which case
+/// second ever**, except when the `DateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1703,7 +1698,7 @@ impl<Tz: TimeZone> SubAssign<TimeDelta> for DateTime<Tz> {
 /// Subtract-assign `std::time::Duration` from `DateTime`.
 ///
 /// As a part of Chrono's [leap second handling], the addition assumes that **there is no leap
-/// second ever**, except when the `DateTime` itself represents a leap  second in which case
+/// second ever**, except when the `DateTime` itself represents a leap second in which case
 /// the assumption becomes that **there is exactly a single leap second ever**.
 ///
 /// # Panics
@@ -1814,6 +1809,16 @@ impl<Tz: TimeZone> fmt::Debug for DateTime<Tz> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.overflowing_naive_local().fmt(f)?;
         self.offset.fmt(f)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<Tz: TimeZone> defmt::Format for DateTime<Tz>
+where
+    Tz::Offset: defmt::Format,
+{
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "{}{}", self.overflowing_naive_local(), self.offset);
     }
 }
 

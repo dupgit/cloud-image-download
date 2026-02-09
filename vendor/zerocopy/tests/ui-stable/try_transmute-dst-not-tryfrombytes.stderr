@@ -1,24 +1,24 @@
-error[E0277]: the trait bound `NotZerocopy: zerocopy::TryFromBytes` is not satisfied
- --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:17:33
+error[E0277]: the trait bound `NotZerocopy: TryFromBytes` is not satisfied
+ --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:15:33
   |
- 17 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
+ 15 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
     |                                 ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
-help: the trait `zerocopy::TryFromBytes` is not implemented for `NotZerocopy`
-   --> tests/ui-stable/../../zerocopy-derive/tests/include.rs
+help: the trait `TryFromBytes` is not implemented for `NotZerocopy`
+   --> tests/ui-stable/../include.rs
     |
- 48 |     pub struct NotZerocopy<T = ()>(pub T);
+ 15 |     pub struct NotZerocopy<T = ()>(pub T);
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: Consider adding `#[derive(TryFromBytes)]` to `NotZerocopy`
-    = help: the following other types implement trait `zerocopy::TryFromBytes`:
+    = help: the following other types implement trait `TryFromBytes`:
               ()
-              *const T
-              *mut T
-              AU16
-              AtomicBool
-              AtomicI16
-              AtomicI32
-              AtomicI64
+              (A, B)
+              (A, B, C)
+              (A, B, C, D)
+              (A, B, C, D, E)
+              (A, B, C, D, E, F)
+              (A, B, C, D, E, F, G)
+              (A, B, C, D, E, F, G, H)
             and $N others
 note: required by a bound in `ValidityError`
    --> src/error.rs
@@ -26,27 +26,27 @@ note: required by a bound in `ValidityError`
     | pub struct ValidityError<Src, Dst: ?Sized + TryFromBytes> {
     |                                             ^^^^^^^^^^^^ required by this bound in `ValidityError`
 
-error[E0277]: the trait bound `NotZerocopy: zerocopy::TryFromBytes` is not satisfied
- --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:17:58
+error[E0277]: the trait bound `NotZerocopy: TryFromBytes` is not satisfied
+ --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:15:58
   |
- 17 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
+ 15 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
     |                                                          ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
-help: the trait `zerocopy::TryFromBytes` is not implemented for `NotZerocopy`
-   --> tests/ui-stable/../../zerocopy-derive/tests/include.rs
+help: the trait `TryFromBytes` is not implemented for `NotZerocopy`
+   --> tests/ui-stable/../include.rs
     |
- 48 |     pub struct NotZerocopy<T = ()>(pub T);
+ 15 |     pub struct NotZerocopy<T = ()>(pub T);
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: Consider adding `#[derive(TryFromBytes)]` to `NotZerocopy`
-    = help: the following other types implement trait `zerocopy::TryFromBytes`:
+    = help: the following other types implement trait `TryFromBytes`:
               ()
-              *const T
-              *mut T
-              AU16
-              AtomicBool
-              AtomicI16
-              AtomicI32
-              AtomicI64
+              (A, B)
+              (A, B, C)
+              (A, B, C, D)
+              (A, B, C, D, E)
+              (A, B, C, D, E, F)
+              (A, B, C, D, E, F, G)
+              (A, B, C, D, E, F, G, H)
             and $N others
 note: required by a bound in `try_transmute`
    --> src/util/macro_util.rs
@@ -58,27 +58,27 @@ note: required by a bound in `try_transmute`
     |          ^^^^^^^^^^^^ required by this bound in `try_transmute`
     = note: this error originates in the macro `try_transmute` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotZerocopy: zerocopy::TryFromBytes` is not satisfied
- --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:17:58
+error[E0277]: the trait bound `NotZerocopy: TryFromBytes` is not satisfied
+ --> tests/ui-stable/try_transmute-dst-not-tryfrombytes.rs:15:58
   |
- 17 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
+ 15 |     let dst_not_try_from_bytes: Result<NotZerocopy, _> = try_transmute!(AU16(0));
     |                                                          ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
     |
-help: the trait `zerocopy::TryFromBytes` is not implemented for `NotZerocopy`
-   --> tests/ui-stable/../../zerocopy-derive/tests/include.rs
+help: the trait `TryFromBytes` is not implemented for `NotZerocopy`
+   --> tests/ui-stable/../include.rs
     |
- 48 |     pub struct NotZerocopy<T = ()>(pub T);
+ 15 |     pub struct NotZerocopy<T = ()>(pub T);
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: Consider adding `#[derive(TryFromBytes)]` to `NotZerocopy`
-    = help: the following other types implement trait `zerocopy::TryFromBytes`:
+    = help: the following other types implement trait `TryFromBytes`:
               ()
-              *const T
-              *mut T
-              AU16
-              AtomicBool
-              AtomicI16
-              AtomicI32
-              AtomicI64
+              (A, B)
+              (A, B, C)
+              (A, B, C, D)
+              (A, B, C, D, E)
+              (A, B, C, D, E, F)
+              (A, B, C, D, E, F, G)
+              (A, B, C, D, E, F, G, H)
             and $N others
 note: required by a bound in `ValidityError`
    --> src/error.rs

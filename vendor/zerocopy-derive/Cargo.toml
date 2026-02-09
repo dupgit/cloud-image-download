@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "zerocopy-derive"
-version = "0.8.33"
+version = "0.8.39"
 authors = [
     "Joshua Liebow-Feeser <joshlf@google.com>",
     "Jack Wrenn <jswrenn@amazon.com>",
@@ -37,10 +37,6 @@ repository = "https://github.com/google/zerocopy"
 name = "zerocopy_derive"
 path = "src/lib.rs"
 proc-macro = true
-
-[[test]]
-name = "crate_path"
-path = "tests/crate_path.rs"
 
 [[test]]
 name = "deprecated"
@@ -93,6 +89,18 @@ path = "tests/issue_2117.rs"
 [[test]]
 name = "issue_2835"
 path = "tests/issue_2835.rs"
+
+[[test]]
+name = "issue_2880"
+path = "tests/issue_2880.rs"
+
+[[test]]
+name = "issue_2915"
+path = "tests/issue_2915.rs"
+
+[[test]]
+name = "on_error"
+path = "tests/on_error.rs"
 
 [[test]]
 name = "paths_and_modules"
@@ -179,12 +187,6 @@ features = ["full"]
 [dev-dependencies.dissimilar]
 version = "1.0.9"
 
-[dev-dependencies.libc]
-version = "=0.2.163"
-
-[dev-dependencies.once_cell]
-version = "=1.9"
-
 [dev-dependencies.prettyplease]
 version = "=0.2.17"
 
@@ -200,6 +202,10 @@ version = "1.0"
 [dev-dependencies.static_assertions]
 version = "1.1"
 
+[dev-dependencies.syn]
+version = "2.0.46"
+features = ["visit"]
+
 [dev-dependencies.trybuild]
 version = "=1.0.89"
 features = ["diff"]
@@ -207,4 +213,7 @@ features = ["diff"]
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(zerocopy_derive_union_into_bytes)"]
+check-cfg = [
+    "cfg(zerocopy_derive_union_into_bytes)",
+    "cfg(zerocopy_unstable_derive_on_error)",
+]

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 /*!
-<!-- tidy:crate-doc:start -->
+<!-- Note: Document from sync-markdown-to-rustdoc:start through sync-markdown-to-rustdoc:end
+     is synchronized from README.md. Any changes to that range are not preserved. -->
+<!-- tidy:sync-markdown-to-rustdoc:start -->
+
 Synchronization primitives built with [portable-atomic].
 
 - Provide `Arc`. (optional, requires the `std` or `alloc` feature)
@@ -59,7 +62,7 @@ RUSTFLAGS="--cfg portable_atomic_unstable_coerce_unsized" cargo ...
 
   **Note:** This cfg is unstable and outside of the normal semver guarantees and minor or patch versions of portable-atomic-util may make breaking changes to them at any time.
 
-<!-- tidy:crate-doc:end -->
+<!-- tidy:sync-markdown-to-rustdoc:end -->
 */
 
 #![no_std]
@@ -84,9 +87,11 @@ RUSTFLAGS="--cfg portable_atomic_unstable_coerce_unsized" cargo ...
     clippy::std_instead_of_alloc,
     clippy::std_instead_of_core,
 )]
+#![cfg_attr(portable_atomic_no_strict_provenance, allow(unstable_name_collisions))]
 #![allow(clippy::inline_always)]
 // docs.rs only (cfg is enabled by docs.rs, not build script)
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg = false))]
 // Enable custom unsized coercions if the user explicitly opts-in to unstable cfg
 #![cfg_attr(portable_atomic_unstable_coerce_unsized, feature(coerce_unsized, unsize))]
 
@@ -96,6 +101,9 @@ extern crate alloc;
 extern crate std;
 #[cfg(all(feature = "std", portable_atomic_no_alloc))]
 extern crate std as alloc;
+
+#[macro_use]
+mod utils;
 
 #[cfg(any(all(feature = "alloc", not(portable_atomic_no_alloc)), feature = "std"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "alloc", feature = "std"))))]

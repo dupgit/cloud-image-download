@@ -73,6 +73,7 @@ const OSSL_CONF_DEFINES: &[&str] = &[
 
 mod cc_builder;
 mod cmake_builder;
+mod nasm_builder;
 #[cfg(feature = "bindgen")]
 mod sys_bindgen;
 
@@ -95,7 +96,6 @@ pub(crate) fn get_aws_lc_sys_includes_path() -> Option<Vec<PathBuf>> {
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputLib {
-    RustWrapper,
     Crypto,
     Ssl,
 }
@@ -235,7 +235,6 @@ impl OutputLib {
         let name = match self {
             OutputLib::Crypto => "crypto",
             OutputLib::Ssl => "ssl",
-            OutputLib::RustWrapper => "rust_wrapper",
         };
         if let Some(prefix) = prefix {
             format!("{prefix}_{name}")
@@ -258,7 +257,25 @@ fn target_platform_prefix(name: &str) -> String {
 
 #[cfg(not(feature = "all-bindings"))]
 fn target_has_prefixed_symbols() -> bool {
-    target_vendor() == "apple" || target().starts_with("i686-pc-windows-")
+    target_vendor() == "apple" || (target_arch() == "x86" && target_os() == "windows")
+}
+
+#[cfg(not(feature = "all-bindings"))]
+fn is_cranelift_backend() -> bool {
+    // CARGO_ENCODED_RUSTFLAGS contains flags separated by 0x1f (ASCII Unit Separator)
+    if let Some(rustflags) = optional_env("CARGO_ENCODED_RUSTFLAGS") {
+        for flag in rustflags.split('\x1f') {
+            if flag.contains("codegen-backend=cranelift") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(feature = "all-bindings"))]
+fn target_chokes_on_u1() -> bool {
+    target_arch() == "mips" || target_arch() == "mips64" || is_cranelift_backend()
 }
 
 #[cfg(all(feature = "bindgen", not(feature = "all-bindings")))]
@@ -487,6 +504,7 @@ static mut AWS_LC_SYS_CMAKE_BUILDER: Option<bool> = None;
 static mut AWS_LC_SYS_NO_PREGENERATED_SRC: bool = false;
 static mut AWS_LC_SYS_EFFECTIVE_TARGET: String = String::new();
 static mut AWS_LC_SYS_NO_JITTER_ENTROPY: Option<bool> = None;
+static mut AWS_LC_SYS_NO_U1_BINDINGS: Option<bool> = None;
 
 static mut AWS_LC_SYS_C_STD: CStdRequested = CStdRequested::None;
 
@@ -506,6 +524,7 @@ fn initialize() {
         AWS_LC_SYS_EFFECTIVE_TARGET =
             optional_env_crate_target("EFFECTIVE_TARGET").unwrap_or_default();
         AWS_LC_SYS_NO_JITTER_ENTROPY = env_crate_var_to_bool("NO_JITTER_ENTROPY");
+        AWS_LC_SYS_NO_U1_BINDINGS = env_crate_var_to_bool("NO_U1_BINDINGS");
     }
 
     if !is_external_bindgen_requested().unwrap_or(false)
@@ -513,6 +532,10 @@ fn initialize() {
     {
         #[cfg(feature = "all-bindings")]
         {
+            assert!(
+                use_no_u1_bindings() != Some(true),
+                "Bindgen currently cannot generate prefixed bindings w/o the \\x01 prefix.",
+            );
             let target = effective_target();
             let supported_platform = match target.as_str() {
                 "aarch64-apple-darwin"
@@ -539,7 +562,16 @@ fn initialize() {
         }
         #[cfg(not(feature = "all-bindings"))]
         {
-            if target_has_prefixed_symbols() {
+            if use_no_u1_bindings() == Some(true)
+                || (target_chokes_on_u1() && use_no_u1_bindings().is_none())
+            {
+                if is_cranelift_backend() {
+                    emit_warning(
+                        "Cranelift codegen backend detected. Using universal_no_u1 bindings.",
+                    );
+                }
+                emit_rustc_cfg("universal-no-u1");
+            } else if target_has_prefixed_symbols() {
                 emit_rustc_cfg("universal-prefixed");
             } else {
                 emit_rustc_cfg("universal");
@@ -598,6 +630,10 @@ fn disable_jitter_entropy() -> Option<bool> {
     unsafe { AWS_LC_SYS_NO_JITTER_ENTROPY }
 }
 
+fn use_no_u1_bindings() -> Option<bool> {
+    unsafe { AWS_LC_SYS_NO_U1_BINDINGS }
+}
+
 #[allow(unknown_lints)]
 #[allow(static_mut_refs)]
 fn get_crate_cflags() -> &'static str {
@@ -608,9 +644,11 @@ fn use_prebuilt_nasm() -> bool {
     target_os() == "windows"
         && target_arch() == "x86_64"
         && !is_no_asm()
-        && !test_nasm_command()
-        && (Some(true) == allow_prebuilt_nasm()
-            || (allow_prebuilt_nasm().is_none() && cfg!(feature = "prebuilt-nasm")))
+        && !test_nasm_command() // NASM not found in environment
+        && Some(false) != allow_prebuilt_nasm() // not prevented by environment
+        && !cfg!(feature = "disable-prebuilt-nasm") // not prevented by feature
+        // permitted by environment or by feature
+        && (Some(true) == allow_prebuilt_nasm() || cfg!(feature = "prebuilt-nasm"))
 }
 
 fn allow_prebuilt_nasm() -> Option<bool> {
@@ -637,6 +675,10 @@ fn test_nasm_command() -> bool {
     status
 }
 
+fn test_clang_cl_command() -> bool {
+    execute_command("clang-cl".as_ref(), &["--version".as_ref()]).status
+}
+
 fn prepare_cargo_cfg() {
     if cfg!(clippy) {
         println!("cargo:rustc-check-cfg=cfg(use_bindgen_pregenerated)");
@@ -654,6 +696,7 @@ fn prepare_cargo_cfg() {
         println!("cargo:rustc-check-cfg=cfg(x86_64_unknown_linux_gnu)");
         println!("cargo:rustc-check-cfg=cfg(x86_64_unknown_linux_musl)");
         println!("cargo:rustc-check-cfg=cfg(universal)");
+        println!("cargo:rustc-check-cfg=cfg(universal_no_u1)");
         println!("cargo:rustc-check-cfg=cfg(universal_prefixed)");
     }
 }

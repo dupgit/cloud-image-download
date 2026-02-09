@@ -47,21 +47,24 @@ compile_error!(
     "internal error: unreachable since 128-bit target either has atomic CAS for the pointer width or does not have CAS"
 );
 
-#[macro_use]
-pub(crate) mod utils;
+mod utils;
 
 // Use "wide" sequence lock if the pointer width <= 32 for preventing its counter against wrap
 // around.
 //
 // Some 64-bit architectures have ABI with 32-bit pointer width (e.g., x86_64 X32 ABI,
 // AArch64 ILP32 ABI, mips64 N32 ABI). On those targets, AtomicU64 is available and fast,
-// so use it to implement normal sequence lock.
+// so use it to implement normal sequence lock and reduce chunks of byte-wise atomic memcpy.
 cfg_has_fast_atomic_64! {
     mod seq_lock;
+    type AtomicChunk = core::sync::atomic::AtomicU64;
+    type Chunk = u64;
 }
 cfg_no_fast_atomic_64! {
     #[path = "seq_lock_wide.rs"]
     mod seq_lock;
+    type AtomicChunk = core::sync::atomic::AtomicU32;
+    type Chunk = u32;
 }
 
 use core::{cell::UnsafeCell, mem, sync::atomic::Ordering};
@@ -73,11 +76,6 @@ use self::{
 #[cfg(portable_atomic_no_strict_provenance)]
 use crate::utils::ptr::PtrExt as _;
 use crate::utils::unlikely;
-
-// Some 64-bit architectures have ABI with 32-bit pointer width (e.g., x86_64 X32 ABI,
-// AArch64 ILP32 ABI, mips64 N32 ABI). On those targets, AtomicU64 is fast,
-// so use it to reduce chunks of byte-wise atomic memcpy.
-use self::seq_lock::{AtomicChunk, Chunk};
 
 // Adapted from https://github.com/crossbeam-rs/crossbeam/blob/crossbeam-utils-0.8.21/crossbeam-utils/src/atomic/atomic_cell.rs#L970-L1010.
 #[inline]
@@ -189,7 +187,7 @@ macro_rules! atomic {
                 ),
                 all(
                     target_arch = "powerpc64",
-                    portable_atomic_unstable_asm_experimental_arch,
+                    not(portable_atomic_no_asm),
                     not(portable_atomic_no_outline_atomics),
                     any(
                         all(
@@ -294,7 +292,7 @@ macro_rules! atomic {
                 ),
                 all(
                     target_arch = "powerpc64",
-                    portable_atomic_unstable_asm_experimental_arch,
+                    not(portable_atomic_no_asm),
                     not(portable_atomic_no_outline_atomics),
                     any(
                         all(

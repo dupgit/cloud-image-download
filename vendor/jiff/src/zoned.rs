@@ -381,6 +381,23 @@ struct ZonedInner {
 }
 
 impl Zoned {
+    /// The default `Zoned` value.
+    ///
+    /// This is pre-computed as a constant instead of just doing
+    /// `Zoned::new(Timestamp::default(), TimeZone::UTC)`. I had
+    /// thought the compiler wouldn't be able to optimized away that
+    /// `Zoned::new` call, but it looks like it did. However, this is a
+    /// more robust way to guarantee that `Zoned::default()` is always
+    /// fast.
+    const DEFAULT: Zoned = Zoned {
+        inner: ZonedInner {
+            timestamp: Timestamp::UNIX_EPOCH,
+            datetime: DateTime::constant(1970, 1, 1, 0, 0, 0, 0),
+            offset: Offset::UTC,
+            time_zone: TimeZone::UTC,
+        },
+    };
+
     /// Returns the current system time in this system's time zone.
     ///
     /// If the system's time zone could not be found, then
@@ -2201,12 +2218,25 @@ impl Zoned {
         &self,
         duration: A,
     ) -> Result<Zoned, Error> {
+        self.clone().checked_add_consuming(duration)
+    }
+
+    /// Like `checked_add`, but consumes `self` and thus avoids cloning
+    /// the `TimeZone`.
+    ///
+    /// This is currently only accessible via the `impl Add<...> for Zoned`
+    /// trait implementation.
+    #[inline]
+    fn checked_add_consuming<A: Into<ZonedArithmetic>>(
+        self,
+        duration: A,
+    ) -> Result<Zoned, Error> {
         let duration: ZonedArithmetic = duration.into();
         duration.checked_add(self)
     }
 
     #[inline]
-    fn checked_add_span(&self, span: Span) -> Result<Zoned, Error> {
+    fn checked_add_span(self, span: Span) -> Result<Zoned, Error> {
         let span_calendar = span.only_calendar();
         // If our duration only consists of "time" (hours, minutes, etc), then
         // we can short-circuit and do timestamp math. This also avoids dealing
@@ -2224,23 +2254,23 @@ impl Zoned {
             .checked_add(span_calendar)
             .context(E::AddDateTime)?;
 
-        let tz = self.time_zone();
+        let tz = self.inner.time_zone;
         let mut ts = tz
             .to_ambiguous_timestamp(dt)
             .compatible()
             .context(E::ConvertDateTimeToTimestamp)?;
         ts = ts.checked_add(span_time).context(E::AddTimestamp)?;
-        Ok(ts.to_zoned(tz.clone()))
+        Ok(ts.to_zoned(tz))
     }
 
     #[inline]
     fn checked_add_duration(
-        &self,
+        self,
         duration: SignedDuration,
     ) -> Result<Zoned, Error> {
         self.timestamp()
             .checked_add(duration)
-            .map(|ts| ts.to_zoned(self.time_zone().clone()))
+            .map(|ts| ts.to_zoned(self.inner.time_zone))
     }
 
     /// This routine is identical to [`Zoned::checked_add`] with the
@@ -2288,6 +2318,19 @@ impl Zoned {
     #[inline]
     pub fn checked_sub<A: Into<ZonedArithmetic>>(
         &self,
+        duration: A,
+    ) -> Result<Zoned, Error> {
+        self.clone().checked_sub_consuming(duration)
+    }
+
+    /// Like `checked_sub`, but consumes `self` and thus avoids cloning
+    /// the `TimeZone`.
+    ///
+    /// This is currently only accessible via the `impl Sub<...> for Zoned`
+    /// trait implementation.
+    #[inline]
+    fn checked_sub_consuming<A: Into<ZonedArithmetic>>(
+        self,
         duration: A,
     ) -> Result<Zoned, Error> {
         let duration: ZonedArithmetic = duration.into();
@@ -3308,7 +3351,7 @@ impl Zoned {
 impl Default for Zoned {
     #[inline]
     fn default() -> Zoned {
-        Zoned::new(Timestamp::default(), TimeZone::UTC)
+        Zoned::DEFAULT
     }
 }
 
@@ -3516,7 +3559,8 @@ impl<'a> core::ops::Add<Span> for Zoned {
 
     #[inline]
     fn add(self, rhs: Span) -> Zoned {
-        (&self).add(rhs)
+        self.checked_add_consuming(rhs)
+            .expect("adding span to zoned datetime overflowed")
     }
 }
 
@@ -3541,7 +3585,7 @@ impl<'a> core::ops::Add<Span> for &'a Zoned {
 impl core::ops::AddAssign<Span> for Zoned {
     #[inline]
     fn add_assign(&mut self, rhs: Span) {
-        *self = &*self + rhs
+        *self = core::mem::take(self) + rhs;
     }
 }
 
@@ -3559,7 +3603,8 @@ impl<'a> core::ops::Sub<Span> for Zoned {
 
     #[inline]
     fn sub(self, rhs: Span) -> Zoned {
-        (&self).sub(rhs)
+        self.checked_sub_consuming(rhs)
+            .expect("subtracting span from zoned datetime overflowed")
     }
 }
 
@@ -3584,7 +3629,7 @@ impl<'a> core::ops::Sub<Span> for &'a Zoned {
 impl core::ops::SubAssign<Span> for Zoned {
     #[inline]
     fn sub_assign(&mut self, rhs: Span) {
-        *self = &*self - rhs
+        *self = core::mem::take(self) - rhs;
     }
 }
 
@@ -3647,7 +3692,8 @@ impl core::ops::Add<SignedDuration> for Zoned {
 
     #[inline]
     fn add(self, rhs: SignedDuration) -> Zoned {
-        (&self).add(rhs)
+        self.checked_add_consuming(rhs)
+            .expect("adding signed duration to zoned datetime overflowed")
     }
 }
 
@@ -3672,7 +3718,7 @@ impl<'a> core::ops::Add<SignedDuration> for &'a Zoned {
 impl core::ops::AddAssign<SignedDuration> for Zoned {
     #[inline]
     fn add_assign(&mut self, rhs: SignedDuration) {
-        *self = &*self + rhs
+        *self = core::mem::take(self) + rhs;
     }
 }
 
@@ -3690,7 +3736,9 @@ impl core::ops::Sub<SignedDuration> for Zoned {
 
     #[inline]
     fn sub(self, rhs: SignedDuration) -> Zoned {
-        (&self).sub(rhs)
+        self.checked_sub_consuming(rhs).expect(
+            "subtracting signed duration from zoned datetime overflowed",
+        )
     }
 }
 
@@ -3716,7 +3764,7 @@ impl<'a> core::ops::Sub<SignedDuration> for &'a Zoned {
 impl core::ops::SubAssign<SignedDuration> for Zoned {
     #[inline]
     fn sub_assign(&mut self, rhs: SignedDuration) {
-        *self = &*self - rhs
+        *self = core::mem::take(self) - rhs;
     }
 }
 
@@ -3734,7 +3782,8 @@ impl core::ops::Add<UnsignedDuration> for Zoned {
 
     #[inline]
     fn add(self, rhs: UnsignedDuration) -> Zoned {
-        (&self).add(rhs)
+        self.checked_add_consuming(rhs)
+            .expect("adding unsigned duration to zoned datetime overflowed")
     }
 }
 
@@ -3759,7 +3808,7 @@ impl<'a> core::ops::Add<UnsignedDuration> for &'a Zoned {
 impl core::ops::AddAssign<UnsignedDuration> for Zoned {
     #[inline]
     fn add_assign(&mut self, rhs: UnsignedDuration) {
-        *self = &*self + rhs
+        *self = core::mem::take(self) + rhs;
     }
 }
 
@@ -3777,7 +3826,9 @@ impl core::ops::Sub<UnsignedDuration> for Zoned {
 
     #[inline]
     fn sub(self, rhs: UnsignedDuration) -> Zoned {
-        (&self).sub(rhs)
+        self.checked_sub_consuming(rhs).expect(
+            "subtracting unsigned duration from zoned datetime overflowed",
+        )
     }
 }
 
@@ -3803,7 +3854,7 @@ impl<'a> core::ops::Sub<UnsignedDuration> for &'a Zoned {
 impl core::ops::SubAssign<UnsignedDuration> for Zoned {
     #[inline]
     fn sub_assign(&mut self, rhs: UnsignedDuration) {
-        *self = &*self - rhs
+        *self = core::mem::take(self) - rhs;
     }
 }
 
@@ -3987,7 +4038,7 @@ pub struct ZonedArithmetic {
 
 impl ZonedArithmetic {
     #[inline]
-    fn checked_add(self, zdt: &Zoned) -> Result<Zoned, Error> {
+    fn checked_add(self, zdt: Zoned) -> Result<Zoned, Error> {
         match self.duration.to_signed()? {
             SDuration::Span(span) => zdt.checked_add_span(span),
             SDuration::Absolute(sdur) => zdt.checked_add_duration(sdur),

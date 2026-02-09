@@ -22,6 +22,7 @@ alignmentscope
 alink
 allow
 allowfullscreen
+alpha
 alphabetic
 alt
 altGlyph
@@ -148,6 +149,7 @@ bgsound
 bias
 big
 blink
+blocking
 blockquote
 body
 border
@@ -191,6 +193,7 @@ codomain
 col
 colgroup
 color
+colorspace
 color-interpolation
 color-interpolation-filters
 color-profile

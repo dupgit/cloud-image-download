@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls-webpki"
-version = "0.103.8"
+version = "0.103.9"
 build = false
 include = [
     "Cargo.toml",
@@ -59,8 +59,12 @@ categories = [
 license = "ISC"
 repository = "https://github.com/rustls/webpki"
 
-[package.metadata.cargo-semver-checks.lints]
-enum_variant_marked_deprecated = "warn"
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+    "--cfg",
+    "webpki_docsrs",
+]
 
 [package.metadata.cargo_check_external_types]
 allowed_external_types = [
@@ -68,12 +72,8 @@ allowed_external_types = [
     "rustls_pki_types",
 ]
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = [
-    "--cfg",
-    "webpki_docsrs",
-]
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_marked_deprecated = "warn"
 
 [features]
 alloc = [
