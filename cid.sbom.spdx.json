@@ -1,20 +1,20 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-02-22T14:13:41Z",
+    "created": "2026-02-22T21:13:43Z",
     "creators": [
       "Tool: cargo-sbom-v0.10.0"
     ]
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-deef7588-d739-4b7d-8529-f2615045ec24",
+  "documentNamespace": "https://spdx.org/spdxdocs/cloud-image-download-3d2569f5-ed38-4cd5-928a-e9e750bf8a43",
   "files": [
     {
       "SPDXID": "SPDXRef-File-cid",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "c61433c089c98a53fc470e2498b8a6bf9db82f3a"
+          "checksumValue": "5cec4e2d7a1fd22a67c934114ce90b47a48e759c"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -28,7 +28,7 @@
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "c61433c089c98a53fc470e2498b8a6bf9db82f3a"
+          "checksumValue": "5cec4e2d7a1fd22a67c934114ce90b47a48e759c"
         }
       ],
       "fileName": "./Cargo.lock",
@@ -497,13 +497,13 @@
       "versionInfo": "3.0.4"
     },
     {
-      "SPDXID": "SPDXRef-Package-cloud-image-download-0.5.5",
+      "SPDXID": "SPDXRef-Package-cloud-image-download-0.5.6",
       "description": "Downloads cloud images (qcow2 qemu files for instance) to a directory",
       "downloadLocation": "NONE",
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "cloud-image-download",
-      "versionInfo": "0.5.5"
+      "versionInfo": "0.5.6"
     },
     {
       "SPDXID": "SPDXRef-Package-colorchoice-1.0.4",
@@ -1677,20 +1677,20 @@
       "versionInfo": "1.10.1"
     },
     {
-      "SPDXID": "SPDXRef-Package-httpdirectory-0.18.1",
+      "SPDXID": "SPDXRef-Package-httpdirectory-0.19.0",
       "description": "Library to get a directory webpage (an HTTP index) into a Rust structure",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/httpdirectory@0.18.1",
+          "referenceLocator": "pkg:cargo/httpdirectory@0.19.0",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "MIT OR Apache-2.0",
       "licenseDeclared": "MIT OR Apache-2.0",
       "name": "httpdirectory",
-      "versionInfo": "0.18.1"
+      "versionInfo": "0.19.0"
     },
     {
       "SPDXID": "SPDXRef-Package-hyper-1.8.1",
@@ -2040,29 +2040,29 @@
       "versionInfo": "1.0.17"
     },
     {
-      "SPDXID": "SPDXRef-Package-jiff-0.2.20",
+      "SPDXID": "SPDXRef-Package-jiff-0.2.21",
       "description": "A date-time library that encourages you to jump into the pit of success.\n\nThis library is heavily inspired by the Temporal project.\n",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/jiff@0.2.20",
+          "referenceLocator": "pkg:cargo/jiff@0.2.21",
           "referenceType": "purl"
         }
       ],
       "licenseConcluded": "Unlicense OR MIT",
       "licenseDeclared": "Unlicense OR MIT",
       "name": "jiff",
-      "versionInfo": "0.2.20"
+      "versionInfo": "0.2.21"
     },
     {
-      "SPDXID": "SPDXRef-Package-jiff-static-0.2.20",
+      "SPDXID": "SPDXRef-Package-jiff-static-0.2.21",
       "description": "Create static TimeZone values for Jiff (useful in core-only environments).",
       "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:cargo/jiff-static@0.2.20",
+          "referenceLocator": "pkg:cargo/jiff-static@0.2.21",
           "referenceType": "purl"
         }
       ],
@@ -2070,7 +2070,7 @@
       "licenseConcluded": "Unlicense OR MIT",
       "licenseDeclared": "Unlicense OR MIT",
       "name": "jiff-static",
-      "versionInfo": "0.2.20"
+      "versionInfo": "0.2.21"
     },
     {
       "SPDXID": "SPDXRef-Package-jni-0.21.1",
@@ -5971,12 +5971,12 @@
       "spdxElementId": "SPDXRef-DOCUMENT"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.5",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.6",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cid"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.5",
+      "relatedSpdxElement": "SPDXRef-Package-cloud-image-download-0.5.6",
       "relationshipType": "GENERATED_FROM",
       "spdxElementId": "SPDXRef-File-cloud_image_download"
     },
@@ -6188,102 +6188,102 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-base16ct-1.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-chrono-0.4.43",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-4.5.60",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-clap-verbosity-flag-3.0.4",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-colored-3.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-config-0.15.19",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-const--format-0.2.35",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-directories-6.0.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-env--logger-0.11.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-futures-0.3.32",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-httpdirectory-0.18.1",
+      "relatedSpdxElement": "SPDXRef-Package-httpdirectory-0.19.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-log-0.4.29",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-regex-1.12.3",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-reqwest-0.13.2",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-rusqlite-0.38.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde-1.0.228",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-sha2-0.10.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-shellexpand-3.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.49.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-trauma-2.4.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.5"
+      "spdxElementId": "SPDXRef-Package-cloud-image-download-0.5.6"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-windows-sys-0.61.2",
@@ -6621,7 +6621,7 @@
       "spdxElementId": "SPDXRef-Package-env--logger-0.11.9"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-jiff-0.2.20",
+      "relatedSpdxElement": "SPDXRef-Package-jiff-0.2.21",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-env--logger-0.11.9"
     },
@@ -6988,52 +6988,52 @@
     {
       "relatedSpdxElement": "SPDXRef-Package-chrono-0.4.43",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-const--format-0.2.35",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-regex-1.12.3",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-reqwest-0.13.2",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-scraper-0.25.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-snafu-0.8.9",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tokio-1.49.0",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-tracing-0.1.44",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-unwrap--unreachable-0.1.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-url-2.5.8",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-httpdirectory-0.18.1"
+      "spdxElementId": "SPDXRef-Package-httpdirectory-0.19.0"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-atomic-waker-1.1.2",
@@ -7491,44 +7491,44 @@
       "spdxElementId": "SPDXRef-Package-iri-string-0.7.10"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-jiff-static-0.2.20",
+      "relatedSpdxElement": "SPDXRef-Package-jiff-static-0.2.21",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-log-0.4.29",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-portable-atomic-1.13.1",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-portable-atomic-util-0.2.5",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-serde--core-1.0.228",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-proc-macro2-1.0.106",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-quote-1.0.44",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-syn-2.0.117",
       "relationshipType": "DEPENDS_ON",
-      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.20"
+      "spdxElementId": "SPDXRef-Package-jiff-static-0.2.21"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-cesu8-1.1.0",

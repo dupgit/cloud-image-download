@@ -1,5 +1,22 @@
 # CHANGELOG
 
+0.2.21 (2026-02-22)
+===================
+This release contains a performance improvement and a bug fix for
+`civil::Date::new` where it could panic on some inputs.
+
+Bug fixes:
+
+* [#523](https://github.com/BurntSushi/jiff/issues/523):
+Fix a bug where `Date::new` could panic. This was a regression introduced in
+`jiff 0.2.20`.
+
+Performance:
+
+* [#518](https://github.com/BurntSushi/jiff/pull/518):
+Improve `Timestamp` to `civil::DateTime` conversion performance by ~15%.
+
+
 0.2.20 (2026-02-11)
 ===================
 This release contains a major internal refactor that moves off of using ranged
