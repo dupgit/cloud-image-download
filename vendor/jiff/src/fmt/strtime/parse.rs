@@ -1865,11 +1865,11 @@ mod tests {
 
         insta::assert_snapshot!(
             p("%s", "-377705023202"),
-            @"strptime parsing failed: %s failed: failed to parse Unix timestamp (in seconds): parameter 'second' with value -377705023202 is not in the required range of -377705023201..=253402207200",
+            @"strptime parsing failed: %s failed: failed to parse Unix timestamp (in seconds): parameter 'Unix timestamp seconds' is not in the required range of -377705023201..=253402207200",
         );
         insta::assert_snapshot!(
             p("%s", "253402207201"),
-            @"strptime parsing failed: %s failed: failed to parse Unix timestamp (in seconds): parameter 'second' with value 253402207201 is not in the required range of -377705023201..=253402207200",
+            @"strptime parsing failed: %s failed: failed to parse Unix timestamp (in seconds): parameter 'Unix timestamp seconds' is not in the required range of -377705023201..=253402207200",
         );
         insta::assert_snapshot!(
             p("%s", "-9999999999999999999"),
@@ -1882,11 +1882,11 @@ mod tests {
 
         insta::assert_snapshot!(
             p("%u", "0"),
-            @"strptime parsing failed: %u failed: failed to parse weekday number: parameter 'weekday' with value 0 is not in the required range of 1..=7",
+            @"strptime parsing failed: %u failed: failed to parse weekday number: parameter 'weekday (Monday 1-indexed)' is not in the required range of 1..=7",
         );
         insta::assert_snapshot!(
             p("%w", "7"),
-            @"strptime parsing failed: %w failed: failed to parse weekday number: parameter 'weekday' with value 7 is not in the required range of 0..=6",
+            @"strptime parsing failed: %w failed: failed to parse weekday number: parameter 'weekday (Sunday 0-indexed)' is not in the required range of 0..=6",
         );
         insta::assert_snapshot!(
             p("%u", "128"),
@@ -1935,11 +1935,11 @@ mod tests {
 
         insta::assert_snapshot!(
             p("%m/%d/%y", "6/31/24"),
-            @"invalid date: parameter 'day' with value 31 is not in the required range of 1..=30",
+            @"invalid date: parameter 'day' for `2024-06` is invalid, must be in range `1..=30`",
         );
         insta::assert_snapshot!(
             p("%m/%d/%y", "2/29/23"),
-            @"invalid date: parameter 'day' with value 29 is not in the required range of 1..=28",
+            @"invalid date: parameter 'day' for `2023-02` is invalid, must be in range `1..=28`",
         );
         insta::assert_snapshot!(
             p("%a %m/%d/%y", "Mon 7/14/24"),

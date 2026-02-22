@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use futures_util::future::BoxFuture;
 use opentelemetry::{
     trace::{Span, Tracer, TracerProvider},
     KeyValue,
 };
-use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::{
+    export::trace::{ExportResult, SpanData, SpanExporter},
     trace as sdktrace,
-    trace::{SpanData, SpanExporter},
 };
 #[cfg(not(target_os = "windows"))]
 use pprof::criterion::{Output, PProfProfiler};
@@ -52,9 +52,9 @@ fn span_builder_benchmark_group(c: &mut Criterion) {
     group.finish();
 }
 
-fn not_sampled_provider() -> (sdktrace::SdkTracerProvider, sdktrace::SdkTracer) {
-    let provider = sdktrace::SdkTracerProvider::builder()
-        .with_sampler(sdktrace::Sampler::AlwaysOff)
+fn not_sampled_provider() -> (sdktrace::TracerProvider, sdktrace::Tracer) {
+    let provider = sdktrace::TracerProvider::builder()
+        .with_config(sdktrace::config().with_sampler(sdktrace::Sampler::AlwaysOff))
         .with_simple_exporter(NoopExporter)
         .build();
     let tracer = provider.tracer("not-sampled");
@@ -65,8 +65,8 @@ fn not_sampled_provider() -> (sdktrace::SdkTracerProvider, sdktrace::SdkTracer) 
 struct NoopExporter;
 
 impl SpanExporter for NoopExporter {
-    async fn export(&self, _spans: Vec<SpanData>) -> OTelSdkResult {
-        Ok(())
+    fn export(&mut self, _spans: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+        Box::pin(futures_util::future::ready(Ok(())))
     }
 }
 
@@ -83,18 +83,13 @@ const MAP_KEYS: [&str; 64] = [
 #[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
-    config = Criterion::default()
-        .warm_up_time(std::time::Duration::from_secs(1))
-        .measurement_time(std::time::Duration::from_secs(2))
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
     targets = criterion_benchmark
 }
 #[cfg(target_os = "windows")]
 criterion_group! {
     name = benches;
-    config = Criterion::default()
-        .warm_up_time(std::time::Duration::from_secs(1))
-        .measurement_time(std::time::Duration::from_secs(2));
+    config = Criterion::default();
     targets = criterion_benchmark
 }
 criterion_main!(benches);

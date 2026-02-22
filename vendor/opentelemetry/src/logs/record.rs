@@ -1,74 +1,85 @@
-use crate::{Key, StringValue};
-
-use crate::{SpanId, TraceFlags, TraceId};
-
+use crate::{
+    trace::{SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId},
+    Array, Key, StringValue, Value,
+};
 use std::{borrow::Cow, collections::HashMap, time::SystemTime};
 
-/// SDK implemented trait for managing log records
-pub trait LogRecord {
-    /// Sets the `event_name` of a record
-    fn set_event_name(&mut self, name: &'static str);
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+/// LogRecord represents all data carried by a log record, and
+/// is provided to `LogExporter`s as input.
+pub struct LogRecord {
+    /// Event name. Optional as not all the logging API support it.
+    pub event_name: Option<Cow<'static, str>>,
 
-    /// Sets the `target` of a record.
-    /// Currently, both `opentelemetry-appender-tracing` and `opentelemetry-appender-log` create a single logger
-    /// with a scope that doesn't accurately reflect the component emitting the logs.
-    /// Exporters MAY use this field to override the `instrumentation_scope.name`.
-    fn set_target<T>(&mut self, _target: T)
-    where
-        T: Into<Cow<'static, str>>;
+    /// Record timestamp
+    pub timestamp: Option<SystemTime>,
 
-    /// Sets the time when the event occurred measured by the origin clock, i.e. the time at the source.
-    fn set_timestamp(&mut self, timestamp: SystemTime);
+    /// Timestamp for when the record was observed by OpenTelemetry
+    pub observed_timestamp: SystemTime,
 
-    /// Sets the observed event timestamp.
-    fn set_observed_timestamp(&mut self, timestamp: SystemTime);
+    /// Trace context for logs associated with spans
+    pub trace_context: Option<TraceContext>,
 
-    /// Sets severity as text.
-    fn set_severity_text(&mut self, text: &'static str);
+    /// The original severity string from the source
+    pub severity_text: Option<Cow<'static, str>>,
+    /// The corresponding severity value, normalized
+    pub severity_number: Option<Severity>,
 
-    /// Sets severity as a numeric value.
-    fn set_severity_number(&mut self, number: Severity);
+    /// Record body
+    pub body: Option<AnyValue>,
 
-    /// Sets the message body of the log.
-    fn set_body(&mut self, body: AnyValue);
+    /// Additional attributes associated with this record
+    pub attributes: Option<Vec<(Key, AnyValue)>>,
+}
 
-    /// Adds multiple attributes.
-    fn add_attributes<I, K, V>(&mut self, attributes: I)
-    where
-        I: IntoIterator<Item = (K, V)>,
-        K: Into<Key>,
-        V: Into<AnyValue>;
+impl Default for LogRecord {
+    fn default() -> Self {
+        LogRecord {
+            event_name: None,
+            timestamp: None,
+            observed_timestamp: SystemTime::now(),
+            trace_context: None,
+            severity_text: None,
+            severity_number: None,
+            body: None,
+            attributes: None,
+        }
+    }
+}
 
-    /// Adds a single attribute.
-    fn add_attribute<K, V>(&mut self, key: K, value: V)
-    where
-        K: Into<Key>,
-        V: Into<AnyValue>;
+impl LogRecord {
+    /// Create a [`LogRecordBuilder`] to create a new Log Record
+    pub fn builder() -> LogRecordBuilder {
+        LogRecordBuilder::new()
+    }
+}
 
-    /// Sets the trace context of the log.
-    fn set_trace_context(
-        &mut self,
-        trace_id: TraceId,
-        span_id: SpanId,
-        trace_flags: Option<TraceFlags>,
-    ) {
-        let _ = trace_id;
-        let _ = span_id;
-        let _ = trace_flags;
+/// TraceContext stores the trace data for logs that have an associated
+/// span.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct TraceContext {
+    /// Trace id
+    pub trace_id: TraceId,
+    /// Span Id
+    pub span_id: SpanId,
+    /// Trace flags
+    pub trace_flags: Option<TraceFlags>,
+}
+
+impl From<&SpanContext> for TraceContext {
+    fn from(span_context: &SpanContext) -> Self {
+        TraceContext {
+            trace_id: span_context.trace_id(),
+            span_id: span_context.span_id(),
+            trace_flags: Some(span_context.trace_flags()),
+        }
     }
 }
 
 /// Value types for representing arbitrary values in a log record.
-/// Note: The `tracing` and `log` crates only support basic types that can be
-/// converted to these core variants: `i64`, `f64`, `StringValue`, and `bool`.
-/// Any complex and custom types are supported through their Debug implementation,
-/// and converted to String. More complex types (`Bytes`, `ListAny`, and `Map`) are
-/// included here to meet specification requirements and are available to support
-/// custom appenders that may be implemented for other logging crates.
-/// These types allow for handling dynamic data structures, so keep in mind the
-/// potential performance overhead of using boxed vectors and maps in appenders.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum AnyValue {
     /// An integer value
     Int(i64),
@@ -79,11 +90,11 @@ pub enum AnyValue {
     /// A boolean value
     Boolean(bool),
     /// A byte array
-    Bytes(Box<Vec<u8>>),
+    Bytes(Vec<u8>),
     /// An array of `Any` values
-    ListAny(Box<Vec<AnyValue>>),
+    ListAny(Vec<AnyValue>),
     /// A map of string keys to `Any` values, arbitrarily nested.
-    Map(Box<HashMap<Key, AnyValue>>),
+    Map(HashMap<Key, AnyValue>),
 }
 
 macro_rules! impl_trivial_from {
@@ -115,16 +126,10 @@ impl_trivial_from!(StringValue, AnyValue::String);
 
 impl_trivial_from!(bool, AnyValue::Boolean);
 
-impl From<&[u8]> for AnyValue {
-    fn from(val: &[u8]) -> AnyValue {
-        AnyValue::Bytes(Box::new(val.to_vec()))
-    }
-}
-
 impl<T: Into<AnyValue>> FromIterator<T> for AnyValue {
     /// Creates an [`AnyValue::ListAny`] value from a sequence of `Into<AnyValue>` values.
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        AnyValue::ListAny(Box::new(iter.into_iter().map(Into::into).collect()))
+        AnyValue::ListAny(iter.into_iter().map(Into::into).collect())
     }
 }
 
@@ -132,9 +137,26 @@ impl<K: Into<Key>, V: Into<AnyValue>> FromIterator<(K, V)> for AnyValue {
     /// Creates an [`AnyValue::Map`] value from a sequence of key-value pairs
     /// that can be converted into a `Key` and `AnyValue` respectively.
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
-        AnyValue::Map(Box::new(HashMap::from_iter(
+        AnyValue::Map(HashMap::from_iter(
             iter.into_iter().map(|(k, v)| (k.into(), v.into())),
-        )))
+        ))
+    }
+}
+
+impl From<Value> for AnyValue {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Bool(b) => b.into(),
+            Value::I64(i) => i.into(),
+            Value::F64(f) => f.into(),
+            Value::String(s) => s.into(),
+            Value::Array(a) => match a {
+                Array::Bool(b) => AnyValue::from_iter(b),
+                Array::F64(f) => AnyValue::from_iter(f),
+                Array::I64(i) => AnyValue::from_iter(i),
+                Array::String(s) => AnyValue::from_iter(s),
+            },
+        }
     }
 }
 
@@ -226,5 +248,148 @@ impl Severity {
             Severity::Fatal3 => "FATAL3",
             Severity::Fatal4 => "FATAL4",
         }
+    }
+}
+
+/// A builder for [`LogRecord`] values.
+#[derive(Debug, Clone)]
+pub struct LogRecordBuilder {
+    record: LogRecord,
+}
+
+impl LogRecordBuilder {
+    /// Create a new LogRecordBuilder
+    pub fn new() -> Self {
+        Self {
+            record: Default::default(),
+        }
+    }
+
+    /// Assign timestamp
+    pub fn with_timestamp(self, timestamp: SystemTime) -> Self {
+        Self {
+            record: LogRecord {
+                timestamp: Some(timestamp),
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign observed timestamp
+    pub fn with_observed_timestamp(self, timestamp: SystemTime) -> Self {
+        Self {
+            record: LogRecord {
+                observed_timestamp: timestamp,
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign the record's [`TraceContext`]
+    pub fn with_span_context(self, span_context: &SpanContext) -> Self {
+        Self {
+            record: LogRecord {
+                trace_context: Some(TraceContext {
+                    span_id: span_context.span_id(),
+                    trace_id: span_context.trace_id(),
+                    trace_flags: Some(span_context.trace_flags()),
+                }),
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign the record's [`TraceContext`] from a `TraceContextExt` trait
+    pub fn with_context<T>(self, context: &T) -> Self
+    where
+        T: TraceContextExt,
+    {
+        if context.has_active_span() {
+            self.with_span_context(context.span().span_context())
+        } else {
+            self
+        }
+    }
+
+    /// Assign severity text
+    pub fn with_severity_text<T>(self, severity: T) -> Self
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Self {
+            record: LogRecord {
+                severity_text: Some(severity.into()),
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign severity number
+    pub fn with_severity_number(self, severity: Severity) -> Self {
+        Self {
+            record: LogRecord {
+                severity_number: Some(severity),
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign body
+    pub fn with_body(self, body: impl Into<AnyValue>) -> Self {
+        Self {
+            record: LogRecord {
+                body: Some(body.into()),
+                ..self.record
+            },
+        }
+    }
+
+    /// Assign attributes.
+    /// The SDK doesn't carry on any deduplication on these attributes.
+    pub fn with_attributes(self, attributes: Vec<(Key, AnyValue)>) -> Self {
+        Self {
+            record: LogRecord {
+                attributes: Some(attributes),
+                ..self.record
+            },
+        }
+    }
+
+    /// Set a single attribute for this record.
+    /// The SDK doesn't carry on any deduplication on these attributes.
+    pub fn with_attribute<K, V>(mut self, key: K, value: V) -> Self
+    where
+        K: Into<Key>,
+        V: Into<AnyValue>,
+    {
+        if let Some(ref mut vec) = self.record.attributes {
+            vec.push((key.into(), value.into()));
+        } else {
+            let vec = vec![(key.into(), value.into())];
+            self.record.attributes = Some(vec);
+        }
+
+        self
+    }
+
+    /// Sets the `event_name` of a record.
+    pub fn with_name(self, name: Cow<'static, str>) -> Self {
+        Self {
+            record: LogRecord {
+                event_name: Some(name),
+                ..self.record
+            },
+        }
+    }
+
+    /// Build the record, consuming the Builder
+    pub fn build(self) -> LogRecord {
+        self.record
+    }
+}
+
+impl Default for LogRecordBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,4 +1,4 @@
-//! No-op trace implementation
+//! No-op trace impls
 //!
 //! This implementation is returned as the global tracer if no `Tracer`
 //! has been set. It is also useful for testing purposes as it is intended
@@ -6,9 +6,9 @@
 use crate::{
     propagation::{text_map_propagator::FieldIter, Extractor, Injector, TextMapPropagator},
     trace::{self, TraceContextExt as _},
-    Context, InstrumentationScope, KeyValue,
+    Context, InstrumentationLibrary, KeyValue,
 };
-use std::{borrow::Cow, time::SystemTime};
+use std::{borrow::Cow, sync::Arc, time::SystemTime};
 
 /// A no-op instance of a `TracerProvider`.
 #[derive(Clone, Debug, Default)]
@@ -27,7 +27,7 @@ impl trace::TracerProvider for NoopTracerProvider {
     type Tracer = NoopTracer;
 
     /// Returns a new `NoopTracer` instance.
-    fn tracer_with_scope(&self, _scope: InstrumentationScope) -> Self::Tracer {
+    fn library_tracer(&self, _library: Arc<InstrumentationLibrary>) -> Self::Tracer {
         NoopTracer::new()
     }
 }
@@ -51,7 +51,7 @@ impl trace::Span for NoopSpan {
     where
         T: Into<Cow<'static, str>>,
     {
-        // Ignored
+        // Ignore
     }
 
     /// Ignores all events with timestamps
@@ -91,10 +91,6 @@ impl trace::Span for NoopSpan {
     where
         T: Into<Cow<'static, str>>,
     {
-        // Ignored
-    }
-
-    fn add_link(&mut self, _span_context: trace::SpanContext, _attributes: Vec<KeyValue>) {
         // Ignored
     }
 
@@ -164,7 +160,7 @@ impl TextMapPropagator for NoopTextMapPropagator {
 mod tests {
     use super::*;
     use crate::testing::trace::TestSpan;
-    use crate::trace::{Span, TraceState, Tracer};
+    use crate::trace::{self, Span, TraceState, Tracer};
 
     fn valid_span_context() -> trace::SpanContext {
         trace::SpanContext::new(

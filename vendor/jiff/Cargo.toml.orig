@@ -1,6 +1,6 @@
 [package]
 name = "jiff"
-version = "0.2.19"  #:version
+version = "0.2.20"  #:version
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 license = "Unlicense OR MIT"
 repository = "https://github.com/BurntSushi/jiff"
@@ -79,9 +79,9 @@ tz-system = ["std", "dep:windows-sys"]
 # find the offset for a timestamp in a particular time zone before 2037, you
 # just need to do one very fast binary search on the explicit transitions.
 #
-# However, these explicit transitions up through 2037 aren't, strictly speaking,
-# required. For example, the DST transition rule in the United States is
-# perfectly described by a single POSIX time zone string:
+# However, these explicit transitions up through 2037 aren't, strictly
+# speaking, required. For example, the DST transition rule in the United States
+# (as of 2026-02-07) is perfectly described by a single POSIX time zone string:
 #
 #     EST5EDT,M3.2.0,M11.1.0
 #
@@ -196,7 +196,7 @@ serde_core = { version = "1.0.221", optional = true, default-features = false }
 #
 # See: https://github.com/matklad/macro-dep-test
 [target.'cfg(any())'.dependencies]
-jiff-static = { version = "=0.2.19", path = "crates/jiff-static" }
+jiff-static = { version = "=0.2.20", path = "crates/jiff-static" }
 
 # Note that the `cfg` gate for the `tzdb-bundle-platform` must repeat the
 # target gate on this dependency. The intent is that `tzdb-bundle-platform`
@@ -241,6 +241,7 @@ serde_json = "1.0.117"
 serde_yaml = "0.9.34"
 tabwriter = "1.4.0"
 time = { version = "0.3.36", features = ["local-offset", "macros", "parsing"] }
+time-tz = "2.0.0"
 tzfile = "0.1.3"
 walkdir = "2.5.0"
 
@@ -286,6 +287,11 @@ all-features = true
 # feature, they sometimes break. By using our "own" `cfg` knob, we are closer
 # to being masters of our own destiny.
 rustdoc-args = ["--cfg", "docsrs_jiff"]
+
+# Ref: https://github.com/BurntSushi/jiff/issues/502
+[package.metadata.playground]
+default-features = true
+features = ["logging", "serde", "static", "tzdb-bundle-always"]
 
 # This squashes the (AFAIK) erroneous warning that `docsrs_jiff` is not a
 # valid `cfg` knob.

@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "reqwest-retry"
-version = "0.7.0"
+version = "0.9.1"
 authors = ["Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>"]
 build = false
 autolib = false
@@ -31,6 +31,10 @@ keywords = [
 categories = ["web-programming::http-client"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/TrueLayer/reqwest-middleware"
+
+[features]
+default = ["tracing"]
+tracing = ["dep:tracing"]
 
 [lib]
 name = "reqwest_retry"
@@ -53,17 +57,17 @@ version = "0.3.0"
 version = "1.0"
 
 [dependencies.reqwest]
-version = "0.12.0"
+version = "0.13.1"
 default-features = false
 
 [dependencies.reqwest-middleware]
-version = ">0.3.0, <0.5.0"
+version = "0.5"
 
 [dependencies.retry-policies]
-version = "0.4"
+version = "0.5"
 
 [dependencies.thiserror]
-version = "1.0.61"
+version = "2.0"
 
 [dependencies.tracing]
 version = "0.1.26"
@@ -82,10 +86,6 @@ features = ["full"]
 [dev-dependencies.wiremock]
 version = "0.6.0"
 
-[features]
-default = ["tracing"]
-tracing = ["dep:tracing"]
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.hyper]
 version = "1.0"
 
@@ -98,9 +98,5 @@ default-features = false
 version = "0.2.0"
 features = ["js"]
 
-[target.'cfg(target_arch = "wasm32")'.dependencies.parking_lot]
-version = "0.11.2"
-features = ["wasm-bindgen"]
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-timer]
-version = "0.2.5"
+[target.'cfg(target_arch = "wasm32")'.dependencies.wasmtimer]
+version = "0.4.3"

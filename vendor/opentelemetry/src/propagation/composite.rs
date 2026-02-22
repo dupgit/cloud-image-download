@@ -49,7 +49,7 @@ use std::collections::HashSet;
 /// let mut injector = HashMap::new();
 ///
 /// // And a given span
-/// let example_span = sdktrace::SdkTracerProvider::default()
+/// let example_span = sdktrace::TracerProvider::default()
 ///     .tracer("example-component")
 ///     .start("span-name");
 ///
@@ -77,7 +77,9 @@ impl TextMapCompositePropagator {
     pub fn new(propagators: Vec<Box<dyn TextMapPropagator + Send + Sync>>) -> Self {
         let mut fields = HashSet::new();
         for propagator in &propagators {
-            fields.extend(propagator.fields().map(ToString::to_string));
+            for field in propagator.fields() {
+                fields.insert(field.to_string());
+            }
         }
 
         TextMapCompositePropagator {

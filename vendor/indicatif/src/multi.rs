@@ -10,7 +10,7 @@ use crate::draw_target::{
     VisualLines,
 };
 use crate::progress_bar::ProgressBar;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "wasmbind"))]
 use web_time::Instant;
 
 /// Manages multiple progress bars from different threads
@@ -501,16 +501,11 @@ impl Debug for MultiStateMember {
 /// [0/100] progress bar 2   =>   [0/100] progress bar 1
 /// [0/100] progress bar 3        [0/100] progress bar 3
 /// ```
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum MultiProgressAlignment {
+    #[default]
     Top,
     Bottom,
-}
-
-impl Default for MultiProgressAlignment {
-    fn default() -> Self {
-        Self::Top
-    }
 }
 
 enum InsertLocation {

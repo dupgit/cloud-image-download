@@ -1,43 +1,41 @@
-#![allow(dead_code)]
 use core::fmt;
-use std::{borrow::Cow, sync::Arc};
+use std::{any::Any, borrow::Cow, collections::HashSet, sync::Arc};
 
 use opentelemetry::{
+    global,
     metrics::{
-        AsyncInstrumentBuilder, Counter, Gauge, Histogram, HistogramBuilder, InstrumentBuilder,
-        InstrumentProvider, ObservableCounter, ObservableGauge, ObservableUpDownCounter,
-        UpDownCounter,
+        noop::{NoopAsyncInstrument, NoopRegistration},
+        AsyncInstrument, Callback, CallbackRegistration, Counter, Gauge, Histogram,
+        InstrumentProvider, MetricsError, ObservableCounter, ObservableGauge,
+        ObservableUpDownCounter, Observer as ApiObserver, Result, Unit, UpDownCounter,
     },
-    otel_error, InstrumentationScope,
+    KeyValue,
 };
 
+use crate::instrumentation::Scope;
 use crate::metrics::{
-    error::{MetricError, MetricResult},
-    instrument::{Instrument, InstrumentKind, Observable, ResolvedMeasures},
+    instrument::{
+        Instrument, InstrumentKind, Observable, ObservableId, ResolvedMeasures, EMPTY_MEASURE_MSG,
+    },
     internal::{self, Number},
     pipeline::{Pipelines, Resolver},
 };
 
-use super::noop::NoopSyncInstrument;
-
 // maximum length of instrument name
-pub(crate) const INSTRUMENT_NAME_MAX_LENGTH: usize = 255;
+const INSTRUMENT_NAME_MAX_LENGTH: usize = 255;
 // maximum length of instrument unit name
-pub(crate) const INSTRUMENT_UNIT_NAME_MAX_LENGTH: usize = 63;
-// Characters allowed in instrument name
-pub(crate) const INSTRUMENT_NAME_ALLOWED_NON_ALPHANUMERIC_CHARS: [char; 4] = ['_', '.', '-', '/'];
+const INSTRUMENT_UNIT_NAME_MAX_LENGTH: usize = 63;
+const INSTRUMENT_NAME_ALLOWED_NON_ALPHANUMERIC_CHARS: [char; 4] = ['_', '.', '-', '/'];
 
-// name validation error strings
-pub(crate) const INSTRUMENT_NAME_EMPTY: &str = "name must be non-empty";
-pub(crate) const INSTRUMENT_NAME_LENGTH: &str = "name must be less than 256 characters";
-pub(crate) const INSTRUMENT_NAME_INVALID_CHAR: &str =
-    "characters in name must be ASCII and belong to the alphanumeric characters, '_', '.', '-' and '/'";
-pub(crate) const INSTRUMENT_NAME_FIRST_ALPHABETIC: &str =
-    "name must start with an alphabetic character";
-
-// unit validation error strings
-pub(crate) const INSTRUMENT_UNIT_LENGTH: &str = "unit must be less than 64 characters";
-pub(crate) const INSTRUMENT_UNIT_INVALID_CHAR: &str = "characters in unit must be ASCII";
+// instrument validation error strings
+const INSTRUMENT_NAME_EMPTY: &str = "instrument name must be non-empty";
+const INSTRUMENT_NAME_LENGTH: &str = "instrument name must be less than 256 characters";
+const INSTRUMENT_NAME_INVALID_CHAR: &str =
+    "characters in instrument name must be ASCII and belong to the alphanumeric characters, '_', '.', '-' and '/'";
+const INSTRUMENT_NAME_FIRST_ALPHABETIC: &str =
+    "instrument name must start with an alphabetic character";
+const INSTRUMENT_UNIT_LENGTH: &str = "instrument unit must be less than 64 characters";
+const INSTRUMENT_UNIT_INVALID_CHAR: &str = "characters in instrument unit must be ASCII";
 
 /// Handles the creation and coordination of all metric instruments.
 ///
@@ -48,16 +46,17 @@ pub(crate) const INSTRUMENT_UNIT_INVALID_CHAR: &str = "characters in unit must b
 /// See the [Meter API] docs for usage.
 ///
 /// [Meter API]: opentelemetry::metrics::Meter
-pub(crate) struct SdkMeter {
-    scope: InstrumentationScope,
+pub struct SdkMeter {
+    scope: Scope,
     pipes: Arc<Pipelines>,
     u64_resolver: Resolver<u64>,
     i64_resolver: Resolver<i64>,
     f64_resolver: Resolver<f64>,
+    validation_policy: InstrumentValidationPolicy,
 }
 
 impl SdkMeter {
-    pub(crate) fn new(scope: InstrumentationScope, pipes: Arc<Pipelines>) -> Self {
+    pub(crate) fn new(scope: Scope, pipes: Arc<Pipelines>) -> Self {
         let view_cache = Default::default();
 
         SdkMeter {
@@ -66,564 +65,644 @@ impl SdkMeter {
             u64_resolver: Resolver::new(Arc::clone(&pipes), Arc::clone(&view_cache)),
             i64_resolver: Resolver::new(Arc::clone(&pipes), Arc::clone(&view_cache)),
             f64_resolver: Resolver::new(pipes, view_cache),
+            validation_policy: InstrumentValidationPolicy::HandleGlobalAndIgnore,
         }
     }
 
-    fn create_counter<T>(
-        &self,
-        builder: InstrumentBuilder<'_, Counter<T>>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> Counter<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed",
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Measurements from this Counter will be ignored.",
-                reason = format!("{}", err)
-            );
-            return Counter::new(Arc::new(NoopSyncInstrument::new()));
-        }
-
-        match resolver
-            .lookup(
-                InstrumentKind::Counter,
-                builder.name.clone(),
-                builder.description,
-                builder.unit,
-                None,
-            )
-            .map(|i| Counter::new(Arc::new(i)))
-        {
-            Ok(counter) => counter,
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Measurements from this Counter will be ignored.",
-                    reason = format!("{}", err)
-                );
-                Counter::new(Arc::new(NoopSyncInstrument::new()))
-            }
-        }
-    }
-
-    fn create_observable_counter<T>(
-        &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableCounter<T>, T>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> ObservableCounter<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed", 
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Callbacks for this ObservableCounter will not be invoked.",
-                reason = format!("{}", err));
-            return ObservableCounter::new();
-        }
-
-        match resolver.measures(
-            InstrumentKind::ObservableCounter,
-            builder.name.clone(),
-            builder.description,
-            builder.unit,
-            None,
-        ) {
-            Ok(ms) => {
-                if ms.is_empty() {
-                    otel_error!(
-                        name: "InstrumentCreationFailed",
-                        meter_name = self.scope.name(),
-                        instrument_name = builder.name.as_ref(),
-                        message = "Callbacks for this ObservableCounter will not be invoked. Check View Configuration."
-                    );
-                    return ObservableCounter::new();
-                }
-
-                let observable = Arc::new(Observable::new(ms));
-
-                for callback in builder.callbacks {
-                    let cb_inst = Arc::clone(&observable);
-                    self.pipes
-                        .register_callback(move || callback(cb_inst.as_ref()));
-                }
-
-                ObservableCounter::new()
-            }
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Callbacks for this ObservableCounter will not be invoked.",
-                    reason = format!("{}", err));
-                ObservableCounter::new()
-            }
-        }
-    }
-
-    fn create_observable_updown_counter<T>(
-        &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableUpDownCounter<T>, T>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> ObservableUpDownCounter<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed", 
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Callbacks for this ObservableUpDownCounter will not be invoked.",
-                reason = format!("{}", err));
-            return ObservableUpDownCounter::new();
-        }
-
-        match resolver.measures(
-            InstrumentKind::ObservableUpDownCounter,
-            builder.name.clone(),
-            builder.description,
-            builder.unit,
-            None,
-        ) {
-            Ok(ms) => {
-                if ms.is_empty() {
-                    otel_error!(
-                        name: "InstrumentCreationFailed",
-                        meter_name = self.scope.name(),
-                        instrument_name = builder.name.as_ref(),
-                        message = "Callbacks for this ObservableUpDownCounter will not be invoked. Check View Configuration."
-                    );
-                    return ObservableUpDownCounter::new();
-                }
-
-                let observable = Arc::new(Observable::new(ms));
-
-                for callback in builder.callbacks {
-                    let cb_inst = Arc::clone(&observable);
-                    self.pipes
-                        .register_callback(move || callback(cb_inst.as_ref()));
-                }
-
-                ObservableUpDownCounter::new()
-            }
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Callbacks for this ObservableUpDownCounter will not be invoked.",
-                    reason = format!("{}", err));
-                ObservableUpDownCounter::new()
-            }
-        }
-    }
-
-    fn create_observable_gauge<T>(
-        &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableGauge<T>, T>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> ObservableGauge<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed", 
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Callbacks for this ObservableGauge will not be invoked.",
-                reason = format!("{}", err));
-            return ObservableGauge::new();
-        }
-
-        match resolver.measures(
-            InstrumentKind::ObservableGauge,
-            builder.name.clone(),
-            builder.description,
-            builder.unit,
-            None,
-        ) {
-            Ok(ms) => {
-                if ms.is_empty() {
-                    otel_error!(
-                        name: "InstrumentCreationFailed",
-                        meter_name = self.scope.name(),
-                        instrument_name = builder.name.as_ref(),
-                        message = "Callbacks for this ObservableGauge will not be invoked. Check View Configuration."
-                    );
-                    return ObservableGauge::new();
-                }
-
-                let observable = Arc::new(Observable::new(ms));
-
-                for callback in builder.callbacks {
-                    let cb_inst = Arc::clone(&observable);
-                    self.pipes
-                        .register_callback(move || callback(cb_inst.as_ref()));
-                }
-
-                ObservableGauge::new()
-            }
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Callbacks for this ObservableGauge will not be invoked.",
-                    reason = format!("{}", err));
-                ObservableGauge::new()
-            }
-        }
-    }
-
-    fn create_updown_counter<T>(
-        &self,
-        builder: InstrumentBuilder<'_, UpDownCounter<T>>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> UpDownCounter<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed",
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Measurements from this UpDownCounter will be ignored.",
-                reason = format!("{}", err)
-            );
-            return UpDownCounter::new(Arc::new(NoopSyncInstrument::new()));
-        }
-
-        match resolver
-            .lookup(
-                InstrumentKind::UpDownCounter,
-                builder.name.clone(),
-                builder.description,
-                builder.unit,
-                None,
-            )
-            .map(|i| UpDownCounter::new(Arc::new(i)))
-        {
-            Ok(updown_counter) => updown_counter,
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Measurements from this UpDownCounter will be ignored.",
-                    reason = format!("{}", err)
-                );
-                UpDownCounter::new(Arc::new(NoopSyncInstrument::new()))
-            }
-        }
-    }
-
-    fn create_gauge<T>(
-        &self,
-        builder: InstrumentBuilder<'_, Gauge<T>>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> Gauge<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed",
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Measurements from this Gauge will be ignored.",
-                reason = format!("{}", err)
-            );
-            return Gauge::new(Arc::new(NoopSyncInstrument::new()));
-        }
-
-        match resolver
-            .lookup(
-                InstrumentKind::Gauge,
-                builder.name.clone(),
-                builder.description,
-                builder.unit,
-                None,
-            )
-            .map(|i| Gauge::new(Arc::new(i)))
-        {
-            Ok(gauge) => gauge,
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Measurements from this Gauge will be ignored.",
-                    reason = format!("{}", err)
-                );
-                Gauge::new(Arc::new(NoopSyncInstrument::new()))
-            }
-        }
-    }
-
-    fn create_histogram<T>(
-        &self,
-        builder: HistogramBuilder<'_, Histogram<T>>,
-        resolver: &InstrumentResolver<'_, T>,
-    ) -> Histogram<T>
-    where
-        T: Number,
-    {
-        let validation_result = validate_instrument_config(builder.name.as_ref(), &builder.unit);
-        if let Err(err) = validation_result {
-            otel_error!(
-                name: "InstrumentCreationFailed",
-                meter_name = self.scope.name(),
-                instrument_name = builder.name.as_ref(),
-                message = "Measurements from this Histogram will be ignored.",
-                reason = format!("{}", err)
-            );
-            return Histogram::new(Arc::new(NoopSyncInstrument::new()));
-        }
-
-        if let Some(ref boundaries) = builder.boundaries {
-            let validation_result = validate_bucket_boundaries(boundaries);
-            if let Err(err) = validation_result {
-                // TODO: Include the buckets too in the error message.
-                // TODO: This validation is not done when Views are used to
-                // provide boundaries, and that should be fixed.
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Measurements from this Histogram will be ignored.",
-                    reason = format!("{}", err)
-                );
-                return Histogram::new(Arc::new(NoopSyncInstrument::new()));
-            }
-        }
-
-        match resolver
-            .lookup(
-                InstrumentKind::Histogram,
-                builder.name.clone(),
-                builder.description,
-                builder.unit,
-                builder.boundaries,
-            )
-            .map(|i| Histogram::new(Arc::new(i)))
-        {
-            Ok(histogram) => histogram,
-            Err(err) => {
-                otel_error!(
-                    name: "InstrumentCreationFailed",
-                    meter_name = self.scope.name(),
-                    instrument_name = builder.name.as_ref(),
-                    message = "Measurements from this Histogram will be ignored.",
-                    reason = format!("{}", err)
-                );
-                Histogram::new(Arc::new(NoopSyncInstrument::new()))
-            }
+    #[cfg(test)]
+    fn with_validation_policy(self, validation_policy: InstrumentValidationPolicy) -> Self {
+        Self {
+            validation_policy,
+            ..self
         }
     }
 }
 
 #[doc(hidden)]
 impl InstrumentProvider for SdkMeter {
-    fn u64_counter(&self, builder: InstrumentBuilder<'_, Counter<u64>>) -> Counter<u64> {
-        let resolver = InstrumentResolver::new(self, &self.u64_resolver);
-        self.create_counter(builder, &resolver)
+    fn u64_counter(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Counter<u64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.u64_resolver);
+        p.lookup(
+            InstrumentKind::Counter,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Counter::new(Arc::new(i)))
     }
 
-    fn f64_counter(&self, builder: InstrumentBuilder<'_, Counter<f64>>) -> Counter<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_counter(builder, &resolver)
+    fn f64_counter(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Counter<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        p.lookup(
+            InstrumentKind::Counter,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Counter::new(Arc::new(i)))
     }
 
     fn u64_observable_counter(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableCounter<u64>, u64>,
-    ) -> ObservableCounter<u64> {
-        let resolver = InstrumentResolver::new(self, &self.u64_resolver);
-        self.create_observable_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<u64>>,
+    ) -> Result<ObservableCounter<u64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.u64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableCounter,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableCounter::new(Arc::new(NoopAsyncInstrument::new())));
+        }
+
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableCounter,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableCounter::new(observable))
     }
 
     fn f64_observable_counter(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableCounter<f64>, f64>,
-    ) -> ObservableCounter<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_observable_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<f64>>,
+    ) -> Result<ObservableCounter<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableCounter,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableCounter::new(Arc::new(NoopAsyncInstrument::new())));
+        }
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableCounter,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableCounter::new(observable))
     }
 
     fn i64_up_down_counter(
         &self,
-        builder: InstrumentBuilder<'_, UpDownCounter<i64>>,
-    ) -> UpDownCounter<i64> {
-        let resolver = InstrumentResolver::new(self, &self.i64_resolver);
-        self.create_updown_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<UpDownCounter<i64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.i64_resolver);
+        p.lookup(
+            InstrumentKind::UpDownCounter,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| UpDownCounter::new(Arc::new(i)))
     }
 
     fn f64_up_down_counter(
         &self,
-        builder: InstrumentBuilder<'_, UpDownCounter<f64>>,
-    ) -> UpDownCounter<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_updown_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<UpDownCounter<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        p.lookup(
+            InstrumentKind::UpDownCounter,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| UpDownCounter::new(Arc::new(i)))
     }
 
     fn i64_observable_up_down_counter(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableUpDownCounter<i64>, i64>,
-    ) -> ObservableUpDownCounter<i64> {
-        let resolver = InstrumentResolver::new(self, &self.i64_resolver);
-        self.create_observable_updown_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<i64>>,
+    ) -> Result<ObservableUpDownCounter<i64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.i64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableUpDownCounter,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableUpDownCounter::new(Arc::new(
+                NoopAsyncInstrument::new(),
+            )));
+        }
+
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableUpDownCounter,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableUpDownCounter::new(observable))
     }
 
     fn f64_observable_up_down_counter(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableUpDownCounter<f64>, f64>,
-    ) -> ObservableUpDownCounter<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_observable_updown_counter(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<f64>>,
+    ) -> Result<ObservableUpDownCounter<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableUpDownCounter,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableUpDownCounter::new(Arc::new(
+                NoopAsyncInstrument::new(),
+            )));
+        }
+
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableUpDownCounter,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableUpDownCounter::new(observable))
     }
 
-    fn u64_gauge(&self, builder: InstrumentBuilder<'_, Gauge<u64>>) -> Gauge<u64> {
-        let resolver = InstrumentResolver::new(self, &self.u64_resolver);
-        self.create_gauge(builder, &resolver)
+    fn u64_gauge(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Gauge<u64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.u64_resolver);
+        p.lookup(
+            InstrumentKind::Gauge,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Gauge::new(Arc::new(i)))
     }
 
-    fn f64_gauge(&self, builder: InstrumentBuilder<'_, Gauge<f64>>) -> Gauge<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_gauge(builder, &resolver)
+    fn f64_gauge(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Gauge<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        p.lookup(
+            InstrumentKind::Gauge,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Gauge::new(Arc::new(i)))
     }
 
-    fn i64_gauge(&self, builder: InstrumentBuilder<'_, Gauge<i64>>) -> Gauge<i64> {
-        let resolver = InstrumentResolver::new(self, &self.i64_resolver);
-        self.create_gauge(builder, &resolver)
+    fn i64_gauge(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Gauge<i64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.i64_resolver);
+        p.lookup(
+            InstrumentKind::Gauge,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Gauge::new(Arc::new(i)))
     }
 
     fn u64_observable_gauge(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableGauge<u64>, u64>,
-    ) -> ObservableGauge<u64> {
-        let resolver = InstrumentResolver::new(self, &self.u64_resolver);
-        self.create_observable_gauge(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<u64>>,
+    ) -> Result<ObservableGauge<u64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.u64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableGauge,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableGauge::new(Arc::new(NoopAsyncInstrument::new())));
+        }
+
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableGauge,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableGauge::new(observable))
     }
 
     fn i64_observable_gauge(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableGauge<i64>, i64>,
-    ) -> ObservableGauge<i64> {
-        let resolver = InstrumentResolver::new(self, &self.i64_resolver);
-        self.create_observable_gauge(builder, &resolver)
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<i64>>,
+    ) -> Result<ObservableGauge<i64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.i64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableGauge,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableGauge::new(Arc::new(NoopAsyncInstrument::new())));
+        }
+
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableGauge,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
+        }
+
+        Ok(ObservableGauge::new(observable))
     }
 
     fn f64_observable_gauge(
         &self,
-        builder: AsyncInstrumentBuilder<'_, ObservableGauge<f64>, f64>,
-    ) -> ObservableGauge<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_observable_gauge(builder, &resolver)
-    }
-
-    fn f64_histogram(&self, builder: HistogramBuilder<'_, Histogram<f64>>) -> Histogram<f64> {
-        let resolver = InstrumentResolver::new(self, &self.f64_resolver);
-        self.create_histogram(builder, &resolver)
-    }
-
-    fn u64_histogram(&self, builder: HistogramBuilder<'_, Histogram<u64>>) -> Histogram<u64> {
-        let resolver = InstrumentResolver::new(self, &self.u64_resolver);
-        self.create_histogram(builder, &resolver)
-    }
-}
-
-fn validate_instrument_config(name: &str, unit: &Option<Cow<'static, str>>) -> MetricResult<()> {
-    validate_instrument_name(name).and_then(|_| validate_instrument_unit(unit))
-}
-
-fn validate_bucket_boundaries(boundaries: &[f64]) -> MetricResult<()> {
-    // Validate boundaries do not contain f64::NAN, f64::INFINITY, or f64::NEG_INFINITY
-    for boundary in boundaries {
-        if boundary.is_nan() || boundary.is_infinite() {
-            return Err(MetricError::InvalidInstrumentConfiguration(
-                "Bucket boundaries must not contain NaN, +Inf, or -Inf",
-            ));
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+        callbacks: Vec<Callback<f64>>,
+    ) -> Result<ObservableGauge<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        let ms = p.measures(
+            InstrumentKind::ObservableGauge,
+            name.clone(),
+            description.clone(),
+            unit.clone().unwrap_or_default(),
+        )?;
+        if ms.is_empty() {
+            return Ok(ObservableGauge::new(Arc::new(NoopAsyncInstrument::new())));
         }
-    }
 
-    // validate that buckets are sorted and non-duplicate
-    for i in 1..boundaries.len() {
-        if boundaries[i] <= boundaries[i - 1] {
-            return Err(MetricError::InvalidInstrumentConfiguration(
-                "Bucket boundaries must be sorted and non-duplicate",
-            ));
+        let observable = Arc::new(Observable::new(
+            self.scope.clone(),
+            InstrumentKind::ObservableGauge,
+            name,
+            description.unwrap_or_default(),
+            unit.unwrap_or_default(),
+            ms,
+        ));
+
+        for callback in callbacks {
+            let cb_inst = Arc::clone(&observable);
+            self.pipes
+                .register_callback(move || callback(cb_inst.as_ref()));
         }
+
+        Ok(ObservableGauge::new(observable))
     }
 
-    Ok(())
+    fn f64_histogram(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Histogram<f64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.f64_resolver);
+        p.lookup(
+            InstrumentKind::Histogram,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Histogram::new(Arc::new(i)))
+    }
+
+    fn u64_histogram(
+        &self,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Unit>,
+    ) -> Result<Histogram<u64>> {
+        validate_instrument_config(name.as_ref(), unit.as_ref(), self.validation_policy)?;
+        let p = InstrumentResolver::new(self, &self.u64_resolver);
+        p.lookup(
+            InstrumentKind::Histogram,
+            name,
+            description,
+            unit.unwrap_or_default(),
+        )
+        .map(|i| Histogram::new(Arc::new(i)))
+    }
+
+    fn register_callback(
+        &self,
+        insts: &[Arc<dyn Any>],
+        callback: Box<dyn Fn(&dyn ApiObserver) + Send + Sync>,
+    ) -> Result<Box<dyn CallbackRegistration>> {
+        if insts.is_empty() {
+            return Ok(Box::new(NoopRegistration::new()));
+        }
+
+        let mut reg = Observer::default();
+        let mut errs = vec![];
+        for inst in insts {
+            if let Some(i64_obs) = inst.downcast_ref::<Observable<i64>>() {
+                if let Err(err) = i64_obs.registerable(&self.scope) {
+                    if !err.to_string().contains(EMPTY_MEASURE_MSG) {
+                        errs.push(err);
+                    }
+                    continue;
+                }
+                reg.register_i64(i64_obs.id.clone());
+            } else if let Some(u64_obs) = inst.downcast_ref::<Observable<u64>>() {
+                if let Err(err) = u64_obs.registerable(&self.scope) {
+                    if !err.to_string().contains(EMPTY_MEASURE_MSG) {
+                        errs.push(err);
+                    }
+                    continue;
+                }
+                reg.register_u64(u64_obs.id.clone());
+            } else if let Some(f64_obs) = inst.downcast_ref::<Observable<f64>>() {
+                if let Err(err) = f64_obs.registerable(&self.scope) {
+                    if !err.to_string().contains(EMPTY_MEASURE_MSG) {
+                        errs.push(err);
+                    }
+                    continue;
+                }
+                reg.register_f64(f64_obs.id.clone());
+            } else {
+                // Instrument external to the SDK.
+                return Err(MetricsError::Other(
+                    "invalid observable: from different implementation".into(),
+                ));
+            }
+        }
+
+        if !errs.is_empty() {
+            return Err(MetricsError::Other(format!("{errs:?}")));
+        }
+
+        if reg.is_empty() {
+            // All instruments use drop aggregation or are invalid.
+            return Ok(Box::new(NoopRegistration::new()));
+        }
+
+        self.pipes.register_multi_callback(move || callback(&reg))
+    }
 }
 
-#[cfg(feature = "experimental_metrics_disable_name_validation")]
-fn validate_instrument_name(_name: &str) -> MetricResult<()> {
-    // No name restrictions when name validation is disabled
-    Ok(())
+/// Validation policy for instrument
+#[derive(Clone, Copy)]
+enum InstrumentValidationPolicy {
+    HandleGlobalAndIgnore,
+    /// Currently only for test
+    #[cfg(test)]
+    Strict,
 }
 
-#[cfg(not(feature = "experimental_metrics_disable_name_validation"))]
-fn validate_instrument_name(name: &str) -> MetricResult<()> {
+fn validate_instrument_config(
+    name: &str,
+    unit: Option<&Unit>,
+    policy: InstrumentValidationPolicy,
+) -> Result<()> {
+    match validate_instrument_name(name).and_then(|_| validate_instrument_unit(unit)) {
+        Ok(_) => Ok(()),
+        Err(err) => match policy {
+            InstrumentValidationPolicy::HandleGlobalAndIgnore => {
+                global::handle_error(err);
+                Ok(())
+            }
+            #[cfg(test)]
+            InstrumentValidationPolicy::Strict => Err(err),
+        },
+    }
+}
+
+fn validate_instrument_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        return Err(MetricError::InvalidInstrumentConfiguration(
+        return Err(MetricsError::InvalidInstrumentConfiguration(
             INSTRUMENT_NAME_EMPTY,
         ));
     }
     if name.len() > INSTRUMENT_NAME_MAX_LENGTH {
-        return Err(MetricError::InvalidInstrumentConfiguration(
+        return Err(MetricsError::InvalidInstrumentConfiguration(
             INSTRUMENT_NAME_LENGTH,
         ));
     }
-
     if name.starts_with(|c: char| !c.is_ascii_alphabetic()) {
-        return Err(MetricError::InvalidInstrumentConfiguration(
+        return Err(MetricsError::InvalidInstrumentConfiguration(
             INSTRUMENT_NAME_FIRST_ALPHABETIC,
         ));
     }
     if name.contains(|c: char| {
         !c.is_ascii_alphanumeric() && !INSTRUMENT_NAME_ALLOWED_NON_ALPHANUMERIC_CHARS.contains(&c)
     }) {
-        return Err(MetricError::InvalidInstrumentConfiguration(
+        return Err(MetricsError::InvalidInstrumentConfiguration(
             INSTRUMENT_NAME_INVALID_CHAR,
         ));
     }
     Ok(())
 }
 
-fn validate_instrument_unit(unit: &Option<Cow<'static, str>>) -> MetricResult<()> {
+fn validate_instrument_unit(unit: Option<&Unit>) -> Result<()> {
     if let Some(unit) = unit {
-        if unit.len() > INSTRUMENT_UNIT_NAME_MAX_LENGTH {
-            return Err(MetricError::InvalidInstrumentConfiguration(
+        if unit.as_str().len() > INSTRUMENT_UNIT_NAME_MAX_LENGTH {
+            return Err(MetricsError::InvalidInstrumentConfiguration(
                 INSTRUMENT_UNIT_LENGTH,
             ));
         }
-        if unit.contains(|c: char| !c.is_ascii()) {
-            return Err(MetricError::InvalidInstrumentConfiguration(
+        if unit.as_str().contains(|c: char| !c.is_ascii()) {
+            return Err(MetricsError::InvalidInstrumentConfiguration(
                 INSTRUMENT_UNIT_INVALID_CHAR,
             ));
         }
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct Observer {
+    f64s: HashSet<ObservableId<f64>>,
+    i64s: HashSet<ObservableId<i64>>,
+    u64s: HashSet<ObservableId<u64>>,
+}
+
+impl Observer {
+    fn is_empty(&self) -> bool {
+        self.f64s.is_empty() && self.i64s.is_empty() && self.u64s.is_empty()
+    }
+
+    pub(crate) fn register_i64(&mut self, id: ObservableId<i64>) {
+        self.i64s.insert(id);
+    }
+
+    pub(crate) fn register_f64(&mut self, id: ObservableId<f64>) {
+        self.f64s.insert(id);
+    }
+
+    pub(crate) fn register_u64(&mut self, id: ObservableId<u64>) {
+        self.u64s.insert(id);
+    }
+}
+
+impl ApiObserver for Observer {
+    fn observe_f64(&self, inst: &dyn AsyncInstrument<f64>, measurement: f64, attrs: &[KeyValue]) {
+        if let Some(f64_obs) = inst.as_any().downcast_ref::<Observable<f64>>() {
+            if self.f64s.contains(&f64_obs.id) {
+                f64_obs.observe(measurement, attrs)
+            } else {
+                global::handle_error(
+                    MetricsError::Other(format!("observable instrument not registered for callback, failed to record. name: {}, description: {}, unit: {:?}, number: f64",
+                    f64_obs.id.inner.name,
+                    f64_obs.id.inner.description,
+                    f64_obs.id.inner.unit,
+                )))
+            }
+        } else {
+            global::handle_error(MetricsError::Other(
+                "unknown observable instrument, failed to record.".into(),
+            ))
+        }
+    }
+
+    fn observe_u64(&self, inst: &dyn AsyncInstrument<u64>, measurement: u64, attrs: &[KeyValue]) {
+        if let Some(u64_obs) = inst.as_any().downcast_ref::<Observable<u64>>() {
+            if self.u64s.contains(&u64_obs.id) {
+                u64_obs.observe(measurement, attrs)
+            } else {
+                global::handle_error(
+                    MetricsError::Other(format!("observable instrument not registered for callback, failed to record. name: {}, description: {}, unit: {:?}, number: f64",
+                    u64_obs.id.inner.name,
+                    u64_obs.id.inner.description,
+                    u64_obs.id.inner.unit,
+                )))
+            }
+        } else {
+            global::handle_error(MetricsError::Other(
+                "unknown observable instrument, failed to record.".into(),
+            ))
+        }
+    }
+
+    fn observe_i64(&self, inst: &dyn AsyncInstrument<i64>, measurement: i64, attrs: &[KeyValue]) {
+        if let Some(i64_obs) = inst.as_any().downcast_ref::<Observable<i64>>() {
+            if self.i64s.contains(&i64_obs.id) {
+                i64_obs.observe(measurement, attrs)
+            } else {
+                global::handle_error(
+                    MetricsError::Other(format!("observable instrument not registered for callback, failed to record. name: {}, description: {}, unit: {:?}, number: f64",
+                    i64_obs.id.inner.name,
+                    i64_obs.id.inner.description,
+                    i64_obs.id.inner.unit,
+                )))
+            }
+        } else {
+            global::handle_error(MetricsError::Other(
+                "unknown observable instrument, failed to record.".into(),
+            ))
+        }
+    }
 }
 
 impl fmt::Debug for SdkMeter {
@@ -640,7 +719,7 @@ struct InstrumentResolver<'a, T> {
 
 impl<'a, T> InstrumentResolver<'a, T>
 where
-    T: Number,
+    T: Number<T>,
 {
     fn new(meter: &'a SdkMeter, resolve: &'a Resolver<T>) -> Self {
         InstrumentResolver { meter, resolve }
@@ -652,10 +731,9 @@ where
         kind: InstrumentKind,
         name: Cow<'static, str>,
         description: Option<Cow<'static, str>>,
-        unit: Option<Cow<'static, str>>,
-        boundaries: Option<Vec<f64>>,
-    ) -> MetricResult<ResolvedMeasures<T>> {
-        let aggregators = self.measures(kind, name, description, unit, boundaries)?;
+        unit: Unit,
+    ) -> Result<ResolvedMeasures<T>> {
+        let aggregators = self.measures(kind, name, description, unit)?;
         Ok(ResolvedMeasures {
             measures: aggregators,
         })
@@ -666,37 +744,41 @@ where
         kind: InstrumentKind,
         name: Cow<'static, str>,
         description: Option<Cow<'static, str>>,
-        unit: Option<Cow<'static, str>>,
-        boundaries: Option<Vec<f64>>,
-    ) -> MetricResult<Vec<Arc<dyn internal::Measure<T>>>> {
+        unit: Unit,
+    ) -> Result<Vec<Arc<dyn internal::Measure<T>>>> {
         let inst = Instrument {
             name,
             description: description.unwrap_or_default(),
-            unit: unit.unwrap_or_default(),
-            kind,
+            unit,
+            kind: Some(kind),
             scope: self.meter.scope.clone(),
         };
 
-        self.resolve.measures(inst, boundaries)
+        self.resolve.measures(inst)
     }
 }
 
-#[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
+    use std::sync::Arc;
 
-    use crate::metrics::error::MetricError;
+    use opentelemetry::metrics::{InstrumentProvider, MetricsError, Unit};
 
     use super::{
-        validate_instrument_name, validate_instrument_unit, INSTRUMENT_NAME_EMPTY,
-        INSTRUMENT_NAME_FIRST_ALPHABETIC, INSTRUMENT_NAME_INVALID_CHAR, INSTRUMENT_NAME_LENGTH,
-        INSTRUMENT_UNIT_INVALID_CHAR, INSTRUMENT_UNIT_LENGTH,
+        InstrumentValidationPolicy, SdkMeter, INSTRUMENT_NAME_FIRST_ALPHABETIC,
+        INSTRUMENT_NAME_INVALID_CHAR, INSTRUMENT_NAME_LENGTH, INSTRUMENT_UNIT_INVALID_CHAR,
+        INSTRUMENT_UNIT_LENGTH,
     };
+    use crate::{metrics::pipeline::Pipelines, Resource, Scope};
 
     #[test]
-    #[cfg(not(feature = "experimental_metrics_disable_name_validation"))]
-    fn instrument_name_validation() {
+    fn test_instrument_config_validation() {
+        // scope and pipelines are not related to test
+        let meter = SdkMeter::new(
+            Scope::default(),
+            Arc::new(Pipelines::new(Resource::default(), Vec::new(), Vec::new())),
+        )
+        .with_validation_policy(InstrumentValidationPolicy::Strict);
         // (name, expected error)
         let instrument_name_test_cases = vec![
             ("validateName", ""),
@@ -705,74 +787,76 @@ mod tests {
             ("a".repeat(255).leak(), ""),
             ("a".repeat(256).leak(), INSTRUMENT_NAME_LENGTH),
             ("invalid name", INSTRUMENT_NAME_INVALID_CHAR),
-            ("allow/slash", ""),
-            ("allow_under_score", ""),
-            ("allow.dots.ok", ""),
-            ("", INSTRUMENT_NAME_EMPTY),
-            ("\\allow\\slash /sec", INSTRUMENT_NAME_FIRST_ALPHABETIC),
-            ("\\allow\\$$slash /sec", INSTRUMENT_NAME_FIRST_ALPHABETIC),
-            ("Total $ Count", INSTRUMENT_NAME_INVALID_CHAR),
-            (
-                "\\test\\UsagePercent(Total) > 80%",
-                INSTRUMENT_NAME_FIRST_ALPHABETIC,
-            ),
-            ("/not / allowed", INSTRUMENT_NAME_FIRST_ALPHABETIC),
+            // hyphens are now valid characters in the specification.
+            // https://github.com/open-telemetry/opentelemetry-specification/pull/3684
+            ("allow/hyphen", ""),
         ];
         for (name, expected_error) in instrument_name_test_cases {
-            let assert = |result: Result<_, MetricError>| {
+            let assert = |result: Result<_, MetricsError>| {
                 if expected_error.is_empty() {
                     assert!(result.is_ok());
                 } else {
                     assert!(matches!(
                         result.unwrap_err(),
-                        MetricError::InvalidInstrumentConfiguration(msg) if msg == expected_error
+                        MetricsError::InvalidInstrumentConfiguration(msg) if msg == expected_error
                     ));
                 }
             };
 
-            assert(validate_instrument_name(name).map(|_| ()));
+            assert(meter.u64_counter(name.into(), None, None).map(|_| ()));
+            assert(meter.f64_counter(name.into(), None, None).map(|_| ()));
+            assert(
+                meter
+                    .u64_observable_counter(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_counter(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_up_down_counter(name.into(), None, None)
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_up_down_counter(name.into(), None, None)
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_observable_up_down_counter(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_up_down_counter(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(meter.u64_gauge(name.into(), None, None).map(|_| ()));
+            assert(meter.f64_gauge(name.into(), None, None).map(|_| ()));
+            assert(meter.i64_gauge(name.into(), None, None).map(|_| ()));
+            assert(
+                meter
+                    .u64_observable_gauge(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_observable_gauge(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_gauge(name.into(), None, None, Vec::new())
+                    .map(|_| ()),
+            );
+            assert(meter.f64_histogram(name.into(), None, None).map(|_| ()));
+            assert(meter.u64_histogram(name.into(), None, None).map(|_| ()));
         }
-    }
 
-    #[test]
-    #[cfg(feature = "experimental_metrics_disable_name_validation")]
-    fn instrument_name_validation_disabled() {
-        // (name, expected error)
-        let instrument_name_test_cases = vec![
-            ("validateName", ""),
-            ("_startWithNoneAlphabet", ""),
-            ("utf8char锈", ""),
-            ("a".repeat(255).leak(), ""),
-            ("a".repeat(256).leak(), ""),
-            ("invalid name", ""),
-            ("allow/slash", ""),
-            ("allow_under_score", ""),
-            ("allow.dots.ok", ""),
-            ("", ""),
-            ("\\allow\\slash /sec", ""),
-            ("\\allow\\$$slash /sec", ""),
-            ("Total $ Count", ""),
-            ("\\test\\UsagePercent(Total) > 80%", ""),
-            ("/not / allowed", ""),
-        ];
-        for (name, expected_error) in instrument_name_test_cases {
-            let assert = |result: Result<_, MetricError>| {
-                if expected_error.is_empty() {
-                    assert!(result.is_ok());
-                } else {
-                    assert!(matches!(
-                        result.unwrap_err(),
-                        MetricError::InvalidInstrumentConfiguration(msg) if msg == expected_error
-                    ));
-                }
-            };
-
-            assert(validate_instrument_name(name).map(|_| ()));
-        }
-    }
-
-    #[test]
-    fn instrument_unit_validation() {
         // (unit, expected error)
         let instrument_unit_test_cases = vec![
             (
@@ -781,25 +865,85 @@ mod tests {
             ),
             ("utf8char锈", INSTRUMENT_UNIT_INVALID_CHAR),
             ("kb", ""),
-            ("Kb/sec", ""),
-            ("%", ""),
-            ("", ""),
         ];
 
         for (unit, expected_error) in instrument_unit_test_cases {
-            let assert = |result: Result<_, MetricError>| {
+            let assert = |result: Result<_, MetricsError>| {
                 if expected_error.is_empty() {
                     assert!(result.is_ok());
                 } else {
                     assert!(matches!(
                         result.unwrap_err(),
-                        MetricError::InvalidInstrumentConfiguration(msg) if msg == expected_error
+                        MetricsError::InvalidInstrumentConfiguration(msg) if msg == expected_error
                     ));
                 }
             };
-            let unit: Option<Cow<'static, str>> = Some(unit.into());
-
-            assert(validate_instrument_unit(&unit).map(|_| ()));
+            let unit = Some(Unit::new(unit));
+            assert(
+                meter
+                    .u64_counter("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_counter("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .u64_observable_counter("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_counter("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_up_down_counter("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_up_down_counter("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_observable_up_down_counter("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_up_down_counter("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .u64_observable_gauge("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .i64_observable_gauge("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_observable_gauge("test".into(), None, unit.clone(), Vec::new())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .f64_histogram("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
+            assert(
+                meter
+                    .u64_histogram("test".into(), None, unit.clone())
+                    .map(|_| ()),
+            );
         }
     }
 }

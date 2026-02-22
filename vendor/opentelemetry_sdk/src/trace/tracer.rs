@@ -7,49 +7,61 @@
 //! and exposes methods for creating and activating new `Spans`.
 //!
 //! Docs: <https://github.com/open-telemetry/opentelemetry-specification/blob/v1.3.0/specification/trace/api.md#tracer>
-use crate::trace::{
-    provider::SdkTracerProvider,
-    span::{Span, SpanData},
-    IdGenerator, ShouldSample, SpanEvents, SpanLimits, SpanLinks,
+use crate::{
+    trace::{
+        provider::{TracerProvider, TracerProviderInner},
+        span::{Span, SpanData},
+        SpanLimits, SpanLinks,
+    },
+    InstrumentationLibrary,
 };
 use opentelemetry::{
     trace::{SamplingDecision, SpanBuilder, SpanContext, SpanKind, TraceContextExt, TraceFlags},
-    Context, InstrumentationScope, KeyValue,
+    Context, KeyValue,
 };
 use std::fmt;
+use std::sync::{Arc, Weak};
+
+use super::SpanEvents;
 
 /// `Tracer` implementation to create and manage spans
 #[derive(Clone)]
-pub struct SdkTracer {
-    scope: InstrumentationScope,
-    provider: SdkTracerProvider,
+pub struct Tracer {
+    instrumentation_lib: Arc<InstrumentationLibrary>,
+    provider: Weak<TracerProviderInner>,
 }
 
-impl fmt::Debug for SdkTracer {
+impl fmt::Debug for Tracer {
     /// Formats the `Tracer` using the given formatter.
     /// Omitting `provider` here is necessary to avoid cycles.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Tracer")
-            .field("name", &self.scope.name())
-            .field("version", &self.scope.version())
+            .field("name", &self.instrumentation_lib.name)
+            .field("version", &self.instrumentation_lib.version)
             .finish()
     }
 }
 
-impl SdkTracer {
+impl Tracer {
     /// Create a new tracer (used internally by `TracerProvider`s).
-    pub(crate) fn new(scope: InstrumentationScope, provider: SdkTracerProvider) -> Self {
-        SdkTracer { scope, provider }
+    pub(crate) fn new(
+        instrumentation_lib: Arc<InstrumentationLibrary>,
+        provider: Weak<TracerProviderInner>,
+    ) -> Self {
+        Tracer {
+            instrumentation_lib,
+            provider,
+        }
     }
 
     /// TracerProvider associated with this tracer.
-    pub(crate) fn provider(&self) -> &SdkTracerProvider {
-        &self.provider
+    pub fn provider(&self) -> Option<TracerProvider> {
+        self.provider.upgrade().map(TracerProvider::new)
     }
 
-    /// Instrumentation scope of this tracer.
-    pub(crate) fn instrumentation_scope(&self) -> &InstrumentationScope {
-        &self.scope
+    /// Instrumentation library information of this tracer.
+    pub fn instrumentation_library(&self) -> &InstrumentationLibrary {
+        &self.instrumentation_lib
     }
 
     fn build_recording_span(
@@ -148,25 +160,9 @@ impl SdkTracer {
             span_limits,
         )
     }
-
-    /// The [`IdGenerator`] associated with this tracer.
-    ///
-    // Note: this is necessary for tracing-opentelemetry's `PreSampledTracer`.
-    #[doc(hidden)]
-    pub fn id_generator(&self) -> &dyn IdGenerator {
-        &*self.provider.config().id_generator
-    }
-
-    /// The [`ShouldSample`] associated with this tracer.
-    ///
-    // Note: this is necessary for tracing-opentelemetry's `PreSampledTracer`.
-    #[doc(hidden)]
-    pub fn should_sample(&self) -> &dyn ShouldSample {
-        &*self.provider.config().sampler
-    }
 }
 
-impl opentelemetry::trace::Tracer for SdkTracer {
+impl opentelemetry::trace::Tracer for Tracer {
     /// This implementation of `Tracer` produces `sdk::Span` instances.
     type Span = Span;
 
@@ -178,18 +174,8 @@ impl opentelemetry::trace::Tracer for SdkTracer {
     /// trace includes a single root span, which is the shared ancestor of all other
     /// spans in the trace.
     fn build_with_context(&self, mut builder: SpanBuilder, parent_cx: &Context) -> Self::Span {
-        if parent_cx.is_telemetry_suppressed() {
-            return Span::new(
-                SpanContext::empty_context(),
-                None,
-                self.clone(),
-                SpanLimits::default(),
-            );
-        }
-
         let provider = self.provider();
-        // no point start a span if the tracer provider has already being shutdown
-        if provider.is_shutdown() {
+        if provider.is_none() {
             return Span::new(
                 SpanContext::empty_context(),
                 None,
@@ -198,6 +184,7 @@ impl opentelemetry::trace::Tracer for SdkTracer {
             );
         }
 
+        let provider = provider.unwrap();
         let config = provider.config();
         let span_id = builder
             .span_id
@@ -294,7 +281,7 @@ impl opentelemetry::trace::Tracer for SdkTracer {
 mod tests {
     use crate::{
         testing::trace::TestSpan,
-        trace::{Sampler, ShouldSample},
+        trace::{Config, Sampler, ShouldSample},
     };
     use opentelemetry::{
         trace::{
@@ -335,8 +322,9 @@ mod tests {
     fn allow_sampler_to_change_trace_state() {
         // Setup
         let sampler = TestSampler {};
-        let tracer_provider = crate::trace::SdkTracerProvider::builder()
-            .with_sampler(sampler)
+        let config = Config::default().with_sampler(sampler);
+        let tracer_provider = crate::trace::TracerProvider::builder()
+            .with_config(config)
             .build();
         let tracer = tracer_provider.tracer("test");
         let trace_state = TraceState::from_key_value(vec![("foo", "bar")]).unwrap();
@@ -359,8 +347,9 @@ mod tests {
     #[test]
     fn drop_parent_based_children() {
         let sampler = Sampler::ParentBased(Box::new(Sampler::AlwaysOn));
-        let tracer_provider = crate::trace::SdkTracerProvider::builder()
-            .with_sampler(sampler)
+        let config = Config::default().with_sampler(sampler);
+        let tracer_provider = crate::trace::TracerProvider::builder()
+            .with_config(config)
             .build();
 
         let context = Context::current_with_span(TestSpan(SpanContext::empty_context()));
@@ -373,8 +362,9 @@ mod tests {
     #[test]
     fn uses_current_context_for_builders_if_unset() {
         let sampler = Sampler::ParentBased(Box::new(Sampler::AlwaysOn));
-        let tracer_provider = crate::trace::SdkTracerProvider::builder()
-            .with_sampler(sampler)
+        let config = Config::default().with_sampler(sampler);
+        let tracer_provider = crate::trace::TracerProvider::builder()
+            .with_config(config)
             .build();
         let tracer = tracer_provider.tracer("test");
 

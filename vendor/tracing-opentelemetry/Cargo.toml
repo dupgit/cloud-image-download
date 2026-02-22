@@ -10,16 +10,14 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.75.0"
+edition = "2018"
+rust-version = "1.65.0"
 name = "tracing-opentelemetry"
-version = "0.31.0"
-build = false
-autolib = false
-autobins = false
-autoexamples = false
-autotests = false
-autobenches = false
+version = "0.23.0"
+authors = [
+    "Julian Tescher <julian@tescher.me>",
+    "Tokio Contributors <team@tokio.rs>",
+]
 description = "OpenTelemetry integration for tracing"
 homepage = "https://github.com/tokio-rs/tracing-opentelemetry"
 readme = "README.md"
@@ -45,83 +43,15 @@ rustdoc-args = [
     "docsrs",
 ]
 
-[features]
-default = [
-    "tracing-log",
-    "metrics",
-]
-metrics = [
-    "opentelemetry/metrics",
-    "opentelemetry_sdk/metrics",
-    "smallvec",
-]
-metrics_gauge_unstable = []
-
 [lib]
-name = "tracing_opentelemetry"
-path = "src/lib.rs"
 bench = false
-
-[[example]]
-name = "basic"
-path = "examples/basic.rs"
-
-[[example]]
-name = "opentelemetry-error"
-path = "examples/opentelemetry-error.rs"
-
-[[example]]
-name = "opentelemetry-otlp"
-path = "examples/opentelemetry-otlp.rs"
-
-[[example]]
-name = "opentelemetry-remote-context"
-path = "examples/opentelemetry-remote-context.rs"
-
-[[test]]
-name = "batch_global_subscriber"
-path = "tests/batch_global_subscriber.rs"
-
-[[test]]
-name = "errors"
-path = "tests/errors.rs"
-
-[[test]]
-name = "filtered"
-path = "tests/filtered.rs"
-
-[[test]]
-name = "follows_from"
-path = "tests/follows_from.rs"
-
-[[test]]
-name = "metrics_publishing"
-path = "tests/metrics_publishing.rs"
-
-[[test]]
-name = "parallel"
-path = "tests/parallel.rs"
-
-[[test]]
-name = "parents"
-path = "tests/parents.rs"
-
-[[test]]
-name = "span_ext"
-path = "tests/span_ext.rs"
-
-[[test]]
-name = "trace_state_propagation"
-path = "tests/trace_state_propagation.rs"
-
-[[bench]]
-name = "metrics"
-path = "benches/metrics.rs"
-harness = false
 
 [[bench]]
 name = "trace"
-path = "benches/trace.rs"
+harness = false
+
+[[bench]]
+name = "metrics"
 harness = false
 
 [dependencies.async-trait]
@@ -132,20 +62,16 @@ optional = true
 version = "0.3.17"
 optional = true
 
-[dependencies.lazy_static]
-version = "1.0.2"
-optional = true
-
 [dependencies.once_cell]
 version = "1.13.0"
 
 [dependencies.opentelemetry]
-version = "0.30.0"
+version = "0.22.0"
 features = ["trace"]
 default-features = false
 
 [dependencies.opentelemetry_sdk]
-version = "0.30.0"
+version = "0.22.0"
 features = ["trace"]
 default-features = false
 
@@ -154,13 +80,8 @@ version = "1.0"
 optional = true
 
 [dependencies.thiserror]
-version = "2"
-optional = true
-
-[dependencies.thiserror-1]
 version = "1.0.31"
 optional = true
-package = "thiserror"
 
 [dependencies.tracing]
 version = "0.1.35"
@@ -196,36 +117,34 @@ version = "0.3.17"
 default-features = false
 
 [dev-dependencies.opentelemetry]
-version = "0.30.0"
+version = "0.22.0"
 features = [
     "trace",
     "metrics",
 ]
 
+[dev-dependencies.opentelemetry-jaeger]
+version = "0.21.0"
+
 [dev-dependencies.opentelemetry-otlp]
-version = "0.30.0"
-features = [
-    "metrics",
-    "grpc-tonic",
-]
+version = "0.15.0"
+features = ["metrics"]
 
 [dev-dependencies.opentelemetry-semantic-conventions]
-version = "0.30.0"
-features = ["semconv_experimental"]
+version = "0.14.0"
 
 [dev-dependencies.opentelemetry-stdout]
-version = "0.30.0"
+version = "0.3.0"
 features = [
     "trace",
     "metrics",
 ]
 
 [dev-dependencies.opentelemetry_sdk]
-version = "0.30.0"
+version = "0.22.0"
 features = [
     "trace",
     "rt-tokio",
-    "experimental_metrics_custom_reader",
 ]
 default-features = false
 
@@ -256,14 +175,25 @@ features = [
 ]
 default-features = false
 
-[target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dependencies.js-sys]
+[features]
+default = [
+    "tracing-log",
+    "metrics",
+]
+metrics = [
+    "opentelemetry/metrics",
+    "opentelemetry_sdk/metrics",
+    "smallvec",
+]
+
+[target."cfg(all(target_arch = \"wasm32\", not(target_os = \"wasi\")))".dependencies.js-sys]
 version = "0.3.64"
 
-[target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dependencies.web-time]
+[target."cfg(all(target_arch = \"wasm32\", not(target_os = \"wasi\")))".dependencies.web-time]
 version = "1.0.0"
 
-[target.'cfg(not(target_os = "windows"))'.dev-dependencies.pprof]
-version = "0.14.0"
+[target."cfg(not(target_os = \"windows\"))".dev-dependencies.pprof]
+version = "0.13.0"
 features = [
     "flamegraph",
     "criterion",

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use number_prefix::NumberPrefix;
+use unit_prefix::NumberPrefix;
 
 const SECOND: Duration = Duration::from_secs(1);
 const MINUTE: Duration = Duration::from_secs(60);
@@ -187,7 +187,10 @@ impl fmt::Display for HumanFloatCount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
 
-        let num = format!("{:.4}", self.0);
+        // Use formatter's precision if provided, otherwise default to 4
+        let precision = f.precision().unwrap_or(4);
+        let num = format!("{:.*}", precision, self.0);
+
         let (int_part, frac_part) = match num.split_once('.') {
             Some((int_str, fract_str)) => (int_str.to_string(), fract_str),
             None => (self.0.trunc().to_string(), ""),
@@ -365,6 +368,14 @@ mod tests {
         assert_eq!(
             "1,234,567,890.1234",
             format!("{}", HumanFloatCount(1234567890.1234321))
+        );
+        assert_eq!("1,234", format!("{:.0}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.1", format!("{:.1}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.12", format!("{:.2}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.123", format!("{:.3}", HumanFloatCount(1234.1234321)));
+        assert_eq!(
+            "1,234.1234320999999454215867445",
+            format!("{:.25}", HumanFloatCount(1234.1234321))
         );
     }
 }

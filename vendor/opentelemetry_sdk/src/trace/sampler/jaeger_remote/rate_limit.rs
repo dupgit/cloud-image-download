@@ -1,5 +1,6 @@
-use opentelemetry::time::now;
+use opentelemetry::trace::TraceError;
 use std::time::SystemTime;
+
 // leaky bucket based rate limit
 // should be Send+Sync
 pub(crate) struct LeakyBucket {
@@ -8,7 +9,6 @@ pub(crate) struct LeakyBucket {
     bucket_size: f64,
     last_time: SystemTime,
 }
-use opentelemetry::otel_debug;
 
 impl LeakyBucket {
     pub(crate) fn new(bucket_size: f64, span_per_sec: f64) -> LeakyBucket {
@@ -16,7 +16,7 @@ impl LeakyBucket {
             span_per_sec,
             available: bucket_size,
             bucket_size,
-            last_time: now(),
+            last_time: opentelemetry::time::now(),
         }
     }
 
@@ -25,7 +25,7 @@ impl LeakyBucket {
     }
 
     pub(crate) fn should_sample(&mut self) -> bool {
-        self.check_availability(now)
+        self.check_availability(opentelemetry::time::now)
     }
 
     fn check_availability<F>(&mut self, now: F) -> bool
@@ -53,12 +53,10 @@ impl LeakyBucket {
                         false
                     }
                 }
-                Err(err) => {
-                    otel_debug!(
-                        name: "JaegerRemoteSampler.LeakyBucket.ClockAdjustment",
-                        message = "Jaeger remote sampler detected a rewind in system clock",
-                        reason = format!("{:?}", err),
-                    );
+                Err(_) => {
+                    opentelemetry::global::handle_error(TraceError::Other(
+                        "jaeger remote sampler gets rewinded timestamp".into(),
+                    ));
                     true
                 }
             }
@@ -69,15 +67,14 @@ impl LeakyBucket {
 #[cfg(test)]
 mod tests {
     use crate::trace::sampler::jaeger_remote::rate_limit::LeakyBucket;
-    use opentelemetry::time::now;
     use std::ops::{Add, Sub};
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn test_leaky_bucket() {
         // maximum bucket size 2, add 1 allowance every 10 seconds
         let mut leaky_bucket = LeakyBucket::new(2.0, 0.1);
-        let current_time = now();
+        let current_time = SystemTime::now();
         leaky_bucket.last_time = current_time;
 
         let test_cases = vec![
@@ -103,7 +100,7 @@ mod tests {
     #[test]
     fn test_rewind_clock_should_pass() {
         let mut leaky_bucket = LeakyBucket::new(2.0, 0.1);
-        let current_time = now();
+        let current_time = SystemTime::now();
         leaky_bucket.last_time = current_time;
 
         assert!(leaky_bucket.check_availability(|| { current_time.sub(Duration::from_secs(10)) }))

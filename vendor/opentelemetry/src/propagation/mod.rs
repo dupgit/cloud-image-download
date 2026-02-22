@@ -64,6 +64,7 @@ impl<S: std::hash::BuildHasher> Extractor for HashMap<String, String, S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn hash_map_get() {

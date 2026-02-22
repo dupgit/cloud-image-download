@@ -7,7 +7,7 @@ use opentelemetry::{
 use std::fmt;
 use std::marker;
 use std::thread;
-#[cfg(not(all(target_arch = "wasm32", not(target_os = "wasi"))))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use std::{any::TypeId, borrow::Cow};
 use tracing_core::span::{self, Attributes, Id, Record};
@@ -17,7 +17,7 @@ use tracing_log::NormalizeEvent;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Layer;
-#[cfg(all(target_arch = "wasm32", not(target_os = "wasi")))]
+#[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
 const SPAN_NAME_FIELD: &str = "otel.name";
@@ -39,7 +39,6 @@ pub struct OpenTelemetryLayer<S, T> {
     location: bool,
     tracked_inactivity: bool,
     with_threads: bool,
-    with_level: bool,
     sem_conv_config: SemConvConfig,
     get_context: WithContext,
     _registry: marker::PhantomData<S>,
@@ -160,7 +159,7 @@ struct SpanEventVisitor<'a, 'b> {
     sem_conv_config: SemConvConfig,
 }
 
-impl field::Visit for SpanEventVisitor<'_, '_> {
+impl<'a, 'b> field::Visit for SpanEventVisitor<'a, 'b> {
     /// Record events on the underlying OpenTelemetry [`Span`] from `bool` values.
     ///
     /// [`Span`]: opentelemetry::trace::Span
@@ -311,10 +310,9 @@ impl field::Visit for SpanEventVisitor<'_, '_> {
         let error_msg = value.to_string();
 
         if self.sem_conv_config.error_fields_to_exceptions {
-            self.event_builder.attributes.push(KeyValue::new(
-                Key::new(FIELD_EXCEPTION_MESSAGE),
-                Value::String(StringValue::from(error_msg.clone())),
-            ));
+            self.event_builder
+                .attributes
+                .push(Key::new(FIELD_EXCEPTION_MESSAGE).string(error_msg.clone()));
 
             // NOTE: This is actually not the stacktrace of the exception. This is
             // the "source chain". It represents the heirarchy of errors from the
@@ -322,10 +320,9 @@ impl field::Visit for SpanEventVisitor<'_, '_> {
             // of the callsites in the code that led to the error happening.
             // `std::error::Error::backtrace` is a nightly-only API and cannot be
             // used here until the feature is stabilized.
-            self.event_builder.attributes.push(KeyValue::new(
-                Key::new(FIELD_EXCEPTION_STACKTRACE),
-                Value::Array(chain.clone().into()),
-            ));
+            self.event_builder
+                .attributes
+                .push(Key::new(FIELD_EXCEPTION_STACKTRACE).array(chain.clone()));
         }
 
         if self.sem_conv_config.error_records_to_exceptions {
@@ -352,14 +349,12 @@ impl field::Visit for SpanEventVisitor<'_, '_> {
             ));
         }
 
-        self.event_builder.attributes.push(KeyValue::new(
-            Key::new(field.name()),
-            Value::String(StringValue::from(error_msg)),
-        ));
-        self.event_builder.attributes.push(KeyValue::new(
-            Key::new(format!("{}.chain", field.name())),
-            Value::Array(chain.into()),
-        ));
+        self.event_builder
+            .attributes
+            .push(Key::new(field.name()).string(error_msg));
+        self.event_builder
+            .attributes
+            .push(Key::new(format!("{}.chain", field.name())).array(chain));
     }
 }
 
@@ -403,7 +398,7 @@ struct SpanAttributeVisitor<'a> {
     sem_conv_config: SemConvConfig,
 }
 
-impl SpanAttributeVisitor<'_> {
+impl<'a> SpanAttributeVisitor<'a> {
     fn record(&mut self, attribute: KeyValue) {
         self.span_builder_updates
             .attributes
@@ -412,7 +407,7 @@ impl SpanAttributeVisitor<'_> {
     }
 }
 
-impl field::Visit for SpanAttributeVisitor<'_> {
+impl<'a> field::Visit for SpanAttributeVisitor<'a> {
     /// Set attributes on the underlying OpenTelemetry [`Span`] from `bool` values.
     ///
     /// [`Span`]: opentelemetry::trace::Span
@@ -465,10 +460,7 @@ impl field::Visit for SpanAttributeVisitor<'_> {
             SPAN_STATUS_MESSAGE_FIELD => {
                 self.span_builder_updates.status = Some(otel::Status::error(format!("{:?}", value)))
             }
-            _ => self.record(KeyValue::new(
-                Key::new(field.name()),
-                Value::String(format!("{:?}", value).into()),
-            )),
+            _ => self.record(Key::new(field.name()).string(format!("{:?}", value))),
         }
     }
 
@@ -492,10 +484,7 @@ impl field::Visit for SpanAttributeVisitor<'_> {
         let error_msg = value.to_string();
 
         if self.sem_conv_config.error_fields_to_exceptions {
-            self.record(KeyValue::new(
-                Key::new(FIELD_EXCEPTION_MESSAGE),
-                Value::from(error_msg.clone()),
-            ));
+            self.record(Key::new(FIELD_EXCEPTION_MESSAGE).string(error_msg.clone()));
 
             // NOTE: This is actually not the stacktrace of the exception. This is
             // the "source chain". It represents the heirarchy of errors from the
@@ -503,20 +492,11 @@ impl field::Visit for SpanAttributeVisitor<'_> {
             // of the callsites in the code that led to the error happening.
             // `std::error::Error::backtrace` is a nightly-only API and cannot be
             // used here until the feature is stabilized.
-            self.record(KeyValue::new(
-                Key::new(FIELD_EXCEPTION_STACKTRACE),
-                Value::Array(chain.clone().into()),
-            ));
+            self.record(Key::new(FIELD_EXCEPTION_STACKTRACE).array(chain.clone()));
         }
 
-        self.record(KeyValue::new(
-            Key::new(field.name()),
-            Value::String(error_msg.into()),
-        ));
-        self.record(KeyValue::new(
-            Key::new(format!("{}.chain", field.name())),
-            Value::Array(chain.into()),
-        ));
+        self.record(Key::new(field.name()).string(error_msg));
+        self.record(Key::new(format!("{}.chain", field.name())).array(chain));
     }
 }
 
@@ -536,20 +516,13 @@ where
     /// ```no_run
     /// use tracing_opentelemetry::OpenTelemetryLayer;
     /// use tracing_subscriber::layer::SubscriberExt;
-    /// use opentelemetry::trace::TracerProvider as _;
     /// use tracing_subscriber::Registry;
     ///
-    /// // Create an OTLP pipeline exporter for a `trace_demo` service.
-    ///
-    /// let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-    ///     .with_tonic()
-    ///     .build()
-    ///     .unwrap();
-    ///
-    /// let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-    ///     .with_simple_exporter(otlp_exporter)
-    ///     .build()
-    ///     .tracer("trace_demo");
+    /// // Create a jaeger exporter pipeline for a `trace_demo` service.
+    /// let tracer = opentelemetry_jaeger::new_agent_pipeline()
+    ///     .with_service_name("trace_demo")
+    ///     .install_simple()
+    ///     .expect("Error initializing Jaeger exporter");
     ///
     /// // Create a layer with the configured tracer
     /// let otel_layer = OpenTelemetryLayer::new(tracer);
@@ -565,7 +538,6 @@ where
             location: true,
             tracked_inactivity: true,
             with_threads: true,
-            with_level: false,
             sem_conv_config: SemConvConfig {
                 error_fields_to_exceptions: true,
                 error_records_to_exceptions: true,
@@ -589,19 +561,12 @@ where
     /// ```no_run
     /// use tracing_subscriber::layer::SubscriberExt;
     /// use tracing_subscriber::Registry;
-    /// use opentelemetry::trace::TracerProvider;
     ///
-    /// // Create an OTLP pipeline exporter for a `trace_demo` service.
-    ///
-    /// let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-    ///     .with_tonic()
-    ///     .build()
-    ///     .unwrap();
-    ///
-    /// let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-    ///     .with_simple_exporter(otlp_exporter)
-    ///     .build()
-    ///     .tracer("trace_demo");
+    /// // Create a jaeger exporter pipeline for a `trace_demo` service.
+    /// let tracer = opentelemetry_jaeger::new_agent_pipeline()
+    ///     .with_service_name("trace_demo")
+    ///     .install_simple()
+    ///     .expect("Error initializing Jaeger exporter");
     ///
     /// // Create a layer with the configured tracer
     /// let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -620,11 +585,38 @@ where
             location: self.location,
             tracked_inactivity: self.tracked_inactivity,
             with_threads: self.with_threads,
-            with_level: self.with_level,
             sem_conv_config: self.sem_conv_config,
             get_context: WithContext(OpenTelemetryLayer::<S, Tracer>::get_context),
             _registry: self._registry,
-            // cannot use ``..self` here due to different generics
+        }
+    }
+
+    /// Sets whether or not span and event metadata should include OpenTelemetry
+    /// exception fields such as `exception.message` and `exception.backtrace`
+    /// when an `Error` value is recorded. If multiple error values are recorded
+    /// on the same span/event, only the most recently recorded error value will
+    /// show up under these fields.
+    ///
+    /// These attributes follow the [OpenTelemetry semantic conventions for
+    /// exceptions][conv].
+    ///
+    /// By default, these attributes are recorded.
+    /// Note that this only works for `(dyn Error + 'static)`.
+    /// See [Implementations on Foreign Types of tracing::Value][impls] or [`OpenTelemetryLayer::with_error_events_to_exceptions`]
+    ///
+    /// [conv]: https://github.com/open-telemetry/semantic-conventions/tree/main/docs/exceptions/
+    /// [impls]: https://docs.rs/tracing/0.1.37/tracing/trait.Value.html#foreign-impls
+    #[deprecated(
+        since = "0.21.0",
+        note = "renamed to `OpenTelemetryLayer::with_error_fields_to_exceptions`"
+    )]
+    pub fn with_exception_fields(self, exception_fields: bool) -> Self {
+        Self {
+            sem_conv_config: SemConvConfig {
+                error_fields_to_exceptions: exception_fields,
+                ..self.sem_conv_config
+            },
+            ..self
         }
     }
 
@@ -673,7 +665,7 @@ where
     /// exceptions][conv].
     ///
     /// * Only events without a message field (unnamed events) and at least one field with the name error
-    ///   are considered for mapping.
+    /// are considered for mapping.
     ///
     /// By default, these events are mapped.
     ///
@@ -682,6 +674,35 @@ where
         Self {
             sem_conv_config: SemConvConfig {
                 error_events_to_exceptions,
+                ..self.sem_conv_config
+            },
+            ..self
+        }
+    }
+
+    /// Sets whether or not reporting an `Error` value on an event will
+    /// propagate the OpenTelemetry exception fields such as `exception.message`
+    /// and `exception.backtrace` to the corresponding span. You do not need to
+    /// enable `with_exception_fields` in order to enable this. If multiple
+    /// error values are recorded on the same span/event, only the most recently
+    /// recorded error value will show up under these fields.
+    ///
+    /// These attributes follow the [OpenTelemetry semantic conventions for
+    /// exceptions][conv].
+    ///
+    /// By default, these attributes are propagated to the span. Note that this only works for `(dyn Error + 'static)`.
+    /// See [Implementations on Foreign Types of tracing::Value][impls] or [`OpenTelemetryLayer::with_error_events_to_exceptions`]
+    ///
+    /// [conv]: https://github.com/open-telemetry/semantic-conventions/tree/main/docs/exceptions/
+    /// [impls]: https://docs.rs/tracing/0.1.37/tracing/trait.Value.html#foreign-impls
+    #[deprecated(
+        since = "0.21.0",
+        note = "renamed to `OpenTelemetryLayer::with_error_records_to_exceptions`"
+    )]
+    pub fn with_exception_field_propagation(self, exception_field_propagation: bool) -> Self {
+        Self {
+            sem_conv_config: SemConvConfig {
+                error_records_to_exceptions: exception_field_propagation,
                 ..self.sem_conv_config
             },
             ..self
@@ -726,11 +747,29 @@ where
         Self { location, ..self }
     }
 
+    /// Sets whether or not span and event metadata should include OpenTelemetry
+    /// attributes with location information, such as the file, module and line number.
+    ///
+    /// These attributes follow the [OpenTelemetry semantic conventions for
+    /// source locations][conv].
+    ///
+    /// By default, locations are enabled.
+    ///
+    /// [conv]: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/attributes.md#source-code-attributes/
+    #[deprecated(
+        since = "0.17.3",
+        note = "renamed to `OpenTelemetrySubscriber::with_location`"
+    )]
+    pub fn with_event_location(self, event_location: bool) -> Self {
+        Self {
+            location: event_location,
+            ..self
+        }
+    }
+
     /// Sets whether or not spans metadata should include the _busy time_
     /// (total time for which it was entered), and _idle time_ (total time
     /// the span existed but was not entered).
-    ///
-    /// By default, inactivity tracking is enabled.
     pub fn with_tracked_inactivity(self, tracked_inactivity: bool) -> Self {
         Self {
             tracked_inactivity,
@@ -748,19 +787,6 @@ where
     pub fn with_threads(self, threads: bool) -> Self {
         Self {
             with_threads: threads,
-            ..self
-        }
-    }
-
-    /// Sets whether or not span metadata should include the `tracing` verbosity level information as a `level` field.
-    ///
-    /// The level is always added to events, and based on [`OpenTelemetryLayer::with_error_events_to_status`]
-    /// error-level events will mark the span status as an error.
-    ///
-    /// By default, level information is disabled.
-    pub fn with_level(self, level: bool) -> Self {
-        Self {
-            with_level: level,
             ..self
         }
     }
@@ -840,9 +866,6 @@ where
         if self.with_threads {
             extra_attrs += 2;
         }
-        if self.with_level {
-            extra_attrs += 1;
-        }
         extra_attrs
     }
 }
@@ -921,10 +944,6 @@ where
             }
         }
 
-        if self.with_level {
-            builder_attrs.push(KeyValue::new("level", attrs.metadata().level().as_str()));
-        }
-
         let mut updates = SpanBuilderUpdates::default();
         attrs.record(&mut SpanAttributeVisitor {
             span_builder_updates: &mut updates,
@@ -951,16 +970,12 @@ where
     }
 
     fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
-        let mut extensions = span.extensions_mut();
-
-        if let Some(otel_data) = extensions.get_mut::<OtelData>() {
-            otel_data.builder.end_time = Some(crate::time::now());
-        }
-
         if !self.tracked_inactivity {
             return;
         }
+
+        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let mut extensions = span.extensions_mut();
 
         if let Some(timings) = extensions.get_mut::<Timings>() {
             let now = Instant::now();
@@ -1007,7 +1022,7 @@ where
                 .span()
                 .span_context()
                 .clone();
-            let follows_link = otel::Link::with_context(follows_context);
+            let follows_link = otel::Link::new(follows_context, Vec::new());
             if let Some(ref mut links) = data.builder.links {
                 links.push(follows_link);
             } else {
@@ -1045,24 +1060,18 @@ where
 
             #[cfg(feature = "tracing-log")]
             let target = if normalized_meta.is_some() {
-                KeyValue::new(target, Value::String(meta.target().to_owned().into()))
+                target.string(meta.target().to_owned())
             } else {
-                KeyValue::new(target, Value::String(event.metadata().target().into()))
+                target.string(event.metadata().target())
             };
 
             #[cfg(not(feature = "tracing-log"))]
-            let target = KeyValue::new(target, Value::String(meta.target().into()));
+            let target = target.string(meta.target());
 
             let mut otel_event = otel::Event::new(
                 String::new(),
                 crate::time::now(),
-                vec![
-                    KeyValue::new(
-                        Key::new("level"),
-                        Value::String(meta.level().as_str().into()),
-                    ),
-                    target,
-                ],
+                vec![Key::new("level").string(meta.level().as_str()), target],
                 0,
             );
 
@@ -1072,15 +1081,6 @@ where
                 span_builder_updates: &mut builder_updates,
                 sem_conv_config: self.sem_conv_config,
             });
-
-            // If the event name is still empty, then there was no special handling of error fields.
-            // It should be safe to set the event name to the name provided by tracing.
-            // This is a hack but there are existing hacks that depend on the name being empty, so to avoid breaking those the event name is set here.
-            // Ideally, the name should be set above when the event is constructed.
-            // see: https://github.com/tokio-rs/tracing-opentelemetry/pull/28
-            if otel_event.name.is_empty() {
-                otel_event.name = std::borrow::Cow::Borrowed(event.metadata().name());
-            }
 
             let mut extensions = span.extensions_mut();
             let otel_data = extensions.get_mut::<OtelData>();
@@ -1143,35 +1143,31 @@ where
     /// [`Span`]: opentelemetry::trace::Span
     fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
         let span = ctx.span(&id).expect("Span not found, this is a bug");
-        let (otel_data, timings) = {
-            let mut extensions = span.extensions_mut();
-            let timings = if self.tracked_inactivity {
-                extensions.remove::<Timings>()
-            } else {
-                None
-            };
-            (extensions.remove::<OtelData>(), timings)
-        };
+        let mut extensions = span.extensions_mut();
 
         if let Some(OtelData {
             mut builder,
             parent_cx,
-        }) = otel_data
+        }) = extensions.remove::<OtelData>()
         {
-            // Append busy/idle timings when enabled.
-            if let Some(timings) = timings {
-                let busy_ns = Key::new("busy_ns");
-                let idle_ns = Key::new("idle_ns");
+            if self.tracked_inactivity {
+                // Append busy/idle timings when enabled.
+                if let Some(timings) = extensions.get_mut::<Timings>() {
+                    let busy_ns = Key::new("busy_ns");
+                    let idle_ns = Key::new("idle_ns");
 
-                let attributes = builder
-                    .attributes
-                    .get_or_insert_with(|| Vec::with_capacity(2));
-                attributes.push(KeyValue::new(busy_ns, timings.busy));
-                attributes.push(KeyValue::new(idle_ns, timings.idle));
+                    let attributes = builder
+                        .attributes
+                        .get_or_insert_with(|| Vec::with_capacity(2));
+                    attributes.push(KeyValue::new(busy_ns, timings.busy));
+                    attributes.push(KeyValue::new(idle_ns, timings.idle));
+                }
             }
 
-            // Build and start span, drop span to export
-            builder.start_with_context(&self.tracer, &parent_cx);
+            // Assign end time, build and start span, drop span to export
+            builder
+                .with_end_time(crate::time::now())
+                .start_with_context(&self.tracer, &parent_cx);
         }
     }
 
@@ -1216,7 +1212,7 @@ fn thread_id_integer(id: thread::ThreadId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opentelemetry::trace::{SpanContext, TraceFlags};
+    use opentelemetry::trace::TraceFlags;
     use std::{
         collections::HashMap,
         error::Error,
@@ -1294,7 +1290,6 @@ mod tests {
         fn set_attribute(&mut self, _attribute: KeyValue) {}
         fn set_status(&mut self, _status: otel::Status) {}
         fn update_name<T: Into<Cow<'static, str>>>(&mut self, _new_name: T) {}
-        fn add_link(&mut self, _span_context: SpanContext, _attributes: Vec<KeyValue>) {}
         fn end_with_timestamp(&mut self, _timestamp: SystemTime) {}
     }
 
@@ -1501,42 +1496,6 @@ mod tests {
     }
 
     #[test]
-    fn records_event_name() {
-        let tracer = TestTracer(Arc::new(Mutex::new(None)));
-        let subscriber = tracing_subscriber::registry().with(layer().with_tracer(tracer.clone()));
-
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::debug_span!("test span").in_scope(|| {
-                tracing::event!(tracing::Level::INFO, "event name 1"); // this is equivalent to 'message = "event name 1"'
-                tracing::event!(name: "event name 2", tracing::Level::INFO, field1 = "field1");
-                tracing::event!(name: "event name 3", tracing::Level::INFO, error = "field2");
-                tracing::event!(name: "event name 4", tracing::Level::INFO, message = "field3");
-                tracing::event!(name: "event name 5", tracing::Level::INFO, name = "field4");
-            });
-        });
-
-        let events = tracer
-            .0
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .builder
-            .events
-            .as_ref()
-            .unwrap()
-            .clone();
-
-        let mut iter = events.iter();
-
-        assert_eq!(iter.next().unwrap().name, "event name 1");
-        assert_eq!(iter.next().unwrap().name, "event name 2");
-        assert_eq!(iter.next().unwrap().name, "exception"); // error attribute is handled specially
-        assert_eq!(iter.next().unwrap().name, "field3"); // message attribute is handled specially
-        assert_eq!(iter.next().unwrap().name, "event name 5"); // name attribute should not conflict with event name.
-    }
-
-    #[test]
     fn records_no_error_fields() {
         let tracer = TestTracer(Arc::new(Mutex::new(None)));
         let subscriber = tracing_subscriber::registry().with(
@@ -1683,42 +1642,6 @@ mod tests {
     }
 
     #[test]
-    fn includes_level() {
-        let tracer = TestTracer(Arc::new(Mutex::new(None)));
-        let subscriber = tracing_subscriber::registry()
-            .with(layer().with_tracer(tracer.clone()).with_level(true));
-
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::debug_span!("request");
-        });
-
-        let attributes = tracer.with_data(|data| data.builder.attributes.as_ref().unwrap().clone());
-        let keys = attributes
-            .iter()
-            .map(|kv| kv.key.as_str())
-            .collect::<Vec<&str>>();
-        assert!(keys.contains(&"level"));
-    }
-
-    #[test]
-    fn excludes_level() {
-        let tracer = TestTracer(Arc::new(Mutex::new(None)));
-        let subscriber = tracing_subscriber::registry()
-            .with(layer().with_tracer(tracer.clone()).with_level(false));
-
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::debug_span!("request");
-        });
-
-        let attributes = tracer.with_data(|data| data.builder.attributes.as_ref().unwrap().clone());
-        let keys = attributes
-            .iter()
-            .map(|kv| kv.key.as_str())
-            .collect::<Vec<&str>>();
-        assert!(!keys.contains(&"level"));
-    }
-
-    #[test]
     fn propagates_error_fields_from_event_to_span() {
         let tracer = TestTracer(Arc::new(Mutex::new(None)));
         let subscriber = tracing_subscriber::registry().with(layer().with_tracer(tracer.clone()));
@@ -1835,7 +1758,7 @@ mod tests {
             let context = tracing_error::SpanTrace::capture();
 
             // This can cause a deadlock if `on_record` locks extensions while attributes are visited
-            span.record("exception", tracing::field::debug(&context));
+            span.record("exception", &tracing::field::debug(&context));
             // This can cause a deadlock if `on_event` locks extensions while the event is visited
             tracing::info!(exception = &tracing::field::debug(&context), "hello");
         });

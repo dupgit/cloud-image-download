@@ -1,12 +1,11 @@
-use crate::runtime::{to_interval_stream, RuntimeChannel};
-use crate::trace::error::TraceError;
+use crate::runtime::RuntimeChannel;
 use crate::trace::sampler::jaeger_remote::remote::SamplingStrategyResponse;
 use crate::trace::sampler::jaeger_remote::sampling_strategy::Inner;
 use crate::trace::{Sampler, ShouldSample};
 use futures_util::{stream, StreamExt as _};
 use http::Uri;
-use opentelemetry::trace::{Link, SamplingResult, SpanKind, TraceId};
-use opentelemetry::{otel_warn, Context, KeyValue};
+use opentelemetry::trace::{Link, SamplingResult, SpanKind, TraceError, TraceId};
+use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_http::HttpClient;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -190,9 +189,8 @@ impl JaegerRemoteSampler {
         C: HttpClient + 'static,
     {
         // todo: review if we need 'static here
-        let interval = to_interval_stream(runtime.clone(), update_timeout);
-
-        runtime.spawn(async move {
+        let interval = runtime.interval(update_timeout);
+        runtime.spawn(Box::pin(async move {
             // either update or shutdown
             let mut update = Box::pin(stream::select(
                 shutdown.map(|_| false),
@@ -205,20 +203,14 @@ impl JaegerRemoteSampler {
                     // send request
                     match Self::request_new_strategy(&client, endpoint.clone()).await {
                         Ok(remote_strategy_resp) => strategy.update(remote_strategy_resp),
-                        Err(err_msg) => {
-                            otel_warn!(
-                                name: "JaegerRemoteSampler.FailedToFetchStrategy",
-                                message= "Failed to fetch the sampling strategy from the remote endpoint. The last successfully fetched configuration will be used if available; otherwise, the default sampler will be applied until a successful configuration fetch.",
-                                reason = format!("{}", err_msg),
-                            );
-                        }
+                        Err(err_msg) => global::handle_error(TraceError::Other(err_msg.into())),
                     };
                 } else {
                     // shutdown
                     break;
                 }
             }
-        });
+        }));
     }
 
     async fn request_new_strategy<C>(
@@ -230,11 +222,11 @@ impl JaegerRemoteSampler {
     {
         let request = http::Request::get(endpoint)
             .header("Content-Type", "application/json")
-            .body(Default::default())
+            .body(Vec::new())
             .unwrap();
 
         let resp = client
-            .send_bytes(request)
+            .send(request)
             .await
             .map_err(|err| format!("the request is failed to send {}", err))?;
 

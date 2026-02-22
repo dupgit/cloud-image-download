@@ -1,17 +1,20 @@
-use crate::KeyValue;
+use crate::{
+    metrics::{InstrumentBuilder, MetricsError},
+    KeyValue,
+};
 use core::fmt;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
-use super::SyncInstrument;
+/// An SDK implemented instrument that records a distribution of values.
+pub trait SyncHistogram<T> {
+    /// Adds an additional value to the distribution.
+    fn record(&self, value: T, attributes: &[KeyValue]);
+}
 
 /// An instrument that records a distribution of values.
-///
-/// [`Histogram`] can be cloned to create multiple handles to the same instrument. If a [`Histogram`] needs to be shared,
-/// users are recommended to clone the [`Histogram`] instead of creating duplicate [`Histogram`]s for the same metric. Creating
-/// duplicate [`Histogram`]s for the same metric could lower SDK performance.
 #[derive(Clone)]
-#[non_exhaustive]
-pub struct Histogram<T>(Arc<dyn SyncInstrument<T> + Send + Sync>);
+pub struct Histogram<T>(Arc<dyn SyncHistogram<T> + Send + Sync>);
 
 impl<T> fmt::Debug for Histogram<T>
 where
@@ -24,12 +27,36 @@ where
 
 impl<T> Histogram<T> {
     /// Create a new histogram.
-    pub fn new(inner: Arc<dyn SyncInstrument<T> + Send + Sync>) -> Self {
+    pub fn new(inner: Arc<dyn SyncHistogram<T> + Send + Sync>) -> Self {
         Histogram(inner)
     }
 
     /// Adds an additional value to the distribution.
     pub fn record(&self, value: T, attributes: &[KeyValue]) {
-        self.0.measure(value, attributes)
+        self.0.record(value, attributes)
+    }
+}
+
+impl TryFrom<InstrumentBuilder<'_, Histogram<f64>>> for Histogram<f64> {
+    type Error = MetricsError;
+
+    fn try_from(builder: InstrumentBuilder<'_, Histogram<f64>>) -> Result<Self, Self::Error> {
+        builder.meter.instrument_provider.f64_histogram(
+            builder.name,
+            builder.description,
+            builder.unit,
+        )
+    }
+}
+
+impl TryFrom<InstrumentBuilder<'_, Histogram<u64>>> for Histogram<u64> {
+    type Error = MetricsError;
+
+    fn try_from(builder: InstrumentBuilder<'_, Histogram<u64>>) -> Result<Self, Self::Error> {
+        builder.meter.instrument_provider.u64_histogram(
+            builder.name,
+            builder.description,
+            builder.unit,
+        )
     }
 }

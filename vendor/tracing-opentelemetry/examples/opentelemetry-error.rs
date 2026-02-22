@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     error::Error as StdError,
     fmt::{Debug, Display},
     io::Write,
@@ -6,9 +7,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use opentelemetry::global;
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::{self as sdk, error::OTelSdkResult, trace::SpanExporter};
+use opentelemetry::{global, trace::TracerProvider};
+
+use opentelemetry_sdk::{
+    self as sdk,
+    export::trace::{ExportResult, SpanExporter},
+};
 use tracing::{error, instrument, span, trace, warn};
 use tracing_subscriber::prelude::*;
 
@@ -54,11 +58,15 @@ fn double_failable_work(fail: bool) -> Result<&'static str, Error> {
 }
 
 fn main() -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
-    let builder = sdk::trace::SdkTracerProvider::builder().with_simple_exporter(WriterExporter);
+    let builder = sdk::trace::TracerProvider::builder().with_simple_exporter(WriterExporter);
     let provider = builder.build();
-    let tracer = provider.tracer("opentelemetry-write-exporter");
-
-    global::set_tracer_provider(provider.clone());
+    let tracer = provider.versioned_tracer(
+        "opentelemetry-write-exporter",
+        None::<Cow<'static, str>>,
+        None::<Cow<'static, str>>,
+        None,
+    );
+    global::set_tracer_provider(provider);
 
     let opentelemetry = tracing_opentelemetry::layer().with_tracer(tracer);
     tracing_subscriber::registry()
@@ -83,7 +91,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
     // Shut down the current tracer provider. This will invoke the shutdown
     // method on all span processors. span processors should export remaining
     // spans before return.
-    provider.shutdown().unwrap();
+    global::shutdown_tracer_provider();
 
     Ok(())
 }
@@ -92,18 +100,21 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
 struct WriterExporter;
 
 impl SpanExporter for WriterExporter {
-    async fn export(&self, batch: Vec<sdk::trace::SpanData>) -> OTelSdkResult {
+    fn export(
+        &mut self,
+        batch: Vec<sdk::export::trace::SpanData>,
+    ) -> futures_util::future::BoxFuture<'static, sdk::export::trace::ExportResult> {
         let mut writer = std::io::stdout();
         for span in batch {
             writeln!(writer, "{}", SpanData(span)).unwrap();
         }
         writeln!(writer).unwrap();
 
-        OTelSdkResult::Ok(())
+        Box::pin(async move { ExportResult::Ok(()) })
     }
 }
 
-struct SpanData(sdk::trace::SpanData);
+struct SpanData(sdk::export::trace::SpanData);
 impl Display for SpanData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Span: \"{}\"", self.0.name)?;
@@ -134,8 +145,8 @@ impl Display for SpanData {
                 .as_secs()
         )?;
         writeln!(f, "- Resource:")?;
-        for kv in self.0.attributes.iter() {
-            writeln!(f, "  - {}: {}", kv.key, kv.value)?;
+        for (k, v) in self.0.resource.iter() {
+            writeln!(f, "  - {}: {}", k, v)?;
         }
         writeln!(f, "- Attributes:")?;
         for kv in self.0.attributes.iter() {

@@ -1,41 +1,74 @@
+use rand::Rng;
+use std::sync::{Arc, Weak};
+
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use opentelemetry::{
-    metrics::{Counter, Histogram, MeterProvider as _},
+    metrics::{Counter, Histogram, MeterProvider as _, Result},
     Key, KeyValue,
 };
 use opentelemetry_sdk::{
-    error::OTelSdkResult,
     metrics::{
-        data::ResourceMetrics, reader::MetricReader, Aggregation, Instrument, InstrumentKind,
-        ManualReader, Pipeline, SdkMeterProvider, Stream, Temporality,
+        data::{ResourceMetrics, Temporality},
+        new_view,
+        reader::{AggregationSelector, MetricReader, TemporalitySelector},
+        Aggregation, Instrument, InstrumentKind, ManualReader, Pipeline, SdkMeterProvider, Stream,
+        View,
     },
+    Resource,
 };
-use rand::Rng;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
 
 #[derive(Clone, Debug)]
 struct SharedReader(Arc<dyn MetricReader>);
+
+impl TemporalitySelector for SharedReader {
+    fn temporality(&self, kind: InstrumentKind) -> Temporality {
+        self.0.temporality(kind)
+    }
+}
+
+impl AggregationSelector for SharedReader {
+    fn aggregation(&self, kind: InstrumentKind) -> Aggregation {
+        self.0.aggregation(kind)
+    }
+}
 
 impl MetricReader for SharedReader {
     fn register_pipeline(&self, pipeline: Weak<Pipeline>) {
         self.0.register_pipeline(pipeline)
     }
 
-    fn collect(&self, rm: &mut ResourceMetrics) -> OTelSdkResult {
+    fn collect(&self, rm: &mut ResourceMetrics) -> Result<()> {
         self.0.collect(rm)
     }
 
-    fn force_flush(&self) -> OTelSdkResult {
+    fn force_flush(&self) -> Result<()> {
         self.0.force_flush()
     }
 
-    fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
+    fn shutdown(&self) -> Result<()> {
         self.0.shutdown()
     }
+}
 
-    fn temporality(&self, kind: InstrumentKind) -> Temporality {
-        self.0.temporality(kind)
+/// Configure delta temporality for all [InstrumentKind]
+///
+/// [Temporality::Delta] will be used for all instrument kinds if this
+/// [TemporalitySelector] is used.
+#[derive(Clone, Default, Debug)]
+pub struct DeltaTemporalitySelector {
+    pub(crate) _private: (),
+}
+
+impl DeltaTemporalitySelector {
+    /// Create a new default temporality selector.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl TemporalitySelector for DeltaTemporalitySelector {
+    fn temporality(&self, _kind: InstrumentKind) -> Temporality {
+        Temporality::Delta
     }
 }
 
@@ -107,15 +140,13 @@ impl MetricReader for SharedReader {
 //                         time:   [643.75 ns 649.05 ns 655.14 ns]
 // Histogram/Record10Attrs1000bounds
 //                         time:   [726.87 ns 736.52 ns 747.09 ns]
-type ViewFn = Box<dyn Fn(&Instrument) -> Option<Stream> + Send + Sync + 'static>;
-
-fn bench_counter(view: Option<ViewFn>, temporality: &str) -> (SharedReader, Counter<u64>) {
+fn bench_counter(view: Option<Box<dyn View>>, temporality: &str) -> (SharedReader, Counter<u64>) {
     let rdr = if temporality == "cumulative" {
         SharedReader(Arc::new(ManualReader::builder().build()))
     } else {
         SharedReader(Arc::new(
             ManualReader::builder()
-                .with_temporality(Temporality::Delta)
+                .with_temporality_selector(DeltaTemporalitySelector::new())
                 .build(),
         ))
     };
@@ -124,19 +155,25 @@ fn bench_counter(view: Option<ViewFn>, temporality: &str) -> (SharedReader, Coun
         builder = builder.with_view(view);
     }
     let provider = builder.build();
-    let cntr = provider.meter("test").u64_counter("hello").build();
+    let cntr = provider.meter("test").u64_counter("hello").init();
 
     (rdr, cntr)
 }
 
 fn counters(c: &mut Criterion) {
     let (_, cntr) = bench_counter(None, "cumulative");
-    let (_, cntr_max) = bench_counter(None, "cumulative");
+    let (_, cntr2) = bench_counter(None, "delta");
+    let (_, cntr3) = bench_counter(None, "cumulative");
 
     let mut group = c.benchmark_group("Counter");
     group.bench_function("AddNoAttrs", |b| b.iter(|| cntr.add(1, &[])));
+    group.bench_function("AddNoAttrsDelta", |b| b.iter(|| cntr2.add(1, &[])));
+
     group.bench_function("AddOneAttr", |b| {
         b.iter(|| cntr.add(1, &[KeyValue::new("K", "V")]))
+    });
+    group.bench_function("AddOneAttrDelta", |b| {
+        b.iter(|| cntr2.add(1, &[KeyValue::new("K1", "V1")]))
     });
     group.bench_function("AddThreeAttr", |b| {
         b.iter(|| {
@@ -150,9 +187,35 @@ fn counters(c: &mut Criterion) {
             )
         })
     });
+    group.bench_function("AddThreeAttrDelta", |b| {
+        b.iter(|| {
+            cntr2.add(
+                1,
+                &[
+                    KeyValue::new("K2", "V2"),
+                    KeyValue::new("K3", "V3"),
+                    KeyValue::new("K4", "V4"),
+                ],
+            )
+        })
+    });
     group.bench_function("AddFiveAttr", |b| {
         b.iter(|| {
             cntr.add(
+                1,
+                &[
+                    KeyValue::new("K5", "V5"),
+                    KeyValue::new("K6", "V6"),
+                    KeyValue::new("K7", "V7"),
+                    KeyValue::new("K8", "V8"),
+                    KeyValue::new("K9", "V9"),
+                ],
+            )
+        })
+    });
+    group.bench_function("AddFiveAttrDelta", |b| {
+        b.iter(|| {
+            cntr2.add(
                 1,
                 &[
                     KeyValue::new("K5", "V5"),
@@ -183,6 +246,25 @@ fn counters(c: &mut Criterion) {
             )
         })
     });
+    group.bench_function("AddTenAttrDelta", |b| {
+        b.iter(|| {
+            cntr2.add(
+                1,
+                &[
+                    KeyValue::new("K10", "V10"),
+                    KeyValue::new("K11", "V11"),
+                    KeyValue::new("K12", "V12"),
+                    KeyValue::new("K13", "V13"),
+                    KeyValue::new("K14", "V14"),
+                    KeyValue::new("K15", "V15"),
+                    KeyValue::new("K16", "V16"),
+                    KeyValue::new("K17", "V17"),
+                    KeyValue::new("K18", "V18"),
+                    KeyValue::new("K19", "V19"),
+                ],
+            )
+        })
+    });
 
     const MAX_DATA_POINTS: i64 = 2000;
     let mut max_attributes: Vec<KeyValue> = Vec::new();
@@ -192,16 +274,14 @@ fn counters(c: &mut Criterion) {
     }
 
     group.bench_function("AddOneTillMaxAttr", |b| {
-        b.iter(|| cntr_max.add(1, &max_attributes))
+        b.iter(|| cntr3.add(1, &max_attributes))
     });
 
     for i in MAX_DATA_POINTS..MAX_DATA_POINTS * 2 {
         max_attributes.push(KeyValue::new(i.to_string(), i))
     }
 
-    group.bench_function("AddMaxAttr", |b| {
-        b.iter(|| cntr_max.add(1, &max_attributes))
-    });
+    group.bench_function("AddMaxAttr", |b| b.iter(|| cntr3.add(1, &max_attributes)));
 
     group.bench_function("AddInvalidAttr", |b| {
         b.iter(|| cntr.add(1, &[KeyValue::new("", "V"), KeyValue::new("K", "V")]))
@@ -222,12 +302,13 @@ fn counters(c: &mut Criterion) {
     });
 
     let (_, cntr) = bench_counter(
-        Some(Box::new(|_i: &Instrument| {
-            Stream::builder()
-                .with_allowed_attribute_keys([Key::new("K")])
-                .build()
-                .ok()
-        })),
+        Some(
+            new_view(
+                Instrument::new().name("*"),
+                Stream::new().allowed_attribute_keys([Key::new("K")]),
+            )
+            .unwrap(),
+        ),
         "cumulative",
     );
 
@@ -240,7 +321,10 @@ fn counters(c: &mut Criterion) {
     });
 
     let (rdr, cntr) = bench_counter(None, "cumulative");
-    let mut rm = ResourceMetrics::default();
+    let mut rm = ResourceMetrics {
+        resource: Resource::empty(),
+        scope_metrics: Vec::new(),
+    };
 
     group.bench_function("CollectOneAttr", |b| {
         let mut v = 0;
@@ -271,35 +355,33 @@ fn bench_histogram(bound_count: usize) -> (SharedReader, Histogram<u64>) {
     for i in 0..bounds.len() {
         bounds[i] = i * MAX_BOUND / bound_count
     }
+    let view = Some(
+        new_view(
+            Instrument::new().name("histogram_*"),
+            Stream::new().aggregation(Aggregation::ExplicitBucketHistogram {
+                boundaries: bounds.iter().map(|&x| x as f64).collect(),
+                record_min_max: true,
+            }),
+        )
+        .unwrap(),
+    );
 
     let r = SharedReader(Arc::new(ManualReader::default()));
-    let builder = SdkMeterProvider::builder()
-        .with_reader(r.clone())
-        .with_view(move |i: &Instrument| {
-            if i.name().starts_with("histogram_") {
-                Stream::builder()
-                    .with_aggregation(Aggregation::ExplicitBucketHistogram {
-                        boundaries: bounds.iter().map(|&x| x as f64).collect(),
-                        record_min_max: true,
-                    })
-                    .build()
-                    .ok()
-            } else {
-                None
-            }
-        });
-
+    let mut builder = SdkMeterProvider::builder().with_reader(r.clone());
+    if let Some(view) = view {
+        builder = builder.with_view(view);
+    }
     let mtr = builder.build().meter("test_meter");
     let hist = mtr
         .u64_histogram(format!("histogram_{}", bound_count))
-        .build();
+        .init();
 
     (r, hist)
 }
 
 fn histograms(c: &mut Criterion) {
     let mut group = c.benchmark_group("Histogram");
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
 
     for bound_size in [10, 49, 50, 1000].iter() {
         let (_, hist) = bench_histogram(*bound_size);
@@ -311,7 +393,7 @@ fn histograms(c: &mut Criterion) {
                     format!("V,{},{},{}", bound_size, attr_size, i),
                 ))
             }
-            let value: u64 = rng.random_range(0..MAX_BOUND).try_into().unwrap();
+            let value: u64 = rng.gen_range(0..MAX_BOUND).try_into().unwrap();
             group.bench_function(
                 format!("Record{}Attrs{}bounds", attr_size, bound_size),
                 |b| b.iter(|| hist.record(value, &attributes)),
@@ -332,26 +414,20 @@ fn benchmark_collect_histogram(b: &mut Bencher, n: usize) {
         .meter("sdk/metric/bench/histogram");
 
     for i in 0..n {
-        let h = mtr.u64_histogram(format!("fake_data_{i}")).build();
+        let h = mtr.u64_histogram(format!("fake_data_{i}")).init();
         h.record(1, &[]);
     }
 
-    let mut rm = ResourceMetrics::default();
+    let mut rm = ResourceMetrics {
+        resource: Resource::empty(),
+        scope_metrics: Vec::new(),
+    };
 
     b.iter(|| {
         let _ = r.collect(&mut rm);
-        // TODO - this assertion fails periodically, and breaks
-        // our bench testing. We should fix it.
-        // assert_eq!(rm.scope_metrics[0].metrics.len(), n);
+        assert_eq!(rm.scope_metrics[0].metrics.len(), n);
     })
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .warm_up_time(std::time::Duration::from_secs(1))
-        .measurement_time(std::time::Duration::from_secs(2));
-    targets = counters, histograms
-}
-
+criterion_group!(benches, counters, histograms);
 criterion_main!(benches);

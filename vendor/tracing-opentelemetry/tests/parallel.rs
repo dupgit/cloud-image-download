@@ -1,6 +1,9 @@
+use futures_util::future::BoxFuture;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::error::OTelSdkResult;
-use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter, SpanLimits, Tracer};
+use opentelemetry_sdk::{
+    export::trace::{ExportResult, SpanData, SpanExporter},
+    trace::{Config, SpanLimits, Tracer, TracerProvider},
+};
 use std::sync::{Arc, Mutex};
 use tracing::level_filters::LevelFilter;
 use tracing::Subscriber;
@@ -11,33 +14,36 @@ use tracing_subscriber::prelude::*;
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
+    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
         let spans = self.0.clone();
-        if let Ok(mut inner) = spans.lock() {
-            inner.append(&mut batch);
-        }
-        Ok(())
+        Box::pin(async move {
+            if let Ok(mut inner) = spans.lock() {
+                inner.append(&mut batch);
+            }
+            Ok(())
+        })
     }
 }
 
 fn test_tracer() -> (
     Tracer,
-    SdkTracerProvider,
+    TracerProvider,
     TestExporter,
     impl Subscriber + Clone,
 ) {
     let exporter = TestExporter::default();
-    let provider = SdkTracerProvider::builder()
+    let provider = TracerProvider::builder()
         .with_simple_exporter(exporter.clone())
-        // `with_max_events_per_span()` is buggy https://github.com/open-telemetry/opentelemetry-rust/pull/2405
-        .with_span_limits(SpanLimits {
-            max_events_per_span: u32::MAX,
-            ..SpanLimits::default()
+        .with_config(Config {
+            span_limits: SpanLimits {
+                max_events_per_span: u32::MAX,
+                ..SpanLimits::default()
+            },
+            ..Config::default()
         })
-        .with_max_events_per_span(u32::MAX)
         .build();
-
     let tracer = provider.tracer("test");
+
     let subscriber = tracing_subscriber::registry()
         .with(
             layer()

@@ -233,7 +233,7 @@ impl DurationUnits {
         // The unchecked setters above don't manipulate
         // the sign, which defaults to zero. So we need to
         // set it even when it's positive.
-        span = span.sign_unchecked(self.get_sign().as_ranged_integer());
+        span = span.sign_unchecked(self.get_sign());
 
         Ok(span)
     }
@@ -797,12 +797,12 @@ fn fractional_time_to_span(
     fraction: i32,
     mut span: Span,
 ) -> Result<Span, Error> {
-    const MAX_HOURS: i64 = b::SpanHours::MAX;
+    const MAX_HOURS: i64 = b::SpanHours::MAX as i64;
     const MAX_MINS: i64 = b::SpanMinutes::MAX;
     const MAX_SECS: i64 = b::SpanSeconds::MAX;
     const MAX_MILLIS: i128 = b::SpanMilliseconds::MAX as i128;
     const MAX_MICROS: i128 = b::SpanMicroseconds::MAX as i128;
-    const MIN_HOURS: i64 = b::SpanHours::MIN;
+    const MIN_HOURS: i64 = b::SpanHours::MIN as i64;
     const MIN_MINS: i64 = b::SpanMinutes::MIN;
     const MIN_SECS: i64 = b::SpanSeconds::MIN;
     const MIN_MILLIS: i128 = b::SpanMilliseconds::MIN as i128;

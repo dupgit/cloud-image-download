@@ -9,7 +9,8 @@
 //! is possible to change its name, set its `Attributes`, and add `Links` and `Events`.
 //! These cannot be changed after the `Span`'s end time has been set.
 use crate::trace::SpanLimits;
-use opentelemetry::trace::{Event, Link, SpanContext, SpanId, SpanKind, Status};
+use crate::Resource;
+use opentelemetry::trace::{Event, SpanContext, SpanId, SpanKind, Status};
 use opentelemetry::KeyValue;
 use std::borrow::Cow;
 use std::time::SystemTime;
@@ -19,7 +20,7 @@ use std::time::SystemTime;
 pub struct Span {
     span_context: SpanContext,
     data: Option<SpanData>,
-    tracer: crate::trace::SdkTracer,
+    tracer: crate::trace::Tracer,
     span_limits: SpanLimits,
 }
 
@@ -52,7 +53,7 @@ impl Span {
     pub(crate) fn new(
         span_context: SpanContext,
         data: Option<SpanData>,
-        tracer: crate::trace::SdkTracer,
+        tracer: crate::trace::Tracer,
         span_limit: SpanLimits,
     ) -> Self {
         Span {
@@ -74,12 +75,13 @@ impl Span {
     /// Convert information in this span into `exporter::trace::SpanData`.
     /// This function copies all data from the current span, which will create a
     /// overhead.
-    pub fn exported_data(&self) -> Option<crate::trace::SpanData> {
+    pub fn exported_data(&self) -> Option<crate::export::trace::SpanData> {
         let (span_context, tracer) = (self.span_context.clone(), &self.tracer);
+        let resource = self.tracer.provider()?.config().resource.clone();
 
         self.data
             .as_ref()
-            .map(|data| build_export_data(data.clone(), span_context, tracer))
+            .map(|data| build_export_data(data.clone(), span_context, resource, tracer))
     }
 }
 
@@ -168,28 +170,6 @@ impl opentelemetry::trace::Span for Span {
         });
     }
 
-    /// Add `Link` to this `Span`
-    ///
-    fn add_link(&mut self, span_context: SpanContext, attributes: Vec<KeyValue>) {
-        let span_links_limit = self.span_limits.max_links_per_span as usize;
-        let link_attributes_limit = self.span_limits.max_attributes_per_link as usize;
-        self.with_data(|data| {
-            if data.links.links.len() < span_links_limit {
-                let dropped_attributes_count =
-                    attributes.len().saturating_sub(link_attributes_limit);
-                let mut attributes = attributes;
-                attributes.truncate(link_attributes_limit);
-                data.links.add_link(Link::new(
-                    span_context,
-                    attributes,
-                    dropped_attributes_count as u32,
-                ));
-            } else {
-                data.links.dropped_count += 1;
-            }
-        });
-    }
-
     /// Finishes the span with given timestamp.
     fn end_with_timestamp(&mut self, timestamp: SystemTime) {
         self.ensure_ended_and_exported(Some(timestamp));
@@ -204,11 +184,11 @@ impl Span {
             None => return,
         };
 
-        let provider = self.tracer.provider();
         // skip if provider has been shut down
-        if provider.is_shutdown() {
-            return;
-        }
+        let provider = match self.tracer.provider() {
+            Some(provider) => provider,
+            None => return,
+        };
 
         // ensure end time is set via explicit end or implicitly on drop
         if let Some(timestamp) = timestamp {
@@ -217,20 +197,23 @@ impl Span {
             data.end_time = opentelemetry::time::now();
         }
 
-        match provider.span_processors() {
+        match provider.span_processors().as_slice() {
             [] => {}
             [processor] => {
                 processor.on_end(build_export_data(
                     data,
                     self.span_context.clone(),
+                    provider.config().resource.clone(),
                     &self.tracer,
                 ));
             }
             processors => {
+                let config = provider.config();
                 for processor in processors {
                     processor.on_end(build_export_data(
                         data.clone(),
                         self.span_context.clone(),
+                        config.resource.clone(),
                         &self.tracer,
                     ));
                 }
@@ -249,9 +232,10 @@ impl Drop for Span {
 fn build_export_data(
     data: SpanData,
     span_context: SpanContext,
-    tracer: &crate::trace::SdkTracer,
-) -> crate::trace::SpanData {
-    crate::trace::SpanData {
+    resource: Cow<'static, Resource>,
+    tracer: &crate::trace::Tracer,
+) -> crate::export::trace::SpanData {
+    crate::export::trace::SpanData {
         span_context,
         parent_span_id: data.parent_span_id,
         span_kind: data.span_kind,
@@ -263,7 +247,8 @@ fn build_export_data(
         events: data.events,
         links: data.links,
         status: data.status,
-        instrumentation_scope: tracer.instrumentation_scope().clone(),
+        resource,
+        instrumentation_lib: tracer.instrumentation_library().clone(),
     }
 }
 
@@ -276,13 +261,13 @@ mod tests {
         DEFAULT_MAX_ATTRIBUTES_PER_SPAN, DEFAULT_MAX_EVENT_PER_SPAN, DEFAULT_MAX_LINKS_PER_SPAN,
     };
     use crate::trace::{SpanEvents, SpanLinks};
-    use opentelemetry::trace::{self, SpanBuilder, TraceFlags, TraceId, Tracer};
-    use opentelemetry::{trace::Span as _, trace::TracerProvider};
+    use opentelemetry::trace::{self, Link, SpanBuilder, TraceFlags, TraceId, Tracer};
+    use opentelemetry::{trace::Span as _, trace::TracerProvider, KeyValue};
     use std::time::Duration;
     use std::vec;
 
-    fn init() -> (crate::trace::SdkTracer, SpanData) {
-        let provider = crate::trace::SdkTracerProvider::default();
+    fn init() -> (crate::trace::Tracer, SpanData) {
+        let provider = crate::trace::TracerProvider::default();
         let tracer = provider.tracer("opentelemetry");
         let data = SpanData {
             parent_span_id: SpanId::from_u64(0),
@@ -531,7 +516,7 @@ mod tests {
     fn exceed_span_attributes_limit() {
         let exporter = NoopSpanExporter::new();
         let provider_builder =
-            crate::trace::SdkTracerProvider::builder().with_simple_exporter(exporter);
+            crate::trace::TracerProvider::builder().with_simple_exporter(exporter);
         let provider = provider_builder.build();
         let tracer = provider.tracer("opentelemetry-test");
 
@@ -570,7 +555,7 @@ mod tests {
     fn exceed_event_attributes_limit() {
         let exporter = NoopSpanExporter::new();
         let provider_builder =
-            crate::trace::SdkTracerProvider::builder().with_simple_exporter(exporter);
+            crate::trace::TracerProvider::builder().with_simple_exporter(exporter);
         let provider = provider_builder.build();
         let tracer = provider.tracer("opentelemetry-test");
 
@@ -606,17 +591,20 @@ mod tests {
     fn exceed_link_attributes_limit() {
         let exporter = NoopSpanExporter::new();
         let provider_builder =
-            crate::trace::SdkTracerProvider::builder().with_simple_exporter(exporter);
+            crate::trace::TracerProvider::builder().with_simple_exporter(exporter);
         let provider = provider_builder.build();
         let tracer = provider.tracer("opentelemetry-test");
 
-        let mut link = Link::with_context(SpanContext::new(
-            TraceId::from_u128(12),
-            SpanId::from_u64(12),
-            TraceFlags::default(),
-            false,
-            Default::default(),
-        ));
+        let mut link = Link::new(
+            SpanContext::new(
+                TraceId::from_u128(12),
+                SpanId::from_u64(12),
+                TraceFlags::default(),
+                false,
+                Default::default(),
+            ),
+            Vec::new(),
+        );
         for i in 0..(DEFAULT_MAX_ATTRIBUTES_PER_LINK * 2) {
             link.attributes
                 .push(KeyValue::new(format!("key {}", i), i.to_string()));
@@ -638,35 +626,26 @@ mod tests {
     fn exceed_span_links_limit() {
         let exporter = NoopSpanExporter::new();
         let provider_builder =
-            crate::trace::SdkTracerProvider::builder().with_simple_exporter(exporter);
+            crate::trace::TracerProvider::builder().with_simple_exporter(exporter);
         let provider = provider_builder.build();
         let tracer = provider.tracer("opentelemetry-test");
 
         let mut links = Vec::new();
         for _i in 0..(DEFAULT_MAX_LINKS_PER_SPAN * 2) {
-            links.push(Link::with_context(SpanContext::new(
-                TraceId::from_u128(12),
-                SpanId::from_u64(12),
-                TraceFlags::default(),
-                false,
-                Default::default(),
-            )))
+            links.push(Link::new(
+                SpanContext::new(
+                    TraceId::from_u128(12),
+                    SpanId::from_u64(12),
+                    TraceFlags::default(),
+                    false,
+                    Default::default(),
+                ),
+                Vec::new(),
+            ))
         }
 
         let span_builder = tracer.span_builder("test").with_links(links);
-        let mut span = tracer.build(span_builder);
-
-        // add links using span api after building the span
-        span.add_link(
-            SpanContext::new(
-                TraceId::from_u128(12),
-                SpanId::from_u64(12),
-                TraceFlags::default(),
-                false,
-                Default::default(),
-            ),
-            vec![],
-        );
+        let span = tracer.build(span_builder);
         let link_queue = span
             .data
             .clone()
@@ -680,7 +659,7 @@ mod tests {
     fn exceed_span_events_limit() {
         let exporter = NoopSpanExporter::new();
         let provider_builder =
-            crate::trace::SdkTracerProvider::builder().with_simple_exporter(exporter);
+            crate::trace::TracerProvider::builder().with_simple_exporter(exporter);
         let provider = provider_builder.build();
         let tracer = provider.tracer("opentelemetry-test");
 
@@ -707,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_span_exported_data() {
-        let provider = crate::trace::SdkTracerProvider::builder()
+        let provider = crate::trace::TracerProvider::builder()
             .with_simple_exporter(NoopSpanExporter::new())
             .build();
         let tracer = provider.tracer("test");
@@ -718,9 +697,8 @@ mod tests {
 
         let exported_data = span.exported_data();
         assert!(exported_data.is_some());
-        let res = provider.shutdown();
-        println!("{:?}", res);
-        assert!(res.is_ok());
+
+        drop(provider);
         let dropped_span = tracer.start("span_with_dropped_provider");
         // return none if the provider has already been dropped
         assert!(dropped_span.exported_data().is_none());

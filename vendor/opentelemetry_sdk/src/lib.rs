@@ -1,6 +1,6 @@
 //! Implements the [`SDK`] component of [OpenTelemetry].
 //!
-//! *[Supported Rust Versions](#supported-rust-versions)*
+//! *Compiler support: [requires `rustc` 1.64+][msrv]*
 //!
 //! [`SDK`]: https://opentelemetry.io/docs/specs/otel/overview/#sdk
 //! [OpenTelemetry]: https://opentelemetry.io/docs/what-is-opentelemetry/
@@ -11,16 +11,16 @@
 //! ```no_run
 //! # #[cfg(feature = "trace")]
 //! # {
-//! use opentelemetry::{global, trace::{Tracer, TracerProvider}};
-//! use opentelemetry_sdk::trace::SdkTracerProvider;
+//! use opentelemetry::{global, trace::{Tracer, TracerProvider as _}};
+//! use opentelemetry_sdk::trace::TracerProvider;
 //!
 //! fn main() {
 //!     // Choose an exporter like `opentelemetry_stdout::SpanExporter`
-//!     # fn example<T: opentelemetry_sdk::trace::SpanExporter + 'static>(new_exporter: impl Fn() -> T) {
+//!     # fn example<T: opentelemetry_sdk::export::trace::SpanExporter + 'static>(new_exporter: impl Fn() -> T) {
 //!     let exporter = new_exporter();
 //!
 //!     // Create a new trace pipeline that prints to stdout
-//!     let provider = SdkTracerProvider::builder()
+//!     let provider = TracerProvider::builder()
 //!         .with_simple_exporter(exporter)
 //!         .build();
 //!     let tracer = provider.tracer("readme_example");
@@ -30,7 +30,7 @@
 //!     });
 //!
 //!     // Shutdown trace pipeline
-//!     provider.shutdown().expect("TracerProvider should shutdown successfully")
+//!     global::shutdown_tracer_provider();
 //!     # }
 //! }
 //! # }
@@ -44,7 +44,10 @@
 //! [examples]: https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples
 //! [`trace`]: https://docs.rs/opentelemetry/latest/opentelemetry/trace/index.html
 //!
-//! # Metrics
+//! # Metrics (Beta)
+//!
+//! Note: the metrics implementation is **still in progress** and **subject to major
+//! changes**.
 //!
 //! ### Creating instruments and recording measurements
 //!
@@ -57,7 +60,7 @@
 //! let meter = global::meter("my_service");
 //!
 //! // create an instrument
-//! let counter = meter.u64_counter("my_counter").build();
+//! let counter = meter.u64_counter("my_counter").init();
 //!
 //! // record a measurement
 //! counter.add(1, &[KeyValue::new("http.client_ip", "83.164.160.102")]);
@@ -86,16 +89,17 @@
 //!
 //! For `logs` the following feature flags are available:
 //!
-//! * `spec_unstable_logs_enabled`: control the log level
+//! * `logs_level_enabled`: control the log level
 //!
-//! Support for recording and exporting telemetry asynchronously and perform
-//! metrics aggregation can be added via the following flags:
+//! Support for recording and exporting telemetry asynchronously can be added
+//! via the following flags:
 //!
-//! * `experimental_async_runtime`: Enables the experimental `Runtime` trait and related functionality.
 //! * `rt-tokio`: Spawn telemetry tasks using [tokio]'s multi-thread runtime.
 //! * `rt-tokio-current-thread`: Spawn telemetry tasks on a separate runtime so that the main runtime won't be blocked.
+//! * `rt-async-std`: Spawn telemetry tasks using [async-std]'s runtime.
 //!
 //! [tokio]: https://crates.io/crates/tokio
+//! [async-std]: https://crates.io/crates/async-std
 #![warn(
     future_incompatible,
     missing_debug_implementations,
@@ -116,8 +120,9 @@
 )]
 #![cfg_attr(test, deny(warnings))]
 
-pub(crate) mod growable_array;
-
+pub(crate) mod attributes;
+pub mod export;
+mod instrumentation;
 #[cfg(feature = "logs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "logs")))]
 pub mod logs;
@@ -128,12 +133,12 @@ pub mod metrics;
 #[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod propagation;
 pub mod resource;
-#[cfg(feature = "experimental_async_runtime")]
 pub mod runtime;
 #[cfg(any(feature = "testing", test))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "testing", test))))]
 pub mod testing;
 
+#[allow(deprecated)]
 #[cfg(feature = "trace")]
 #[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod trace;
@@ -141,29 +146,7 @@ pub mod trace;
 #[doc(hidden)]
 pub mod util;
 
+pub use attributes::*;
+pub use instrumentation::{InstrumentationLibrary, Scope};
 #[doc(inline)]
 pub use resource::Resource;
-
-pub mod error;
-pub use error::ExportError;
-
-#[cfg(any(feature = "testing", test))]
-#[derive(thiserror::Error, Debug)]
-/// Errors that can occur during when returning telemetry from InMemoryLogExporter
-pub enum InMemoryExporterError {
-    /// Operation failed due to an internal error.
-    ///
-    /// The error message is intended for logging purposes only and should not
-    /// be used to make programmatic decisions. It is implementation-specific
-    /// and subject to change without notice. Consumers of this error should not
-    /// rely on its content beyond logging.
-    #[error("Unable to obtain telemetry. Reason: {0}")]
-    InternalFailure(String),
-}
-
-#[cfg(any(feature = "testing", test))]
-impl<T> From<std::sync::PoisonError<T>> for InMemoryExporterError {
-    fn from(err: std::sync::PoisonError<T>) -> Self {
-        InMemoryExporterError::InternalFailure(format!("Mutex poison error: {}", err))
-    }
-}

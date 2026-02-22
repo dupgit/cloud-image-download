@@ -108,15 +108,14 @@ documentation lists the full set of supported features.
 
 ### Future plans
 
-With `jiff 0.2` out about 6 months after the `jiff 0.1` initial release, my
-plan remains roughly the same as it started. That is, I'd still like to get a
-`jiff 1.0` release out this summer 2025 (in about 6 months) and then commit to
-it indefinitely. This plan may change if something critically wrong is found
-with the current API.
+My original plan was to release Jiff 1.0 in Summer 2025. It is now Winter 2026,
+so that deadline has clearly slipped. I've continued to make progress toward
+Jiff 1.0, but it has been more work than anticipated. My current hope is to
+have Jiff 1.0 out by Spring or Summer 2026.
 
-The purpose of this plan is to get Jiff to a 1.0 stable state as quickly as
-possible. The reason is so that others feel comfortable relying on Jiff as
-a public dependency that won't cause ecosystem churn.
+It's important to get Jiff 1.0 as "right" as possible. Namely, once it's
+released, I plan to commit to its API indefinitely. At which point, users of
+Jiff should feel comfortable using it as a stable base in public APIs.
 
 ### Performance
 
@@ -185,10 +184,26 @@ boundaries has a lot of overhead in my experience.)
 
 ### Minimum Rust version policy
 
-This crate's minimum supported `rustc` version is `1.70.0`.
+This crate's minimum supported `rustc` version (MSRV) is `1.70.0`. Jiff
+itself, and any dependencies of Jiff within this repository, will never use a
+Rust version that requires a Rust compiler released in the previous 1 year.
+(Dependents of Jiff in this repository, e.g., `jiff-icu`, may use a newer MSRV,
+but never one that is newer than the crate it is trying to integrate with.)
 
-The policy is that the minimum Rust version required to use this crate can be
-increased in minor version updates. For example, if jiff 1.0 requires Rust
-1.20.0, then jiff 1.0.z for all values of `z` will also require Rust 1.20.0 or
-newer. However, jiff 1.y for `y > 0` may require a newer minimum version of
-Rust.
+Jiff does have other dependencies whose MSRV is outside the control of Jiff
+(for example, `windows-sys` and `portable-atomic`), and it's possible there
+may be a choice between "upgrade and increase the MSRV for those targets where
+the dependency is used" and "don't upgrade, retain the MSRV but potentially
+introduce additional copies of crates into downstream dependency trees." While
+such instances should be quite rare because of Jiff's conservative dependency
+philosophy, it's possible it could happen. In which case, I reserve the right
+to make a judgment call that may, in practice, result in a newer-than-1-year
+Rust compiler for targets where that dependency is used.
+
+As is standard in the Rust ecosystem, Jiff does not consider an increase in
+its MSRV to be a semver incompatible change. However, Jiff will limit MSRV
+increases to minor version updates. For example, if Jiff `1.0` requires Rust
+`1.20.0`, then Jiff `1.0.z` for all values of `z` will also require Rust
+`1.20.0` or older. However, Jiff `1.y` for `y > 0` may require a newer minimum
+version of Rust. (During Jiff's pre-1.0 releases, MSRV bumps will only occur
+in semver incompatible releases.)

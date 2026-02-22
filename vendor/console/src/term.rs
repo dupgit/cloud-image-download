@@ -1,11 +1,11 @@
-use std::fmt::{Debug, Display};
+use alloc::sync::Arc;
+use core::fmt::{Debug, Display};
 use std::io::{self, Read, Write};
-use std::sync::{Arc, Mutex, RwLock};
-
 #[cfg(any(unix, all(target_os = "wasi", target_env = "p1")))]
 use std::os::fd::{AsRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, RawHandle};
+use std::sync::{Mutex, RwLock};
 
 use crate::{kb::Key, utils::Style};
 
@@ -76,6 +76,11 @@ impl TermFeatures<'_> {
     #[inline]
     pub fn colors_supported(&self) -> bool {
         is_a_color_terminal(self.0)
+    }
+
+    /// Check if true colors are supported by this terminal.
+    pub fn true_colors_supported(&self) -> bool {
+        is_a_true_color_terminal(self.0)
     }
 
     /// Check if this terminal is an msys terminal.
@@ -284,7 +289,7 @@ impl Term {
         }
     }
 
-    /// Read a single key form the terminal.
+    /// Read a single key from the terminal.
     ///
     /// This does not echo anything.  If the terminal is not user attended
     /// the return value will always be the unknown key.
@@ -351,7 +356,7 @@ impl Term {
                         slf.flush()?;
                     }
                     Key::Enter => {
-                        slf.write_through(format!("\n{}", initial).as_bytes())?;
+                        slf.write_through(format!("\n{initial}").as_bytes())?;
                         break;
                     }
                     _ => (),

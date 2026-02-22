@@ -1,5 +1,4 @@
 use crate::{Jitter, RetryDecision, RetryPolicy};
-use rand::distributions::uniform::{UniformFloat, UniformSampler};
 use std::{
     cmp::{self, min},
     time::{Duration, SystemTime},
@@ -11,7 +10,7 @@ use std::{
 pub struct ExponentialBackoff {
     /// Maximum number of allowed retries attempts.
     pub max_n_retries: Option<u32>,
-    /// Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
+    /// Minimum waiting time between two retry attempts (it can end up being lower due to jitter).
     pub min_retry_interval: Duration,
     /// Maximum waiting time between two retry attempts.
     pub max_retry_interval: Duration,
@@ -88,24 +87,11 @@ impl RetryPolicy for ExponentialBackoff {
                 self.min_retry_interval * calculate_exponential(self.base, n_past_retries),
             );
 
-            let jittered_wait_for = match self.jitter {
-                Jitter::None => unjittered_wait_for,
-                Jitter::Full => {
-                    let jitter_factor =
-                        UniformFloat::<f64>::sample_single(0.0, 1.0, &mut rand::thread_rng());
-
-                    unjittered_wait_for.mul_f64(jitter_factor)
-                }
-                Jitter::Bounded => {
-                    let jitter_factor =
-                        UniformFloat::<f64>::sample_single(0.0, 1.0, &mut rand::thread_rng());
-
-                    let jittered_wait_for =
-                        (unjittered_wait_for - self.min_retry_interval).mul_f64(jitter_factor);
-
-                    jittered_wait_for + self.min_retry_interval
-                }
-            };
+            let jittered_wait_for = self.jitter.apply(
+                unjittered_wait_for,
+                self.min_retry_interval,
+                &mut rand::rng(),
+            );
 
             let execute_after =
                 SystemTime::now() + clip(jittered_wait_for, self.max_retry_interval);
@@ -244,18 +230,22 @@ impl ExponentialBackoffBuilder {
         }
     }
 
-    /// Builds an [`ExponentialBackoff`] with the given maximum total duration and calculates max
-    /// retries that should happen applying no jitter.
+    /// Builds an [`ExponentialBackoffTimed`] with the given maximum total duration and limits the
+    /// number of retries to a calculated maximum.
     ///
-    /// For example if we set total duration 24 hours, with retry bounds [1s, 24h] and 2 as base of the exponential,
-    /// we would calculate 17 max retries, as 1s * pow(2, 16) = 65536s = ~18 hours and 18th attempt would be way
-    /// after the 24 hours total duration.
+    /// This calculated maximum is based on how many attempts would be made without jitter applied.
     ///
-    /// If the 17th retry ends up being scheduled after 10 hours due to jitter, [`ExponentialBackoff::should_retry`]
-    /// will return false anyway: no retry will be allowed after total duration.
+    /// For example if we set total duration 24 hours, with retry bounds [1s, 24h] and 2 as base of
+    /// the exponential, we would calculate 17 max retries, as 1s * pow(2, 16) = 65536s = ~18 hours
+    /// and 18th attempt would be way after the 24 hours total duration.
     ///
-    /// If one of the 17 allowed retries for some reason (e.g. previous attempts taking a long time) ends up
-    /// being scheduled after total duration, [`ExponentialBackoff::should_retry`] will return false.
+    /// If the 17th retry ends up being scheduled after 10 hours due to jitter,
+    /// [`ExponentialBackoff::should_retry`] will return false anyway: no retry will be allowed
+    /// after total duration.
+    ///
+    /// If one of the 17 allowed retries for some reason (e.g. previous attempts taking a long time)
+    /// ends up being scheduled after total duration, [`ExponentialBackoff::should_retry`] will
+    /// return false.
     ///
     /// Basically we will enforce whatever comes first, max retries or total duration.
     ///
@@ -268,7 +258,7 @@ impl ExponentialBackoffBuilder {
     ///
     /// let exponential_backoff_timed = ExponentialBackoff::builder()
     ///     .retry_bounds(Duration::from_secs(1), Duration::from_secs(6 * 60 * 60))
-    ///     .build_with_total_retry_duration_and_max_retries(Duration::from_secs(24 * 60 * 60));
+    ///     .build_with_total_retry_duration_and_limit_retries(Duration::from_secs(24 * 60 * 60));
     ///
     /// assert_eq!(exponential_backoff_timed.max_retries(), Some(17));
     ///
@@ -287,7 +277,7 @@ impl ExponentialBackoffBuilder {
     /// assert!(matches!(RetryDecision::DoNotRetry, should_retry));
     ///
     /// ```
-    pub fn build_with_total_retry_duration_and_max_retries(
+    pub fn build_with_total_retry_duration_and_limit_retries(
         self,
         total_duration: Duration,
     ) -> ExponentialBackoffTimed {
@@ -320,11 +310,32 @@ impl ExponentialBackoffBuilder {
             },
         }
     }
+
+    /// Builds an [`ExponentialBackoffTimed`] with the given maximum total duration and maximum retries.
+    pub fn build_with_total_retry_duration_and_max_retries(
+        self,
+        total_duration: Duration,
+        max_n_retries: u32,
+    ) -> ExponentialBackoffTimed {
+        ExponentialBackoffTimed {
+            max_total_retry_duration: total_duration,
+            backoff: ExponentialBackoff {
+                min_retry_interval: self.min_retry_interval,
+                max_retry_interval: self.max_retry_interval,
+                max_n_retries: Some(max_n_retries),
+                jitter: self.jitter,
+                base: self.base,
+            },
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
+    use std::convert::TryFrom as _;
+
+    use rand::distr::{Distribution, Uniform};
+
     use super::*;
-    use rand::distributions::{Distribution, Uniform};
 
     fn get_retry_policy() -> ExponentialBackoff {
         ExponentialBackoff {
@@ -340,8 +351,9 @@ mod tests {
     fn if_n_past_retries_is_below_maximum_it_decides_to_retry() {
         // Arrange
         let policy = get_retry_policy();
-        let n_past_retries =
-            Uniform::from(0..policy.max_n_retries.unwrap()).sample(&mut rand::thread_rng());
+        let n_past_retries = Uniform::try_from(0..policy.max_n_retries.unwrap())
+            .unwrap()
+            .sample(&mut rand::rng());
         assert!(n_past_retries < policy.max_n_retries.unwrap());
 
         // Act
@@ -355,8 +367,9 @@ mod tests {
     fn if_n_past_retries_is_above_maximum_it_decides_to_mark_as_failed() {
         // Arrange
         let policy = get_retry_policy();
-        let n_past_retries =
-            Uniform::from(policy.max_n_retries.unwrap()..=u32::MAX).sample(&mut rand::thread_rng());
+        let n_past_retries = Uniform::try_from(policy.max_n_retries.unwrap()..=u32::MAX)
+            .unwrap()
+            .sample(&mut rand::rng());
         assert!(n_past_retries >= policy.max_n_retries.unwrap());
 
         // Act
@@ -448,7 +461,7 @@ mod tests {
         let backoff = ExponentialBackoff::builder()
             // This configuration should allow 17 max retries inside a 24h total duration
             .retry_bounds(Duration::from_secs(1), Duration::from_secs(6 * 60 * 60))
-            .build_with_total_retry_duration_and_max_retries(Duration::from_secs(24 * 60 * 60));
+            .build_with_total_retry_duration_and_limit_retries(Duration::from_secs(24 * 60 * 60));
 
         {
             let started_at = SystemTime::now()
@@ -494,20 +507,73 @@ mod tests {
         let backoff_base_2 = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_secs(1), Duration::from_secs(60 * 60))
             .base(2)
-            .build_with_total_retry_duration_and_max_retries(Duration::from_secs(60 * 60));
+            .build_with_total_retry_duration_and_limit_retries(Duration::from_secs(60 * 60));
 
         let backoff_base_3 = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_secs(1), Duration::from_secs(60 * 60))
             .base(3)
-            .build_with_total_retry_duration_and_max_retries(Duration::from_secs(60 * 60));
+            .build_with_total_retry_duration_and_limit_retries(Duration::from_secs(60 * 60));
 
         let backoff_base_4 = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_secs(1), Duration::from_secs(60 * 60))
             .base(4)
-            .build_with_total_retry_duration_and_max_retries(Duration::from_secs(60 * 60));
+            .build_with_total_retry_duration_and_limit_retries(Duration::from_secs(60 * 60));
 
         assert_eq!(backoff_base_2.max_retries().unwrap(), 11);
         assert_eq!(backoff_base_3.max_retries().unwrap(), 8);
         assert_eq!(backoff_base_4.max_retries().unwrap(), 6);
+    }
+
+    #[test]
+    fn total_retry_duration_and_max_retries() {
+        // Create backoff policy with specific duration and retry limits
+        let backoff = ExponentialBackoff::builder()
+            .retry_bounds(Duration::from_secs(1), Duration::from_secs(30))
+            .build_with_total_retry_duration_and_max_retries(Duration::from_secs(120), 5);
+
+        // Verify the max retries was set correctly
+        assert_eq!(backoff.max_retries(), Some(5));
+
+        // Test retry within limits
+        {
+            let started_at = SystemTime::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap();
+
+            let decision = backoff.should_retry(started_at, 3);
+
+            match decision {
+                RetryDecision::Retry { .. } => {}
+                _ => panic!("Should retry when within both retry count and duration limits"),
+            }
+        }
+
+        // Test retry exceed max retries
+        {
+            let started_at = SystemTime::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap();
+
+            let decision = backoff.should_retry(started_at, 5);
+
+            match decision {
+                RetryDecision::DoNotRetry => {}
+                _ => panic!("Should not retry when max retries exceeded"),
+            }
+        }
+
+        // Test retry exceed duration
+        {
+            let started_at = SystemTime::now()
+                .checked_sub(Duration::from_secs(150))
+                .unwrap();
+
+            let decision = backoff.should_retry(started_at, 3);
+
+            match decision {
+                RetryDecision::DoNotRetry => {}
+                _ => panic!("Should not retry when time duration exceeded"),
+            }
+        }
     }
 }

@@ -1,22 +1,15 @@
+use once_cell::sync::Lazy;
 use opentelemetry::{
     baggage::{BaggageExt, KeyValueMetadata},
-    otel_warn,
     propagation::{text_map_propagator::FieldIter, Extractor, Injector, TextMapPropagator},
     Context,
 };
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use std::iter;
-use std::sync::OnceLock;
 
 static BAGGAGE_HEADER: &str = "baggage";
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b';').add(b',').add(b'=');
-
-// TODO Replace this with LazyLock once it is stable.
-static BAGGAGE_FIELDS: OnceLock<[String; 1]> = OnceLock::new();
-#[inline]
-fn baggage_fields() -> &'static [String; 1] {
-    BAGGAGE_FIELDS.get_or_init(|| [BAGGAGE_HEADER.to_owned()])
-}
+static BAGGAGE_FIELDS: Lazy<[String; 1]> = Lazy::new(|| [BAGGAGE_HEADER.to_owned()]);
 
 /// Propagates name-value pairs in [W3C Baggage] format.
 ///
@@ -30,7 +23,7 @@ fn baggage_fields() -> &'static [String; 1] {
 /// # Examples
 ///
 /// ```
-/// use opentelemetry::{baggage::{Baggage, BaggageExt}, propagation::TextMapPropagator};
+/// use opentelemetry::{baggage::BaggageExt, Key, propagation::TextMapPropagator};
 /// use opentelemetry_sdk::propagation::BaggagePropagator;
 /// use std::collections::HashMap;
 ///
@@ -48,17 +41,14 @@ fn baggage_fields() -> &'static [String; 1] {
 /// }
 ///
 /// // Add new baggage
-/// let mut baggage = Baggage::new();
-/// let _ = baggage.insert("server_id", "42");
-///
-/// let cx_with_additions = cx.with_baggage(baggage);
+/// let cx_with_additions = cx.with_baggage(vec![Key::new("server_id").i64(42)]);
 ///
 /// // Inject baggage into http request
 /// propagator.inject_context(&cx_with_additions, &mut headers);
 ///
 /// let header_value = headers.get("baggage").expect("header is injected");
-/// assert!(!header_value.contains("user_id=1"), "still contains previous name-value");
-/// assert!(header_value.contains("server_id=42"), "does not contain new name-value pair");
+/// assert!(header_value.contains("user_id=1"), "still contains previous name-value");
+/// assert!(header_value.contains("server_id=42"), "contains new name-value pair");
 /// ```
 ///
 /// [W3C Baggage]: https://w3c.github.io/baggage
@@ -101,7 +91,7 @@ impl TextMapPropagator for BaggagePropagator {
     /// Extracts a `Context` with baggage values from a `Extractor`.
     fn extract_with_context(&self, cx: &Context, extractor: &dyn Extractor) -> Context {
         if let Some(header_value) = extractor.get(BAGGAGE_HEADER) {
-            let baggage = header_value.split(',').filter_map(|context_value| {
+            let baggage = header_value.split(',').flat_map(|context_value| {
                 if let Some((name_and_value, props)) = context_value
                     .split(';')
                     .collect::<Vec<&str>>()
@@ -109,46 +99,30 @@ impl TextMapPropagator for BaggagePropagator {
                 {
                     let mut iter = name_and_value.split('=');
                     if let (Some(name), Some(value)) = (iter.next(), iter.next()) {
-                        let decode_name = percent_decode_str(name).decode_utf8();
-                        let decode_value = percent_decode_str(value).decode_utf8();
+                        let name = percent_decode_str(name).decode_utf8().map_err(|_| ())?;
+                        let value = percent_decode_str(value).decode_utf8().map_err(|_| ())?;
 
-                        if let (Ok(name), Ok(value)) = (decode_name, decode_value) {
-                            // Here we don't store the first ; into baggage since it should be treated
-                            // as separator rather part of metadata
-                            let decoded_props = props
-                                .iter()
-                                .flat_map(|prop| percent_decode_str(prop).decode_utf8())
-                                .map(|prop| prop.trim().to_string())
-                                .collect::<Vec<String>>()
-                                .join(";"); // join with ; because we deleted all ; when calling split above
+                        // Here we don't store the first ; into baggage since it should be treated
+                        // as separator rather part of metadata
+                        let decoded_props = props
+                            .iter()
+                            .flat_map(|prop| percent_decode_str(prop).decode_utf8())
+                            .map(|prop| prop.trim().to_string())
+                            .collect::<Vec<String>>()
+                            .join(";"); // join with ; because we deleted all ; when calling split above
 
-                            Some(KeyValueMetadata::new(
-                                name.trim().to_owned(),
-                                value.trim().to_string(),
-                                decoded_props.as_str(),
-                            ))
-                        } else {
-                            otel_warn!(
-                                name: "BaggagePropagator.Extract.InvalidUTF8",
-                                message = "Invalid UTF8 string in key values",
-                                baggage_header = header_value,
-                            );
-                            None
-                        }
+                        Ok(KeyValueMetadata::new(
+                            name.trim().to_owned(),
+                            value.trim().to_string(),
+                            decoded_props.as_str(),
+                        ))
                     } else {
-                        otel_warn!(
-                            name: "BaggagePropagator.Extract.InvalidKeyValueFormat",
-                            message = "Invalid baggage key-value format",
-                            baggage_header = header_value,
-                        );
-                        None
+                        // Invalid name-value format
+                        Err(())
                     }
                 } else {
-                    otel_warn!(
-                        name: "BaggagePropagator.Extract.InvalidFormat",
-                        message = "Invalid baggage format",
-                        baggage_header = header_value);
-                    None
+                    // Invalid baggage value format
+                    Err(())
                 }
             });
             cx.with_baggage(baggage)
@@ -158,45 +132,47 @@ impl TextMapPropagator for BaggagePropagator {
     }
 
     fn fields(&self) -> FieldIter<'_> {
-        FieldIter::new(baggage_fields())
+        FieldIter::new(BAGGAGE_FIELDS.as_ref())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opentelemetry::{baggage::BaggageMetadata, Key, KeyValue, StringValue, Value};
+    use opentelemetry::{
+        baggage::BaggageMetadata, propagation::TextMapPropagator, Key, KeyValue, StringValue, Value,
+    };
     use std::collections::HashMap;
 
     #[rustfmt::skip]
-    fn valid_extract_data() -> Vec<(&'static str, HashMap<Key, StringValue>)> {
+    fn valid_extract_data() -> Vec<(&'static str, HashMap<Key, Value>)> {
         vec![
             // "valid w3cHeader"
-            ("key1=val1,key2=val2", vec![(Key::new("key1"), StringValue::from("val1")), (Key::new("key2"), StringValue::from("val2"))].into_iter().collect()),
+            ("key1=val1,key2=val2", vec![(Key::new("key1"), Value::from("val1")), (Key::new("key2"), Value::from("val2"))].into_iter().collect()),
             // "valid w3cHeader with spaces"
-            ("key1 =   val1,  key2 =val2   ", vec![(Key::new("key1"), StringValue::from("val1")), (Key::new("key2"), StringValue::from("val2"))].into_iter().collect()),
+            ("key1 =   val1,  key2 =val2   ", vec![(Key::new("key1"), Value::from("val1")), (Key::new("key2"), Value::from("val2"))].into_iter().collect()),
             // "valid header with url-escaped comma"
-            ("key1=val1,key2=val2%2Cval3", vec![(Key::new("key1"), StringValue::from("val1")), (Key::new("key2"), StringValue::from("val2,val3"))].into_iter().collect()),
+            ("key1=val1,key2=val2%2Cval3", vec![(Key::new("key1"), Value::from("val1")), (Key::new("key2"), Value::from("val2,val3"))].into_iter().collect()),
             // "valid header with an invalid header"
-            ("key1=val1,key2=val2,a,val3", vec![(Key::new("key1"), StringValue::from("val1")), (Key::new("key2"), StringValue::from("val2"))].into_iter().collect()),
+            ("key1=val1,key2=val2,a,val3", vec![(Key::new("key1"), Value::from("val1")), (Key::new("key2"), Value::from("val2"))].into_iter().collect()),
             // "valid header with no value"
-            ("key1=,key2=val2", vec![(Key::new("key1"), StringValue::from("")), (Key::new("key2"), StringValue::from("val2"))].into_iter().collect()),
+            ("key1=,key2=val2", vec![(Key::new("key1"), Value::from("")), (Key::new("key2"), Value::from("val2"))].into_iter().collect()),
         ]
     }
 
     #[rustfmt::skip]
     #[allow(clippy::type_complexity)]
-    fn valid_extract_data_with_metadata() -> Vec<(&'static str, HashMap<Key, (StringValue, BaggageMetadata)>)> {
+    fn valid_extract_data_with_metadata() -> Vec<(&'static str, HashMap<Key, (Value, BaggageMetadata)>)> {
         vec![
             // "valid w3cHeader with properties"
-            ("key1=val1,key2=val2;prop=1", vec![(Key::new("key1"), (StringValue::from("val1"), BaggageMetadata::default())), (Key::new("key2"), (StringValue::from("val2"), BaggageMetadata::from("prop=1")))].into_iter().collect()),
+            ("key1=val1,key2=val2;prop=1", vec![(Key::new("key1"), (Value::from("val1"), BaggageMetadata::default())), (Key::new("key2"), (Value::from("val2"), BaggageMetadata::from("prop=1")))].into_iter().collect()),
             // prop can don't need to be key value pair
-            ("key1=val1,key2=val2;prop1", vec![(Key::new("key1"), (StringValue::from("val1"), BaggageMetadata::default())), (Key::new("key2"), (StringValue::from("val2"), BaggageMetadata::from("prop1")))].into_iter().collect()),
+            ("key1=val1,key2=val2;prop1", vec![(Key::new("key1"), (Value::from("val1"), BaggageMetadata::default())), (Key::new("key2"), (Value::from("val2"), BaggageMetadata::from("prop1")))].into_iter().collect()),
             ("key1=value1;property1;property2, key2 = value2, key3=value3; propertyKey=propertyValue",
              vec![
-                 (Key::new("key1"), (StringValue::from("value1"), BaggageMetadata::from("property1;property2"))),
-                 (Key::new("key2"), (StringValue::from("value2"), BaggageMetadata::default())),
-                 (Key::new("key3"), (StringValue::from("value3"), BaggageMetadata::from("propertyKey=propertyValue"))),
+                 (Key::new("key1"), (Value::from("value1"), BaggageMetadata::from("property1;property2"))),
+                 (Key::new("key2"), (Value::from("value2"), BaggageMetadata::default())),
+                 (Key::new("key3"), (Value::from("value3"), BaggageMetadata::from("propertyKey=propertyValue")))
              ].into_iter().collect()),
         ]
     }
@@ -244,12 +220,12 @@ mod tests {
                 vec![
                     KeyValueMetadata::new("key1", "val1", "prop1"),
                     KeyValue::new("key2", "val2").into(),
-                    KeyValueMetadata::new("key3", "val3", "anykey=anyvalue"),
+                    KeyValueMetadata::new("key3", "val3", "anykey=anyvalue")
                 ],
                 vec![
                     "key1=val1;prop1",
                     "key2=val2",
-                    "key3=val3;anykey=anyvalue",
+                    "key3=val3;anykey=anyvalue"
                 ],
             )
         ]

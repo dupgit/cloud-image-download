@@ -1,34 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use opentelemetry::metrics::noop::NoopMeterProvider;
 #[cfg(not(target_os = "windows"))]
 use pprof::criterion::{Output, PProfProfiler};
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-// OpenTelemetry crate no longer publishes their NoopMeterProvider,
-// so we just implement our own here.
-mod noop {
-    use opentelemetry::metrics::{InstrumentProvider, Meter, MeterProvider};
-
-    #[derive(Default)]
-    pub struct NoopMeterProvider {
-        _private: (),
-    }
-
-    impl MeterProvider for NoopMeterProvider {
-        fn meter_with_scope(&self, _: opentelemetry::InstrumentationScope) -> Meter {
-            Meter::new(std::sync::Arc::new(NoopMeter::default()))
-        }
-    }
-
-    #[derive(Default)]
-    pub struct NoopMeter {
-        _private: (),
-    }
-
-    impl InstrumentProvider for NoopMeter {}
-}
-
-use noop::*;
 
 fn metrics_events(c: &mut Criterion) {
     let mut group = c.benchmark_group("otel_metrics_events");
@@ -43,7 +18,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_0_attr_0", |b| {
             b.iter(|| {
@@ -54,7 +29,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_1_attr_0", |b| {
             b.iter(|| {
@@ -65,7 +40,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_2_attr_0", |b| {
             b.iter(|| {
@@ -76,7 +51,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_4_attr_0", |b| {
             b.iter(|| {
@@ -93,7 +68,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_8_attr_0", |b| {
             b.iter(|| {
@@ -114,7 +89,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_1_attr_1", |b| {
             b.iter(|| {
@@ -125,7 +100,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_1_attr_2", |b| {
             b.iter(|| {
@@ -141,7 +116,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_1_attr_4", |b| {
             b.iter(|| {
@@ -159,7 +134,7 @@ fn metrics_events(c: &mut Criterion) {
 
     {
         let _subscriber = tracing_subscriber::registry()
-            .with(MetricsLayer::new(NoopMeterProvider::default()))
+            .with(MetricsLayer::new(NoopMeterProvider::new()))
             .set_default();
         group.bench_function("metrics_events_1_attr_8", |b| {
             b.iter(|| {

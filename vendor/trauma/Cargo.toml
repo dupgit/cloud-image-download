@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "trauma"
-version = "2.3.0"
+version = "2.4.0"
 build = false
 autolib = false
 autobins = false
@@ -35,7 +35,7 @@ repository = "https://github.com/rgreinho/trauma"
 
 [features]
 default = ["reqwest/default-tls"]
-rustls = ["reqwest/rustls-tls"]
+rustls = ["reqwest/rustls"]
 
 [lib]
 name = "trauma"
@@ -70,19 +70,20 @@ name = "with-style"
 path = "examples/with-style.rs"
 
 [dependencies.form_urlencoded]
-version = "1.1.0"
+version = "1.2.2"
 
 [dependencies.futures]
-version = "0.3.25"
+version = "0.3.32"
 
 [dependencies.indicatif]
-version = "0.17.11"
+version = "0.18.0"
 
 [dependencies.reqwest]
-version = "0.12.4"
+version = "0.13.2"
 features = [
     "charset",
     "http2",
+    "rustls",
     "system-proxy",
     "stream",
     "socks",
@@ -90,51 +91,45 @@ features = [
 default-features = false
 
 [dependencies.reqwest-middleware]
-version = "0.4.2"
+version = "0.5.1"
 
 [dependencies.reqwest-retry]
-version = "0.7.0"
+version = "0.9.1"
 
 [dependencies.reqwest-tracing]
-version = "0.5.7"
+version = "0.7.0"
 features = ["opentelemetry_0_22"]
 
-[dependencies.task-local-extensions]
-version = "0.1.3"
-
 [dependencies.thiserror]
-version = "2.0.12"
+version = "2.0.18"
 
 [dependencies.tokio]
-version = "1.45.1"
+version = "1.49.0"
 features = [
     "macros",
     "rt-multi-thread",
 ]
 
 [dependencies.tracing]
-version = "0.1.41"
-
-[dependencies.tracing-opentelemetry]
-version = "0.31.0"
+version = "0.1.44"
 
 [dependencies.tracing-subscriber]
-version = "0.3.19"
+version = "0.3.22"
 
 [dev-dependencies.color-eyre]
 version = "0.6.5"
 
 [dev-dependencies.comfy-table]
-version = "7.1.4"
+version = "7.2.2"
 
 [dev-dependencies.console]
-version = "0.15.11"
+version = "0.16.0"
 
 [dev-dependencies.opentelemetry]
-version = "0.30.0"
+version = "0.31.0"
 
 [dev-dependencies.rand]
-version = "0.9.1"
+version = "0.10.0"
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"

@@ -1,11 +1,14 @@
-use std::{
-    borrow::Cow,
+#[cfg(feature = "alloc")]
+use alloc::{borrow::Cow, string::String};
+use core::{
+    fmt::Display,
     iter::{FusedIterator, Peekable},
     str::CharIndices,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum State {
+    #[default]
     Start,
     S1,
     S2,
@@ -19,12 +22,6 @@ enum State {
     S10,
     S11,
     Trap,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::Start
-    }
 }
 
 impl State {
@@ -186,7 +183,8 @@ fn find_ansi_code_exclusive(it: &mut Peekable<CharIndices>) -> Option<(usize, us
 }
 
 /// Helper function to strip ansi codes.
-pub fn strip_ansi_codes(s: &str) -> Cow<str> {
+#[cfg(feature = "alloc")]
+pub fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
     let mut char_it = s.char_indices().peekable();
     match find_ansi_code_exclusive(&mut char_it) {
         Some(_) => {
@@ -196,6 +194,28 @@ pub fn strip_ansi_codes(s: &str) -> Cow<str> {
             Cow::Owned(stripped)
         }
         None => Cow::Borrowed(s),
+    }
+}
+
+/// A wrapper struct that implements [`core::fmt::Display`], only displaying non-ansi parts.
+pub struct WithoutAnsi<'a> {
+    str: &'a str,
+}
+
+impl<'a> WithoutAnsi<'a> {
+    pub fn new(str: &'a str) -> Self {
+        Self { str }
+    }
+}
+
+impl Display for WithoutAnsi<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for (str, is_ansi) in AnsiCodeIterator::new(self.str) {
+            if !is_ansi {
+                f.write_str(str)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -271,6 +291,7 @@ impl FusedIterator for AnsiCodeIterator<'_> {}
 mod tests {
     use super::*;
 
+    use core::fmt::Write;
     use once_cell::sync::Lazy;
     use proptest::prelude::*;
     use regex::Regex;
@@ -312,7 +333,7 @@ mod tests {
 
         fn _check_all_strings_of_len(len: usize, chunk: &mut Vec<u8>) {
             if len == 0 {
-                if let Ok(s) = std::str::from_utf8(chunk) {
+                if let Ok(s) = core::str::from_utf8(chunk) {
                     let old_matches: Vec<_> = STRIP_ANSI_RE.find_iter(s).collect();
                     let new_matches: Vec<_> = Matches::new(s).collect();
                     assert_eq!(old_matches, new_matches);
@@ -381,6 +402,17 @@ mod tests {
         let s = "\u{1b}00000";
         let matches: Vec<_> = Matches::new(s).map(|m| m.as_str()).collect();
         assert_eq!(&[s], matches.as_slice());
+    }
+
+    #[test]
+    fn test_without_ansi() {
+        let str_with_ansi = "\x1b[1;97;41mError\x1b[0m";
+        let without_ansi = WithoutAnsi::new(str_with_ansi);
+        for _ in 0..2 {
+            let mut output = String::default();
+            write!(output, "{without_ansi}").unwrap();
+            assert_eq!(output, "Error");
+        }
     }
 
     #[test]

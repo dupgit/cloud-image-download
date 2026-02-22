@@ -11,7 +11,7 @@ use color_eyre::{
     Result,
 };
 use futures::stream::StreamExt;
-use rand::Rng;
+use rand::RngExt;
 use reqwest::{
     header::{ACCEPT_RANGES, RANGE},
     Url,
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Report> {
     let random_bytes: u8 = rng.random();
     let res = reqwest::Client::new()
         .get(avatar.to_string())
-        .header(RANGE, format!("bytes=0-{}", random_bytes))
+        .header(RANGE, format!("bytes=0-{random_bytes}"))
         .send()
         .await?;
 
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Report> {
     );
     let downloads = vec![dl];
 
-    // Hidding the progress bar because of the logging.
+    // Hiding the progress bar because of the logging.
     let downloader = DownloaderBuilder::hidden()
         .directory(output.parent().unwrap().to_path_buf())
         .build();

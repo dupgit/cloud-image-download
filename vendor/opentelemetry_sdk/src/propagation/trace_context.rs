@@ -1,26 +1,21 @@
 //! # W3C Trace Context Propagator
 //!
 
+use once_cell::sync::Lazy;
 use opentelemetry::{
     propagation::{text_map_propagator::FieldIter, Extractor, Injector, TextMapPropagator},
     trace::{SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState},
     Context,
 };
 use std::str::FromStr;
-use std::sync::OnceLock;
 
 const SUPPORTED_VERSION: u8 = 0;
 const MAX_VERSION: u8 = 254;
 const TRACEPARENT_HEADER: &str = "traceparent";
 const TRACESTATE_HEADER: &str = "tracestate";
 
-// TODO Replace this with LazyLock once it is stable.
-static TRACE_CONTEXT_HEADER_FIELDS: OnceLock<[String; 2]> = OnceLock::new();
-
-fn trace_context_header_fields() -> &'static [String; 2] {
-    TRACE_CONTEXT_HEADER_FIELDS
-        .get_or_init(|| [TRACEPARENT_HEADER.to_owned(), TRACESTATE_HEADER.to_owned()])
-}
+static TRACE_CONTEXT_HEADER_FIELDS: Lazy<[String; 2]> =
+    Lazy::new(|| [TRACEPARENT_HEADER.to_owned(), TRACESTATE_HEADER.to_owned()]);
 
 /// Propagates `SpanContext`s in [W3C TraceContext] format under `traceparent` and `tracestate` header.
 ///
@@ -151,7 +146,7 @@ impl TextMapPropagator for TraceContextPropagator {
     }
 
     fn fields(&self) -> FieldIter<'_> {
-        FieldIter::new(trace_context_header_fields())
+        FieldIter::new(TRACE_CONTEXT_HEADER_FIELDS.as_ref())
     }
 }
 
@@ -159,7 +154,12 @@ impl TextMapPropagator for TraceContextPropagator {
 mod tests {
     use super::*;
     use crate::testing::trace::TestSpan;
+    use opentelemetry::{
+        propagation::{Extractor, Injector, TextMapPropagator},
+        trace::{SpanContext, SpanId, TraceId},
+    };
     use std::collections::HashMap;
+    use std::str::FromStr;
 
     #[rustfmt::skip]
     fn extract_data() -> Vec<(&'static str, &'static str, SpanContext)> {

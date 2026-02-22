@@ -1,17 +1,39 @@
 //! Implements the [`API`] component of [OpenTelemetry].
 //!
-//! *[Supported Rust Versions](#supported-rust-versions)*
+//! *Compiler support: [requires `rustc` 1.64+][msrv]*
 //!
 //! [`API`]: https://opentelemetry.io/docs/specs/otel/overview/#api
 //! [OpenTelemetry]: https://opentelemetry.io/docs/what-is-opentelemetry/
+//! [msrv]: #supported-rust-versions
 //!
-//! # Getting Started with Traces
+//! # Getting Started
+//!
+//! ```no_run
+//! # #[cfg(feature = "trace")]
+//! # {
+//! use opentelemetry::{global, trace::{TraceContextExt, Tracer}, Context };
+//!
+//! fn do_something() {
+//!     let tracer = global::tracer("my_component");
+//!     let _guard = Context::current_with_span(tracer.start("my_span")).attach();
+//!     // do work tracked by the now current span
+//! }
+//! # }
+//! ```
+//!
+//! See the [examples] directory for different integration patterns.
+//!
+//! [examples]: https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples
+//!
+//! # Traces
 //!
 //! The [`trace`] module includes types for tracking the progression of a single
 //! request while it is handled by services that make up an application. A trace
 //! is a tree of [`Span`]s which are objects that represent the work being done
 //! by individual services or components involved in a request as it flows
 //! through a system.
+//!
+//! ### Creating and exporting spans
 //!
 //! ```
 //! # #[cfg(feature = "trace")]
@@ -34,185 +56,129 @@
 //! # }
 //! ```
 //!
-//! See the [examples](https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples) directory for different integration patterns.
-//!
 //! See the [`trace`] module docs for more information on creating and managing
 //! spans.
 //!
 //! [`Span`]: crate::trace::Span
 //!
-//! # Getting Started with Metrics
+//! # Metrics
 //!
-//! The [`metrics`] module provides types for recording measurements about a
-//! service at runtime. Below are the key steps to report measurements using
-//! OpenTelemetry Metrics:
 //!
-//! 1. **Obtain a Meter:** Get a `Meter` from a `MeterProvider`.
-//! 2. **Create Instruments:** Use the `Meter` to create one or more instruments
-//!    (e.g., counters, histograms).
-//! 3. **Record Measurements:** Use the instruments to record measurement values
-//!    along with optional attributes.
+//! The [`metrics`] module includes types for recording measurements about a
+//! service at runtime.
 //!
-//! ## How Metrics work in OpenTelemetry
-//! In OpenTelemetry, raw measurements recorded using instruments are
-//! **aggregated in memory** to form metrics. These aggregated metrics are
-//! periodically exported by the [`opentelemetry_sdk`] at fixed intervals (e.g.,
-//! every 60 seconds) via exporters such as [`opentelemetry-stdout`] or
-//! [`opentelemetry-otlp`]. This reduces reporting overhead while ensuring
-//! up-to-date data. The aggregation strategy and export interval can be
-//! customized in the [`opentelemetry_sdk`] based on your use case.
+//! ### Creating instruments and recording measurements
 //!
-//! ## Choosing the Right Instrument
-//! Selecting the correct instrument is critical for accurately representing
-//! your metrics data:
-//!
-//! - Use **Counters** for values that only increase, such as the number of
-//!   requests served or errors encountered.
-//! - Use **UpDownCounters** for values that can increase or decrease, such as
-//!   the number of active connections, number of items in a queue etc.
-//! - **Gauges:** Use for values that can go up or down and represent the
-//!   current state, such as CPU usage, temperature etc.
-//! - Use **Histograms** for measuring the distribution of a value, such as
-//!   response times or payload sizes.
-//!
-//! ### Observable Instruments
-//!
-//! Counters, UpDownCounters, and Gauges have Observable variants that allow
-//! values to be reported through a callback function. Observable instruments
-//! are ideal when the metric value is managed elsewhere and needs to be
-//! observed by OpenTelemetry instrumentation. The callbacks are automatically
-//! invoked by the OpenTelemetry SDK before every export (e.g., every 60
-//! seconds).
-//!
-//! For example:
-//! - An **ObservableCounter** can monitor the number of page faults in a
-//!   process as reported by the operating system.
-//! - An **ObservableUpDownCounter** can monitor the size of an in-memory queue
-//!   by reporting the size using queue's len() method within the callback
-//!   function.
-//! - An **ObservableGauge** can monitor the CPU temperature by using
-//!   temperature sensor APIs within the callback function.
-//!   
-//! For detailed guidance, refer to [OpenTelemetry Metrics API - Instrumentation
-//! Guidance](https://opentelemetry.io/docs/specs/otel/metrics/supplementary-guidelines/#instrument-selection).
-//!
-//! ## Best Practices
-//! - **Re-use Instruments:** Instruments are designed for
-//!   reuse. Avoid creating new instruments repeatedly.
-//! - **Clone for Sharing:** If the same instrument needs to be used across
-//!   multiple parts of your code, you can safely clone it to share.
-//!
-//! ## Example Usage
 //! ```
+//! # #[cfg(feature = "metrics")]
+//! # {
 //! use opentelemetry::{global, KeyValue};
 //!
-//! // Get a meter from a provider.
+//! // get a meter from a provider
 //! let meter = global::meter("my_service");
 //!
-//! // Create an instrument (in this case, a Counter).
-//! let counter = meter.u64_counter("request.count").build();
+//! // create an instrument
+//! let counter = meter.u64_counter("my_counter").init();
 //!
-//! // Record a measurement by passing the value and a set of attributes.
+//! // record a measurement
 //! counter.add(1, &[KeyValue::new("http.client_ip", "83.164.160.102")]);
-//!
-//! // Create an ObservableCounter and register a callback that reports the measurement.
-//! let _observable_counter = meter
-//! .u64_observable_counter("bytes_received")
-//! .with_callback(|observer| {
-//!     observer.observe(
-//!         100,
-//!         &[
-//!             KeyValue::new("protocol", "udp"),
-//!         ],
-//!     )
-//! })
-//! .build();
+//! # }
 //! ```
-//!
-//! See the
-//! [examples](https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples/metrics-basic)
-//! directory that show a runnable example with all type of instruments.
-//!
 //!
 //! See the [`metrics`] module docs for more information on creating and
 //! managing instruments.
 //!
-//!
-//! # Getting Started with Logs
-//!
-//!  The [`logs`] module contains the Logs Bridge API. It is not intended to be
-//!  called by application developers directly. It is provided for logging
-//!  library authors to build log appenders, that bridges existing logging
-//!  systems with OpenTelemetry. Bridges for
-//!  [`log`](https://crates.io/crates/log) and
-//!  [`tracing`](https://crates.io/crates/tracing) libraries are provided via
-//!  the
-//!  [`opentelemetry-appender-log`](https://crates.io/crates/opentelemetry-appender-log)
-//!  and
-//!  [`opentelemetry-appender-tracing`](https://crates.io/crates/opentelemetry-appender-tracing)
-//!  crates.
-//!
-//! # Crate Feature Flags
+//! ## Crate Feature Flags
 //!
 //! The following core crate feature flags are available:
 //!
-//! * `trace`: Includes the trace API.
+//! * `trace`: Includes the trace API (enabled by default).
 //! * `metrics`: Includes the metrics API.
 //! * `logs`: Includes the logs bridge API.
-//! * `internal-logs`: Includes internal logging for the OpenTelemetry library via `tracing`.
-//!
-//! The default feature flags are ["trace", "metrics", "logs", "internal-logs"].
 //!
 //! The following feature flags provides additional configuration for `logs`:
-//! * `spec_unstable_logs_enabled`: Allow users to control the log level
+//! * `logs_level_enabled`: Allow users to control the log level
 //!
 //! The following feature flags enable APIs defined in OpenTelemetry specification that is in experimental phase:
-//! * `otel_unstable`: Includes unstable APIs. There are no features behind this flag at the moment.
+//! * `otel_unstable`: Includes unstable APIs (enabled by default).
 //!
-//! # Related Crates
+//! ## Related Crates
 //!
 //! In addition to `opentelemetry`, the [`open-telemetry/opentelemetry-rust`]
 //! repository contains several additional crates designed to be used with the
-//! `opentelemetry` ecosystem. This includes exporters, samplers, as well as
-//! utility and adapter crates to assist in propagating context and
+//! `opentelemetry` ecosystem. This includes a collection of trace
+//! `SpanExporter` and metrics pull and push controller implementations, as well
+//! as utility and adapter crates to assist in propagating state and
 //! instrumenting applications.
 //!
 //! In particular, the following crates are likely to be of interest:
 //!
-//! - [`opentelemetry_sdk`] provides the OpenTelemetry SDK used to configure providers.
+//! - [`opentelemetry_sdk`] provides the SDK used to configure providers.
 //! - [`opentelemetry-http`] provides an interface for injecting and extracting
 //!   trace information from [`http`] headers.
-//! - [`opentelemetry-otlp`] exporter for sending telemetry in the
-//!   OTLP format.
-//! - [`opentelemetry-stdout`] provides ability to output telemetry to stdout,
-//!   primarily used for learning/debugging purposes.
+//! - [`opentelemetry-jaeger`] provides a pipeline and exporter for sending
+//!   trace information to [`Jaeger`].
+//! - [`opentelemetry-otlp`] exporter for sending trace and metric data in the
+//!   OTLP format to the OpenTelemetry collector.
 //! - [`opentelemetry-prometheus`] provides a pipeline and exporter for sending
 //!   metrics information to [`Prometheus`].
 //! - [`opentelemetry-zipkin`] provides a pipeline and exporter for sending
 //!   trace information to [`Zipkin`].
+//! - [`opentelemetry-datadog`] provides additional exporters to [`Datadog`].
+//! - [`opentelemetry-aws`] provides unofficial propagators for AWS X-ray.
+//! - [`opentelemetry-contrib`] provides additional exporters and propagators that are
+//!   experimental.
+//! - [`opentelemetry-semantic-conventions`] provides standard names and
+//!   semantic otel conventions.
+//! - [`opentelemetry-stackdriver`] provides an exporter for Google's [Cloud Trace]
+//!   (which used to be called StackDriver).
 //!
-//!  In addition, there are several other useful crates in the [OTel Rust
-//!  Contrib
-//!  repo](https://github.com/open-telemetry/opentelemetry-rust-contrib). A lot
-//!  of crates maintained outside OpenTelemetry owned repos can be found in the
-//!  [OpenTelemetry
-//!  Registry](https://opentelemetry.io/ecosystem/registry/?language=rust).
+//! Additionally, there are also several third-party crates which are not
+//! maintained by the `opentelemetry` project. These include:
 //!
+//! - [`tracing-opentelemetry`] provides integration for applications
+//!   instrumented using the [`tracing`] API and ecosystem.
+//! - [`actix-web-opentelemetry`] provides integration for the [`actix-web`] web
+//!   server and ecosystem.
+//! - [`opentelemetry-application-insights`] provides an unofficial [Azure
+//!   Application Insights] exporter.
+//! - [`opentelemetry-tide`] provides integration for the [`Tide`] web server
+//!   and ecosystem.
+//!
+//! If you're the maintainer of an `opentelemetry` ecosystem crate not listed
+//! above, please let us know! We'd love to add your project to the list!
+//!
+//! [`actix-web-opentelemetry`]: https://crates.io/crates/actix-web-opentelemetry
+//! [`actix-web`]: https://crates.io/crates/actix-web
+//! [`Datadog`]: https://www.datadoghq.com
 //! [`http`]: https://crates.io/crates/http
+//! [`Jaeger`]: https://www.jaegertracing.io
 //! [`open-telemetry/opentelemetry-rust`]: https://github.com/open-telemetry/opentelemetry-rust
 //! [`opentelemetry_sdk`]: https://crates.io/crates/opentelemetry_sdk
-//! [`opentelemetry-stdout`]: https://crates.io/crates/opentelemetry_stdout
+//! [`opentelemetry-application-insights`]: https://crates.io/crates/opentelemetry-application-insights
+//! [`opentelemetry-aws`]: https://crates.io/crates/opentelemetry-aws
+//! [`opentelemetry-contrib`]: https://crates.io/crates/opentelemetry-contrib
+//! [`opentelemetry-datadog`]: https://crates.io/crates/opentelemetry-datadog
 //! [`opentelemetry-http`]: https://crates.io/crates/opentelemetry-http
+//! [`opentelemetry-jaeger`]: https://crates.io/crates/opentelemetry-jaeger
 //! [`opentelemetry-otlp`]: https://crates.io/crates/opentelemetry-otlp
 //! [`opentelemetry-prometheus`]: https://crates.io/crates/opentelemetry-prometheus
+//! [`opentelemetry-semantic-conventions`]: https://crates.io/crates/opentelemetry-semantic-conventions
+//! [`opentelemetry-stackdriver`]: https://crates.io/crates/opentelemetry-stackdriver
+//! [`opentelemetry-tide`]: https://crates.io/crates/opentelemetry-tide
 //! [`opentelemetry-zipkin`]: https://crates.io/crates/opentelemetry-zipkin
 //! [`Prometheus`]: https://prometheus.io
+//! [`Tide`]: https://crates.io/crates/tide
+//! [`tracing-opentelemetry`]: https://crates.io/crates/tracing-opentelemetry
+//! [`tracing`]: https://crates.io/crates/tracing
 //! [`Zipkin`]: https://zipkin.io
+//! [Azure Application Insights]: https://docs.microsoft.com/en-us/azure/azure-monitor/app/app-insights-overview
+//! [Cloud Trace]: https://cloud.google.com/trace/
 //!
-//! # Supported Rust Versions
+//! ## Supported Rust Versions
 //!
 //! OpenTelemetry is built against the latest stable release. The minimum
-//! supported version is 1.70. The current OpenTelemetry version is not
+//! supported version is 1.64. The current OpenTelemetry version is not
 //! guaranteed to build on Rust versions earlier than the minimum supported
 //! version.
 //!
@@ -246,12 +212,9 @@ pub mod global;
 
 pub mod baggage;
 
-pub mod context;
+mod context;
 
 pub use context::{Context, ContextGuard};
-
-mod trace_context;
-pub use trace_context::{SpanId, TraceFlags, TraceId};
 
 mod common;
 
@@ -259,16 +222,12 @@ mod common;
 #[doc(hidden)]
 pub mod testing;
 
-pub use common::{
-    Array, InstrumentationScope, InstrumentationScopeBuilder, Key, KeyValue, StringValue, Value,
-};
+pub use common::{Array, ExportError, InstrumentationLibrary, Key, KeyValue, StringValue, Value};
 
 #[cfg(feature = "metrics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "metrics")))]
 pub mod metrics;
 
-#[cfg(feature = "trace")]
-#[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub mod propagation;
 
 #[cfg(feature = "trace")]
@@ -280,7 +239,7 @@ pub mod trace;
 pub mod logs;
 
 #[doc(hidden)]
-#[cfg(any(feature = "metrics", feature = "trace", feature = "logs"))]
+#[cfg(any(feature = "metrics", feature = "trace"))]
 pub mod time {
     use std::time::SystemTime;
 
@@ -298,10 +257,4 @@ pub mod time {
     pub fn now() -> SystemTime {
         SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(js_sys::Date::now() as u64)
     }
-}
-
-#[doc(hidden)]
-pub mod _private {
-    #[cfg(feature = "internal-logs")]
-    pub use tracing::{debug, error, info, warn}; // re-export
 }

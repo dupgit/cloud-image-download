@@ -12,11 +12,7 @@ use crate::{
         temporal::{self, DEFAULT_DATETIME_PARSER},
     },
     tz::{AmbiguousOffset, Disambiguation, Offset, OffsetConflict, TimeZone},
-    util::{
-        rangeint::{RInto, TryRFrom},
-        round::increment,
-        t::{self, ZonedDayNanoseconds, C},
-    },
+    util::{b, round::Increment},
     RoundMode, SignedDuration, Span, SpanRound, Timestamp, Unit,
 };
 
@@ -2236,7 +2232,7 @@ impl Zoned {
     }
 
     #[inline]
-    fn checked_add_span(self, span: Span) -> Result<Zoned, Error> {
+    fn checked_add_span(self, span: &Span) -> Result<Zoned, Error> {
         let span_calendar = span.only_calendar();
         // If our duration only consists of "time" (hours, minutes, etc), then
         // we can short-circuit and do timestamp math. This also avoids dealing
@@ -2441,23 +2437,22 @@ impl Zoned {
     ///
     /// # Errors
     ///
-    /// An error can occur in some cases when the requested configuration
-    /// would result in a span that is beyond allowable limits. For example,
-    /// the nanosecond component of a span cannot represent the span of
-    /// time between the minimum and maximum zoned datetime supported by Jiff.
-    /// Therefore, if one requests a span with its largest unit set to
-    /// [`Unit::Nanosecond`], then it's possible for this routine to fail.
+    /// An error can occur in the following scenarios:
     ///
-    /// An error can also occur if `ZonedDifference` is misconfigured. For
-    /// example, if the smallest unit provided is bigger than the largest unit.
-    ///
-    /// An error can also occur if units greater than `Unit::Hour` are
-    /// requested _and_ if the time zones in the provided zoned datetimes
-    /// are distinct. (See [`TimeZone`]'s section on equality for details on
-    /// how equality is determined.) This error occurs because the length of
-    /// a day may vary depending on the time zone. To work around this
-    /// restriction, convert one or both of the zoned datetimes into the same
-    /// time zone.
+    /// * When the requested configuration would result in a span that is
+    /// beyond allowable limits. For example, the nanosecond component of a
+    /// span cannot represent the span of time between the minimum and maximum
+    /// zoned datetime supported by Jiff. Therefore, if one requests a span
+    /// with its largest unit set to [`Unit::Nanosecond`], then it's possible
+    /// for this routine to fail.
+    /// * When `ZonedDifference` is misconfigured. For example, if the smallest
+    /// unit provided is bigger than the largest unit.
+    /// * When units greater than `Unit::Hour` are requested _and_ if the time
+    /// zones in the provided zoned datetimes are distinct. (See [`TimeZone`]'s
+    /// section on equality for details on how equality is determined.) This
+    /// error occurs because the length of a day may vary depending on the time
+    /// zone. To work around this restriction, convert one or both of the zoned
+    /// datetimes into the same time zone.
     ///
     /// It is guaranteed that if one provides a datetime with the default
     /// [`ZonedDifference`] configuration, then this routine will never
@@ -4302,6 +4297,9 @@ impl<'a> ZonedDifference<'a> {
     /// Namely, any integer that divides evenly into `1,000` nanoseconds since
     /// there are `1,000` nanoseconds in the next highest unit (microseconds).
     ///
+    /// In all cases, the increment must be greater than zero and less than
+    /// or equal to `1_000_000_000`.
+    ///
     /// The error will occur when computing the span, and not when setting
     /// the increment here.
     ///
@@ -4334,7 +4332,7 @@ impl<'a> ZonedDifference<'a> {
     /// via rounding.
     #[inline]
     fn rounding_may_change_span(&self) -> bool {
-        self.round.rounding_may_change_span_ignore_largest()
+        self.round.rounding_may_change_span()
     }
 
     /// Returns the span of time from `dt1` to the datetime in this
@@ -4344,8 +4342,8 @@ impl<'a> ZonedDifference<'a> {
     fn until_with_largest_unit(&self, zdt1: &Zoned) -> Result<Span, Error> {
         let zdt2 = self.zoned;
 
-        let sign = t::sign(zdt2, zdt1);
-        if sign == C(0) {
+        let sign = b::Sign::from_ordinals(zdt2, zdt1);
+        if sign.is_zero() {
             return Ok(Span::new());
         }
 
@@ -4363,52 +4361,49 @@ impl<'a> ZonedDifference<'a> {
 
         let (dt1, mut dt2) = (zdt1.datetime(), zdt2.datetime());
 
-        let mut day_correct: t::SpanDays = C(0).rinto();
-        if -sign == dt1.time().until_nanoseconds(dt2.time()).signum() {
-            day_correct += C(1);
+        let mut day_correct: i32 = 0;
+        if b::Sign::from_ordinals(dt1.time(), dt2.time()) == sign {
+            day_correct += 1;
         }
 
         let mut mid = dt2
             .date()
-            .checked_add(Span::new().days_ranged(day_correct * -sign))
+            .checked_add(Span::new().days(day_correct * -sign))
             .context(E::AddDays)?
             .to_datetime(dt1.time());
         let mut zmid: Zoned = mid
             .to_zoned(tz.clone())
             .context(E::ConvertIntermediateDatetime)?;
-        if t::sign(zdt2, &zmid) == -sign {
-            if sign == C(-1) {
+        if b::Sign::from_ordinals(zdt2, &zmid) == -sign {
+            if sign.is_negative() {
                 // FIXME
                 panic!("this should be an error");
             }
-            day_correct += C(1);
+            day_correct += 1;
             mid = dt2
                 .date()
-                .checked_add(Span::new().days_ranged(day_correct * -sign))
+                .checked_add(Span::new().days(day_correct * -sign))
                 .context(E::AddDays)?
                 .to_datetime(dt1.time());
             zmid = mid
                 .to_zoned(tz.clone())
                 .context(E::ConvertIntermediateDatetime)?;
-            if t::sign(zdt2, &zmid) == -sign {
+            if b::Sign::from_ordinals(zdt2, &zmid) == -sign {
                 // FIXME
                 panic!("this should be an error too");
             }
         }
-        let remainder_nano = zdt2.timestamp().as_nanosecond_ranged()
-            - zmid.timestamp().as_nanosecond_ranged();
+        let remainder =
+            zdt2.timestamp().as_duration() - zmid.timestamp().as_duration();
         dt2 = mid;
 
         let date_span = dt1.date().until((largest, dt2.date()))?;
-        Ok(Span::from_invariant_nanoseconds(
-            Unit::Hour,
-            remainder_nano.rinto(),
-        )
-        .expect("difference between time always fits in span")
-        .years_ranged(date_span.get_years_ranged())
-        .months_ranged(date_span.get_months_ranged())
-        .weeks_ranged(date_span.get_weeks_ranged())
-        .days_ranged(date_span.get_days_ranged()))
+        Ok(Span::from_invariant_duration(Unit::Hour, remainder)
+            .expect("difference between time always fits in span")
+            .years(date_span.get_years())
+            .months(date_span.get_months())
+            .weeks(date_span.get_weeks())
+            .days(date_span.get_days()))
     }
 }
 
@@ -4584,6 +4579,9 @@ impl ZonedRound {
     /// Namely, any integer that divides evenly into `1,000` nanoseconds since
     /// there are `1,000` nanoseconds in the next highest unit (microseconds).
     ///
+    /// In all cases, the increment must be greater than zero and less than or
+    /// equal to `1_000_000_000`.
+    ///
     /// # Example
     ///
     /// This example shows how to round a zoned datetime to the nearest 10
@@ -4634,9 +4632,8 @@ impl ZonedRound {
         debug_assert_eq!(self.round.get_smallest(), Unit::Day);
 
         // Rounding by days requires an increment of 1. We just re-use the
-        // civil datetime rounding checks, which has the same constraint
-        // although it does check for other things that aren't relevant here.
-        increment::for_datetime(Unit::Day, self.round.get_increment())?;
+        // civil datetime rounding checks, which has the same constraint.
+        Increment::for_datetime(Unit::Day, self.round.get_increment())?;
 
         // FIXME: We should be doing this with a &TimeZone, but will need a
         // refactor so that we do zone-aware arithmetic using just a Timestamp
@@ -4644,26 +4641,31 @@ impl ZonedRound {
         // work. The grander refactor is something like an `Unzoned` type, but
         // I'm not sure that's really worth it. ---AG
         let start = zdt.start_of_day().context(E::FailedStartOfDay)?;
-        let end = start
-            .checked_add(Span::new().days_ranged(C(1).rinto()))
-            .context(E::FailedLengthOfDay)?;
-        let span = start
-            .timestamp()
-            .until((Unit::Nanosecond, end.timestamp()))
-            .context(E::FailedSpanNanoseconds)?;
-        let nanos = span.get_nanoseconds_ranged();
+        let end = start.tomorrow().context(E::FailedLengthOfDay)?;
+        // I don't believe this is actually possible, since adding 1 day should
+        // always advance the underlying timestamp by some amount. On the
+        // other hand, it's somewhat tricky to reason about this because of the
+        // impact of time zone transition data on the length of a day. So we
+        // conservatively report an error here.
+        //
+        // (The specific problem is that if `day_length` is zero, then our
+        // rounding API will panic because it doesn't know what to do with a
+        // zero increment.)
+        if start.timestamp() == end.timestamp() {
+            return Err(Error::from(E::FailedLengthOfDay));
+        }
         let day_length =
-            ZonedDayNanoseconds::try_rfrom("nanoseconds-per-zoned-day", nanos)
-                .context(E::FailedSpanNanoseconds)?;
-        let progress = zdt.timestamp().as_nanosecond_ranged()
-            - start.timestamp().as_nanosecond_ranged();
-        let rounded = self.round.get_mode().round(progress, day_length);
+            end.timestamp().as_duration() - start.timestamp().as_duration();
+        let progress =
+            zdt.timestamp().as_duration() - start.timestamp().as_duration();
+        let rounded =
+            self.round.get_mode().round_by_duration(progress, day_length)?;
         let nanos = start
             .timestamp()
-            .as_nanosecond_ranged()
-            .try_checked_add("timestamp-nanos", rounded)?;
-        Ok(Timestamp::from_nanosecond_ranged(nanos)
-            .to_zoned(zdt.time_zone().clone()))
+            .as_duration()
+            .checked_add(rounded)
+            .ok_or(E::FailedSpanNanoseconds)?;
+        Ok(Timestamp::from_duration(nanos)?.to_zoned(zdt.time_zone().clone()))
     }
 }
 
@@ -5873,11 +5875,11 @@ mod tests {
         {
             #[cfg(feature = "alloc")]
             {
-                assert_eq!(96, core::mem::size_of::<Zoned>());
+                assert_eq!(40, core::mem::size_of::<Zoned>());
             }
             #[cfg(all(target_pointer_width = "64", not(feature = "alloc")))]
             {
-                assert_eq!(96, core::mem::size_of::<Zoned>());
+                assert_eq!(40, core::mem::size_of::<Zoned>());
             }
         }
         #[cfg(not(debug_assertions))]
@@ -6072,21 +6074,21 @@ mod tests {
 
         insta::assert_snapshot!(
             zdt.round(Unit::Year).unwrap_err(),
-            @"failed rounding datetime: rounding to years is not supported"
+            @"failed rounding datetime: rounding to 'years' is not supported"
         );
         insta::assert_snapshot!(
             zdt.round(Unit::Month).unwrap_err(),
-            @"failed rounding datetime: rounding to months is not supported"
+            @"failed rounding datetime: rounding to 'months' is not supported"
         );
         insta::assert_snapshot!(
             zdt.round(Unit::Week).unwrap_err(),
-            @"failed rounding datetime: rounding to weeks is not supported"
+            @"failed rounding datetime: rounding to 'weeks' is not supported"
         );
 
         let options = ZonedRound::new().smallest(Unit::Day).increment(2);
         insta::assert_snapshot!(
             zdt.round(options).unwrap_err(),
-            @"failed rounding datetime: increment for rounding to days must be 1) less than 2, 2) divide into it evenly and 3) greater than zero"
+            @"failed rounding datetime: increment for rounding to 'days' must be equal to `1`"
         );
     }
 
@@ -6154,6 +6156,46 @@ mod tests {
         assert_eq!(
             sod.to_string(),
             "2000-10-08T01:00:00-03:00[America/Boa_Vista]",
+        );
+    }
+
+    // An interesting test from the Temporal issue tracker, where one doesn't
+    // get a rejection during a fold when the offset is included in the
+    // datetime string.
+    //
+    // See: https://github.com/tc39/proposal-temporal/issues/2892#issuecomment-3863293014
+    #[test]
+    fn no_reject_in_fold_when_using_with() {
+        if crate::tz::db().is_definitively_empty() {
+            return;
+        }
+
+        let zdt1: Zoned =
+            "2016-09-30T02:01+02:00[Europe/Amsterdam]".parse().unwrap();
+        let zdt2 = zdt1
+            .with()
+            .month(10)
+            .disambiguation(Disambiguation::Reject)
+            .offset_conflict(OffsetConflict::Reject)
+            .build()
+            .unwrap();
+        assert_eq!(
+            zdt2.to_string(),
+            "2016-10-30T02:01:00+02:00[Europe/Amsterdam]"
+        );
+
+        let zdt3: Zoned =
+            "2016-10-30T02:01+02:00[Europe/Amsterdam]".parse().unwrap();
+        assert_eq!(
+            zdt3.to_string(),
+            "2016-10-30T02:01:00+02:00[Europe/Amsterdam]"
+        );
+
+        let zdt4: Zoned =
+            "2016-10-30T02:01+01:00[Europe/Amsterdam]".parse().unwrap();
+        assert_eq!(
+            zdt4.to_string(),
+            "2016-10-30T02:01:00+01:00[Europe/Amsterdam]"
         );
     }
 }

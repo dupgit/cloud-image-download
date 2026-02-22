@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "reqwest-middleware"
-version = "0.4.2"
+version = "0.5.1"
 authors = ["Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>"]
 build = false
 autolib = false
@@ -33,10 +33,21 @@ repository = "https://github.com/TrueLayer/reqwest-middleware"
 
 [features]
 charset = ["reqwest/charset"]
+form = [
+    "reqwest/form",
+    "dep:serde",
+]
 http2 = ["reqwest/http2"]
-json = ["reqwest/json"]
+json = [
+    "reqwest/json",
+    "dep:serde",
+]
 multipart = ["reqwest/multipart"]
-rustls-tls = ["reqwest/rustls-tls"]
+query = [
+    "reqwest/query",
+    "dep:serde",
+]
+rustls = ["reqwest/rustls"]
 
 [lib]
 name = "reqwest_middleware"
@@ -52,21 +63,22 @@ version = "0.1.51"
 version = "1.0.0"
 
 [dependencies.reqwest]
-version = "0.12.0"
+version = "0.13.1"
 default-features = false
 
 [dependencies.serde]
 version = "1.0.106"
+optional = true
 
 [dependencies.thiserror]
-version = "1.0.21"
+version = "2.0"
 
 [dependencies.tower-service]
 version = "0.3.0"
 
 [dev-dependencies.reqwest]
-version = "0.12.0"
-features = ["rustls-tls"]
+version = "0.13.1"
+features = ["rustls"]
 
 [dev-dependencies.tokio]
 version = "1.0.0"

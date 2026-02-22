@@ -2154,15 +2154,15 @@ mod tests {
         );
         insta::assert_snapshot!(
             DateTimeParser::new().parse_date_spec(b"2024-11-31").unwrap_err(),
-            @"parsed date is not valid: parameter 'day' with value 31 is not in the required range of 1..=30",
+            @"parsed date is not valid: parameter 'day' for `2024-11` is invalid, must be in range `1..=30`",
         );
         insta::assert_snapshot!(
             DateTimeParser::new().parse_date_spec(b"2024-02-30").unwrap_err(),
-            @"parsed date is not valid: parameter 'day' with value 30 is not in the required range of 1..=29",
+            @"parsed date is not valid: parameter 'day' for `2024-02` is invalid, must be in range `1..=29`",
         );
         insta::assert_snapshot!(
             DateTimeParser::new().parse_date_spec(b"2023-02-29").unwrap_err(),
-            @"parsed date is not valid: parameter 'day' with value 29 is not in the required range of 1..=28",
+            @"parsed date is not valid: parameter 'day' for `2023-02` is invalid, must be in range `1..=28`",
         );
     }
 
@@ -2553,11 +2553,11 @@ mod tests {
         );
         insta::assert_snapshot!(
             p("2024-W53-1"),
-            @"parsed week date is not valid: ISO week number is invalid for given year",
+            @"parsed week date is not valid: parameter 'iso-week' is not in the required range of 1..=53",
         );
         insta::assert_snapshot!(
             p("2030W531"),
-            @"parsed week date is not valid: ISO week number is invalid for given year",
+            @"parsed week date is not valid: parameter 'iso-week' is not in the required range of 1..=53",
         );
     }
 
@@ -2571,11 +2571,11 @@ mod tests {
 
         insta::assert_snapshot!(
             p("2024-W53-1"),
-            @"parsed week date is not valid: ISO week number is invalid for given year",
+            @"parsed week date is not valid: parameter 'iso-week' is not in the required range of 1..=53",
         );
         insta::assert_snapshot!(
             p("2025-W53-1"),
-            @"parsed week date is not valid: ISO week number is invalid for given year",
+            @"parsed week date is not valid: parameter 'iso-week' is not in the required range of 1..=53",
         );
     }
 

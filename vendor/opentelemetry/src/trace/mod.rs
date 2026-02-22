@@ -44,8 +44,6 @@
 //!
 //! ```
 //! use opentelemetry::{global, trace::{Span, Tracer, TracerProvider}};
-//! use opentelemetry::InstrumentationScope;
-//! use std::sync::Arc;
 //!
 //! fn my_library_function() {
 //!     // Use the global tracer provider to get access to the user-specified
@@ -53,12 +51,12 @@
 //!     let tracer_provider = global::tracer_provider();
 //!
 //!     // Get a tracer for this library
-//!     let scope = InstrumentationScope::builder("my_name")
-//!         .with_version(env!("CARGO_PKG_VERSION"))
-//!         .with_schema_url("https://opentelemetry.io/schemas/1.17.0")
-//!         .build();
-//!
-//!     let tracer = tracer_provider.tracer_with_scope(scope);
+//!     let tracer = tracer_provider.versioned_tracer(
+//!         "my_name",
+//!         Some(env!("CARGO_PKG_VERSION")),
+//!         Some("https://opentelemetry.io/schemas/1.17.0"),
+//!         None
+//!     );
 //!
 //!     // Create spans
 //!     let mut span = tracer.start("doing_work");
@@ -83,12 +81,13 @@
 //!
 //! Exporting spans often involves sending data over a network or performing
 //! other I/O tasks. OpenTelemetry allows you to schedule these tasks using
-//! whichever runtime you are already using such as [Tokio].
+//! whichever runtime you are already using such as [Tokio] or [async-std].
 //! When using an async runtime it's best to use the batch span processor
 //! where the spans will be sent in batches as opposed to being sent once ended,
 //! which often ends up being more efficient.
 //!
 //! [Tokio]: https://tokio.rs
+//! [async-std]: https://async.rs
 //!
 //! ## Managing Active Spans
 //!
@@ -167,6 +166,7 @@
 
 use std::borrow::Cow;
 use std::time;
+use thiserror::Error;
 
 pub(crate) mod context;
 pub mod noop;
@@ -180,12 +180,64 @@ pub use self::{
         get_active_span, mark_span_as_active, FutureExt, SpanRef, TraceContextExt, WithContext,
     },
     span::{Span, SpanKind, Status},
-    span_context::{SpanContext, TraceState},
+    span_context::{SpanContext, SpanId, TraceFlags, TraceId, TraceState},
     tracer::{SamplingDecision, SamplingResult, SpanBuilder, Tracer},
     tracer_provider::TracerProvider,
 };
-use crate::KeyValue;
-pub use crate::{SpanId, TraceFlags, TraceId};
+use crate::{ExportError, KeyValue};
+use std::sync::PoisonError;
+
+/// Describe the result of operations in tracing API.
+pub type TraceResult<T> = Result<T, TraceError>;
+
+/// Errors returned by the trace API.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum TraceError {
+    /// Export failed with the error returned by the exporter
+    #[error("Exporter {} encountered the following error(s): {0}", .0.exporter_name())]
+    ExportFailed(Box<dyn ExportError>),
+
+    /// Export failed to finish after certain period and processor stopped the export.
+    #[error("Exporting timed out after {} seconds", .0.as_secs())]
+    ExportTimedOut(time::Duration),
+
+    /// Other errors propagated from trace SDK that weren't covered above
+    #[error(transparent)]
+    Other(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl<T> From<T> for TraceError
+where
+    T: ExportError,
+{
+    fn from(err: T) -> Self {
+        TraceError::ExportFailed(Box::new(err))
+    }
+}
+
+impl From<String> for TraceError {
+    fn from(err_msg: String) -> Self {
+        TraceError::Other(Box::new(Custom(err_msg)))
+    }
+}
+
+impl From<&'static str> for TraceError {
+    fn from(err_msg: &'static str) -> Self {
+        TraceError::Other(Box::new(Custom(err_msg.into())))
+    }
+}
+
+impl<T> From<PoisonError<T>> for TraceError {
+    fn from(err: PoisonError<T>) -> Self {
+        TraceError::Other(err.to_string().into())
+    }
+}
+
+/// Wrap type for string
+#[derive(Error, Debug)]
+#[error("{0}")]
+struct Custom(String);
 
 /// Events record things that happened during a [`Span`]'s lifetime.
 #[non_exhaustive]
@@ -250,24 +302,11 @@ pub struct Link {
 }
 
 impl Link {
-    /// Create new `Link`
-    pub fn new(
-        span_context: SpanContext,
-        attributes: Vec<KeyValue>,
-        dropped_attributes_count: u32,
-    ) -> Self {
+    /// Create a new link.
+    pub fn new(span_context: SpanContext, attributes: Vec<KeyValue>) -> Self {
         Link {
             span_context,
             attributes,
-            dropped_attributes_count,
-        }
-    }
-
-    /// Create new `Link` with given context
-    pub fn with_context(span_context: SpanContext) -> Self {
-        Link {
-            span_context,
-            attributes: Vec::new(),
             dropped_attributes_count: 0,
         }
     }

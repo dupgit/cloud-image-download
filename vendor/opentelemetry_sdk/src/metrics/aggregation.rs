@@ -1,7 +1,7 @@
 use std::fmt;
 
-use crate::metrics::error::{MetricError, MetricResult};
 use crate::metrics::internal::{EXPO_MAX_SCALE, EXPO_MIN_SCALE};
+use opentelemetry::metrics::{MetricsError, Result};
 
 /// The way recorded measurements are summarized.
 #[derive(Clone, Debug, PartialEq)]
@@ -17,10 +17,10 @@ pub enum Aggregation {
     /// instrument kind that differs from the default. This aggregation ensures the
     /// default is used.
     ///
-    /// See the [the spec] for information about the default
+    /// See the [DefaultAggregationSelector] for information about the default
     /// instrument kind selection mapping.
     ///
-    /// [the spec]: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.19.0/specification/metrics/sdk.md#default-aggregation
+    /// [DefaultAggregationSelector]: crate::metrics::reader::DefaultAggregationSelector
     Default,
 
     /// An aggregation that summarizes a set of measurements as their arithmetic
@@ -109,8 +109,7 @@ impl fmt::Display for Aggregation {
 
 impl Aggregation {
     /// Validate that this aggregation has correct configuration
-    #[allow(unused)]
-    pub(crate) fn validate(&self) -> MetricResult<()> {
+    pub fn validate(&self) -> Result<()> {
         match self {
             Aggregation::Drop => Ok(()),
             Aggregation::Default => Ok(()),
@@ -119,7 +118,7 @@ impl Aggregation {
             Aggregation::ExplicitBucketHistogram { boundaries, .. } => {
                 for x in boundaries.windows(2) {
                     if x[0] >= x[1] {
-                        return Err(MetricError::Config(format!(
+                        return Err(MetricsError::Config(format!(
                             "aggregation: explicit bucket histogram: non-monotonic boundaries: {:?}",
                             boundaries,
                         )));
@@ -130,13 +129,13 @@ impl Aggregation {
             }
             Aggregation::Base2ExponentialHistogram { max_scale, .. } => {
                 if *max_scale > EXPO_MAX_SCALE {
-                    return Err(MetricError::Config(format!(
+                    return Err(MetricsError::Config(format!(
                         "aggregation: exponential histogram: max scale ({}) is greater than 20",
                         max_scale,
                     )));
                 }
                 if *max_scale < EXPO_MIN_SCALE {
-                    return Err(MetricError::Config(format!(
+                    return Err(MetricsError::Config(format!(
                         "aggregation: exponential histogram: max scale ({}) is less than -10",
                         max_scale,
                     )));
@@ -150,19 +149,21 @@ impl Aggregation {
 
 #[cfg(test)]
 mod tests {
-    use super::Aggregation;
-    use crate::metrics::error::{MetricError, MetricResult};
-    use crate::metrics::internal::{EXPO_MAX_SCALE, EXPO_MIN_SCALE};
+    use crate::metrics::{
+        internal::{EXPO_MAX_SCALE, EXPO_MIN_SCALE},
+        Aggregation,
+    };
+    use opentelemetry::metrics::{MetricsError, Result};
 
     #[test]
     fn validate_aggregation() {
         struct TestCase {
             name: &'static str,
             input: Aggregation,
-            check: Box<dyn Fn(MetricResult<()>) -> bool>,
+            check: Box<dyn Fn(Result<()>) -> bool>,
         }
-        let ok = Box::new(|result: MetricResult<()>| result.is_ok());
-        let config_error = Box::new(|result| matches!(result, Err(MetricError::Config(_))));
+        let ok = Box::new(|result: Result<()>| result.is_ok());
+        let config_error = Box::new(|result| matches!(result, Err(MetricsError::Config(_))));
 
         let test_cases: Vec<TestCase> = vec![
             TestCase {

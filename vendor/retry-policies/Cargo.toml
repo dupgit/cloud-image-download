@@ -12,8 +12,14 @@
 [package]
 edition = "2018"
 name = "retry-policies"
-version = "0.4.0"
+version = "0.5.1"
 authors = ["Luca Palmieri <lpalmieri@truelayer.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A collection of plug-and-play retry policies for Rust projects."
 readme = "README.md"
 keywords = [
@@ -25,5 +31,9 @@ categories = ["network-programming"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/TrueLayer/retry-policies"
 
+[lib]
+name = "retry_policies"
+path = "src/lib.rs"
+
 [dependencies.rand]
-version = "0.8.4"
+version = "0.9.1"

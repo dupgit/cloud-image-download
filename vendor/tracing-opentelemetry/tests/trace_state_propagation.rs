@@ -1,12 +1,13 @@
+use futures_util::future::BoxFuture;
 use opentelemetry::{
     propagation::{TextMapCompositePropagator, TextMapPropagator},
     trace::{SpanContext, TraceContextExt, Tracer as _, TracerProvider as _},
     Context,
 };
 use opentelemetry_sdk::{
-    error::OTelSdkResult,
+    export::trace::{ExportResult, SpanData, SpanExporter},
     propagation::{BaggagePropagator, TraceContextPropagator},
-    trace::{Sampler, SdkTracerProvider, SpanData, SpanExporter, Tracer},
+    trace::{Tracer, TracerProvider},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -100,47 +101,6 @@ fn inject_context_into_outgoing_requests() {
     assert_carrier_attrs_eq(&carrier, &outgoing_req_carrier);
 }
 
-#[test]
-fn sampling_decision_respects_new_parent() {
-    // custom setup required due to ParentBased(AlwaysOff) sampler
-    let exporter = TestExporter::default();
-    let provider = SdkTracerProvider::builder()
-        .with_simple_exporter(exporter.clone())
-        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOff)))
-        .build();
-    let tracer = provider.tracer("test");
-    let subscriber = tracing_subscriber::registry().with(layer().with_tracer(tracer.clone()));
-
-    // set up remote sampled headers
-    let sampled_headers = HashMap::from([(
-        "traceparent".to_string(),
-        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01".to_string(),
-    )]);
-    let remote_sampled_cx = TraceContextPropagator::new().extract(&sampled_headers);
-    let root_span = tracer.start_with_context("root_span", &remote_sampled_cx);
-
-    tracing::subscriber::with_default(subscriber, || {
-        let child = tracing::debug_span!("child");
-        child.context(); // force a sampling decision
-        child.set_parent(Context::current_with_span(root_span));
-    });
-
-    drop(provider); // flush all spans
-
-    // assert new parent-based sampling decision
-    let spans = exporter.0.lock().unwrap();
-    assert_eq!(spans.len(), 2, "Expected 2 spans, got {}", spans.len());
-    assert!(
-        spans[0].span_context.is_sampled(),
-        "Root span should be sampled"
-    );
-    assert_eq!(
-        spans[1].span_context.is_sampled(),
-        spans[0].span_context.is_sampled(),
-        "Child span should respect parent sampling decision"
-    );
-}
-
 fn assert_shared_attrs_eq(sc_a: &SpanContext, sc_b: &SpanContext) {
     assert_eq!(sc_a.trace_id(), sc_b.trace_id());
     assert_eq!(sc_a.trace_state(), sc_b.trace_state());
@@ -168,9 +128,9 @@ fn assert_carrier_attrs_eq(
     assert_eq!(carrier_a.get("tracestate"), carrier_b.get("tracestate"));
 }
 
-fn test_tracer() -> (Tracer, SdkTracerProvider, TestExporter, impl Subscriber) {
+fn test_tracer() -> (Tracer, TracerProvider, TestExporter, impl Subscriber) {
     let exporter = TestExporter::default();
-    let provider = SdkTracerProvider::builder()
+    let provider = TracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
     let tracer = provider.tracer("test");
@@ -205,7 +165,7 @@ fn test_carrier() -> HashMap<String, String> {
     carrier
 }
 
-fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, SdkTracerProvider) {
+fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, TracerProvider) {
     let (tracer, provider, exporter, subscriber) = test_tracer();
     let span = tracer.start("sampled");
     let cx = Context::current_with_span(span);
@@ -217,11 +177,13 @@ fn build_sampled_context() -> (Context, impl Subscriber, TestExporter, SdkTracer
 struct TestExporter(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for TestExporter {
-    async fn export(&self, mut batch: Vec<SpanData>) -> OTelSdkResult {
+    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
         let spans = self.0.clone();
-        if let Ok(mut inner) = spans.lock() {
-            inner.append(&mut batch);
-        }
-        Ok(())
+        Box::pin(async move {
+            if let Ok(mut inner) = spans.lock() {
+                inner.append(&mut batch);
+            }
+            Ok(())
+        })
     }
 }

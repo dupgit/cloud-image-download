@@ -29,9 +29,3 @@ impl IntoIterator for SpanLinks {
         self.links.into_iter()
     }
 }
-
-impl SpanLinks {
-    pub(crate) fn add_link(&mut self, link: Link) {
-        self.links.push(link);
-    }
-}

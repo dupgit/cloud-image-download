@@ -1,14 +1,13 @@
-use std::cmp;
+use core::fmt::Display;
+use core::iter::once;
+use core::mem::{self, MaybeUninit};
+use core::{char, cmp};
 use std::env;
 use std::ffi::OsStr;
-use std::fmt::Display;
 use std::io;
-use std::iter::once;
-use std::mem;
 use std::os::raw::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
-use std::{char, mem::MaybeUninit};
 
 use encode_unicode::error::Utf16TupleError;
 use encode_unicode::CharExt;
@@ -69,6 +68,9 @@ pub(crate) fn is_a_color_terminal(out: &Term) -> bool {
     if !is_a_terminal(out) {
         return false;
     }
+    if env::var("NO_COLOR").is_ok() {
+        return false;
+    }
     if msys_tty_on(out) {
         return match env::var("TERM") {
             Ok(term) => term != "dumb",
@@ -76,6 +78,21 @@ pub(crate) fn is_a_color_terminal(out: &Term) -> bool {
         };
     }
     enable_ansi_on(out)
+}
+
+pub(crate) fn is_a_true_color_terminal(out: &Term) -> bool {
+    if !is_a_color_terminal(out) {
+        return false;
+    }
+    // Powershell does not respect the COLORTERM var despite supporting true colors
+    // but other shells may respect it
+    if msys_tty_on(out) {
+        return match env::var("COLORTERM") {
+            Ok(term) => term == "truecolor" || term == "24bit",
+            Err(_) => true,
+        };
+    }
+    false
 }
 
 /// Enables or disables the `mode` flag on the given `HANDLE` and yields the previous mode.
@@ -467,8 +484,7 @@ pub(crate) fn read_single_key(ctrlc_key: bool) -> io::Result<Key> {
                     // (This error is given when reading a non-UTF8 file into a String, for example.)
                     Err(e) => {
                         let message = format!(
-                            "Read invalid surrogate pair ({}, {}): {}",
-                            unicode_char, next_surrogate, e
+                            "Read invalid surrogate pair ({unicode_char}, {next_surrogate}): {e}",
                         );
                         Err(io::Error::new(io::ErrorKind::InvalidData, message))
                     }
@@ -478,7 +494,7 @@ pub(crate) fn read_single_key(ctrlc_key: bool) -> io::Result<Key> {
             // Return an InvalidData error. This is the recommended value for UTF-related I/O errors.
             // (This error is given when reading a non-UTF8 file into a String, for example.)
             Err(e) => {
-                let message = format!("Read invalid utf16 {}: {}", unicode_char, e);
+                let message = format!("Read invalid utf16 {unicode_char}: {e}");
                 Err(io::Error::new(io::ErrorKind::InvalidData, message))
             }
         }
@@ -548,7 +564,7 @@ fn read_key_event() -> io::Result<KEY_EVENT_RECORD> {
 }
 
 pub(crate) fn wants_emoji() -> bool {
-    // If WT_SESSION is set, we can assume we're running in the nne
+    // If WT_SESSION is set, we can assume we're running in the new
     // Windows Terminal.  The correct way to detect this is not available
     // yet.  See https://github.com/microsoft/terminal/issues/1040
     env::var("WT_SESSION").is_ok()
@@ -587,7 +603,7 @@ pub(crate) fn msys_tty_on(term: &Term) -> bool {
             handle as HANDLE,
             FileNameInfo,
             &mut name_info as *mut _ as *mut c_void,
-            std::mem::size_of::<FILE_NAME_INFO>() as u32,
+            mem::size_of::<FILE_NAME_INFO>() as u32,
         );
         if res == 0 {
             return false;
@@ -613,7 +629,7 @@ pub(crate) fn msys_tty_on(term: &Term) -> bool {
 }
 
 pub(crate) fn set_title<T: Display>(title: T) {
-    let buffer: Vec<u16> = OsStr::new(&format!("{}", title))
+    let buffer: Vec<u16> = OsStr::new(&format!("{title}"))
         .encode_wide()
         .chain(once(0))
         .collect();

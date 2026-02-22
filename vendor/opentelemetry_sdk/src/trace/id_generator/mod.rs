@@ -1,3 +1,6 @@
+//! Id Generator
+pub(super) mod aws;
+
 use opentelemetry::trace::{SpanId, TraceId};
 use rand::{rngs, Rng, SeedableRng};
 use std::cell::RefCell;
@@ -22,15 +25,15 @@ pub struct RandomIdGenerator {
 
 impl IdGenerator for RandomIdGenerator {
     fn new_trace_id(&self) -> TraceId {
-        CURRENT_RNG.with(|rng| TraceId::from(rng.borrow_mut().random::<u128>()))
+        CURRENT_RNG.with(|rng| TraceId::from(rng.borrow_mut().gen::<u128>()))
     }
 
     fn new_span_id(&self) -> SpanId {
-        CURRENT_RNG.with(|rng| SpanId::from(rng.borrow_mut().random::<u64>()))
+        CURRENT_RNG.with(|rng| SpanId::from(rng.borrow_mut().gen::<u64>()))
     }
 }
 
 thread_local! {
     /// Store random number generator for each thread
-    static CURRENT_RNG: RefCell<rngs::SmallRng> = RefCell::new(rngs::SmallRng::from_os_rng());
+    static CURRENT_RNG: RefCell<rngs::SmallRng> = RefCell::new(rngs::SmallRng::from_entropy());
 }

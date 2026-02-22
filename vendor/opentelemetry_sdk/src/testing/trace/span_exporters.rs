@@ -1,17 +1,22 @@
-use crate::error::{OTelSdkError, OTelSdkResult};
 use crate::{
-    trace::{SpanData, SpanExporter},
-    trace::{SpanEvents, SpanLinks},
-    ExportError,
+    export::{
+        trace::{ExportResult, SpanData, SpanExporter},
+        ExportError,
+    },
+    trace::{Config, SpanEvents, SpanLinks},
+    InstrumentationLibrary,
 };
+use async_trait::async_trait;
+use crossbeam_channel::{unbounded, Receiver, SendError, Sender};
+use futures_util::future::BoxFuture;
 pub use opentelemetry::testing::trace::TestSpan;
-use opentelemetry::{
-    trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState},
-    InstrumentationScope,
+use opentelemetry::trace::{
+    SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
 };
 use std::fmt::{Display, Formatter};
 
 pub fn new_test_export_span_data() -> SpanData {
+    let config = Config::default();
     SpanData {
         span_context: SpanContext::new(
             TraceId::from_u128(1),
@@ -30,8 +35,45 @@ pub fn new_test_export_span_data() -> SpanData {
         events: SpanEvents::default(),
         links: SpanLinks::default(),
         status: Status::Unset,
-        instrumentation_scope: InstrumentationScope::default(),
+        resource: config.resource,
+        instrumentation_lib: InstrumentationLibrary::default(),
     }
+}
+
+#[derive(Debug)]
+pub struct TestSpanExporter {
+    tx_export: Sender<SpanData>,
+    tx_shutdown: Sender<()>,
+}
+
+#[async_trait]
+impl SpanExporter for TestSpanExporter {
+    fn export(&mut self, batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+        for span_data in batch {
+            if let Err(err) = self
+                .tx_export
+                .send(span_data)
+                .map_err::<TestExportError, _>(Into::into)
+            {
+                return Box::pin(std::future::ready(Err(Into::into(err))));
+            }
+        }
+        Box::pin(std::future::ready(Ok(())))
+    }
+
+    fn shutdown(&mut self) {
+        let _ = self.tx_shutdown.send(()); // ignore error
+    }
+}
+
+pub fn new_test_exporter() -> (TestSpanExporter, Receiver<SpanData>, Receiver<()>) {
+    let (tx_export, rx_export) = unbounded();
+    let (tx_shutdown, rx_shutdown) = unbounded();
+    let exporter = TestSpanExporter {
+        tx_export,
+        tx_shutdown,
+    };
+    (exporter, rx_export, rx_shutdown)
 }
 
 #[derive(Debug)]
@@ -41,18 +83,21 @@ pub struct TokioSpanExporter {
 }
 
 impl SpanExporter for TokioSpanExporter {
-    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
-        batch.into_iter().try_for_each(|span_data| {
-            self.tx_export
+    fn export(&mut self, batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+        for span_data in batch {
+            if let Err(err) = self
+                .tx_export
                 .send(span_data)
-                .map_err(|err| OTelSdkError::InternalFailure(format!("Export failed: {:?}", err)))
-        })
+                .map_err::<TestExportError, _>(Into::into)
+            {
+                return Box::pin(std::future::ready(Err(Into::into(err))));
+            }
+        }
+        Box::pin(std::future::ready(Ok(())))
     }
 
-    fn shutdown(&mut self) -> OTelSdkResult {
-        self.tx_shutdown.send(()).map_err(|_| {
-            OTelSdkError::InternalFailure("Failed to send shutdown signal".to_string())
-        })
+    fn shutdown(&mut self) {
+        self.tx_shutdown.send(()).unwrap();
     }
 }
 
@@ -94,9 +139,15 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for TestExportError {
     }
 }
 
+impl<T> From<crossbeam_channel::SendError<T>> for TestExportError {
+    fn from(err: SendError<T>) -> Self {
+        TestExportError(err.to_string())
+    }
+}
+
 /// A no-op instance of an [`SpanExporter`].
 ///
-/// [`SpanExporter`]: crate::trace::SpanExporter
+/// [`SpanExporter`]: crate::export::trace::SpanExporter
 #[derive(Debug, Default)]
 pub struct NoopSpanExporter {
     _private: (),
@@ -109,8 +160,9 @@ impl NoopSpanExporter {
     }
 }
 
+#[async_trait::async_trait]
 impl SpanExporter for NoopSpanExporter {
-    async fn export(&self, _: Vec<SpanData>) -> OTelSdkResult {
-        Ok(())
+    fn export(&mut self, _: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
+        Box::pin(std::future::ready(Ok(())))
     }
 }

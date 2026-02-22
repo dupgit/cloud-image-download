@@ -1,159 +1,77 @@
-use crate::metrics::{
-    data::{self, AggregatedMetrics, GaugeDataPoint, MetricData},
-    Temporality,
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Mutex,
+    time::SystemTime,
 };
-use opentelemetry::KeyValue;
+
+use crate::{attributes::AttributeSet, metrics::data::DataPoint};
+use opentelemetry::{global, metrics::MetricsError};
 
 use super::{
-    aggregate::{AggregateTimeInitiator, AttributeSetFilter},
-    Aggregator, AtomicTracker, AtomicallyUpdate, ComputeAggregation, Measure, Number, ValueMap,
+    aggregate::{is_under_cardinality_limit, STREAM_OVERFLOW_ATTRIBUTE_SET},
+    Number,
 };
 
-/// this is reused by PrecomputedSum
-pub(crate) struct Assign<T>
-where
-    T: AtomicallyUpdate<T>,
-{
-    pub(crate) value: T::AtomicTracker,
-}
-
-impl<T> Aggregator for Assign<T>
-where
-    T: Number,
-{
-    type InitConfig = ();
-    type PreComputedValue = T;
-
-    fn create(_init: &()) -> Self {
-        Self {
-            value: T::new_atomic_tracker(T::default()),
-        }
-    }
-
-    fn update(&self, value: T) {
-        self.value.store(value)
-    }
-
-    fn clone_and_reset(&self, _: &()) -> Self {
-        Self {
-            value: T::new_atomic_tracker(self.value.get_and_reset_value()),
-        }
-    }
+/// Timestamped measurement data.
+struct DataPointValue<T> {
+    timestamp: SystemTime,
+    value: T,
 }
 
 /// Summarizes a set of measurements as the last one made.
-pub(crate) struct LastValue<T: Number> {
-    value_map: ValueMap<Assign<T>>,
-    init_time: AggregateTimeInitiator,
-    temporality: Temporality,
-    filter: AttributeSetFilter,
+#[derive(Default)]
+pub(crate) struct LastValue<T> {
+    values: Mutex<HashMap<AttributeSet, DataPointValue<T>>>,
 }
 
-impl<T: Number> LastValue<T> {
-    pub(crate) fn new(
-        temporality: Temporality,
-        filter: AttributeSetFilter,
-        cardinality_limit: usize,
-    ) -> Self {
-        LastValue {
-            value_map: ValueMap::new((), cardinality_limit),
-            init_time: AggregateTimeInitiator::default(),
-            temporality,
-            filter,
+impl<T: Number<T>> LastValue<T> {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn measure(&self, measurement: T, attrs: AttributeSet) {
+        let d: DataPointValue<T> = DataPointValue {
+            timestamp: SystemTime::now(),
+            value: measurement,
+        };
+        if let Ok(mut values) = self.values.lock() {
+            let size = values.len();
+            match values.entry(attrs) {
+                Entry::Occupied(mut occupied_entry) => {
+                    occupied_entry.insert(d);
+                }
+                Entry::Vacant(vacant_entry) => {
+                    if is_under_cardinality_limit(size) {
+                        vacant_entry.insert(d);
+                    } else {
+                        values.insert(STREAM_OVERFLOW_ATTRIBUTE_SET.clone(), d);
+                        global::handle_error(MetricsError::Other("Warning: Maximum data points for metric stream exceeded. Entry added to overflow.".into()));
+                    }
+                }
+            }
         }
     }
 
-    pub(crate) fn delta(&self, dest: Option<&mut MetricData<T>>) -> (usize, Option<MetricData<T>>) {
-        let time = self.init_time.delta();
-
-        let s_data = dest.and_then(|d| {
-            if let MetricData::Gauge(gauge) = d {
-                Some(gauge)
-            } else {
-                None
-            }
-        });
-        let mut new_agg = if s_data.is_none() {
-            Some(data::Gauge {
-                data_points: vec![],
-                start_time: Some(time.start),
-                time: time.current,
-            })
-        } else {
-            None
+    pub(crate) fn compute_aggregation(&self, dest: &mut Vec<DataPoint<T>>) {
+        dest.clear();
+        let mut values = match self.values.lock() {
+            Ok(guard) if !guard.is_empty() => guard,
+            _ => return,
         };
-        let s_data = s_data.unwrap_or_else(|| new_agg.as_mut().expect("present if s_data is none"));
-        s_data.start_time = Some(time.start);
-        s_data.time = time.current;
 
-        self.value_map
-            .collect_and_reset(&mut s_data.data_points, |attributes, aggr| GaugeDataPoint {
-                attributes,
-                value: aggr.value.get_value(),
+        let n = values.len();
+        if n > dest.capacity() {
+            dest.reserve_exact(n - dest.capacity());
+        }
+
+        for (attrs, value) in values.drain() {
+            dest.push(DataPoint {
+                attributes: attrs,
+                time: Some(value.timestamp),
+                value: value.value,
+                start_time: None,
                 exemplars: vec![],
             });
-
-        (s_data.data_points.len(), new_agg.map(Into::into))
-    }
-
-    pub(crate) fn cumulative(
-        &self,
-        dest: Option<&mut MetricData<T>>,
-    ) -> (usize, Option<MetricData<T>>) {
-        let time = self.init_time.cumulative();
-        let s_data = dest.and_then(|d| {
-            if let MetricData::Gauge(gauge) = d {
-                Some(gauge)
-            } else {
-                None
-            }
-        });
-        let mut new_agg = if s_data.is_none() {
-            Some(data::Gauge {
-                data_points: vec![],
-                start_time: Some(time.start),
-                time: time.current,
-            })
-        } else {
-            None
-        };
-        let s_data = s_data.unwrap_or_else(|| new_agg.as_mut().expect("present if s_data is none"));
-
-        s_data.start_time = Some(time.start);
-        s_data.time = time.current;
-
-        self.value_map
-            .collect_readonly(&mut s_data.data_points, |attributes, aggr| GaugeDataPoint {
-                attributes,
-                value: aggr.value.get_value(),
-                exemplars: vec![],
-            });
-
-        (s_data.data_points.len(), new_agg.map(Into::into))
-    }
-}
-
-impl<T> Measure<T> for LastValue<T>
-where
-    T: Number,
-{
-    fn call(&self, measurement: T, attrs: &[KeyValue]) {
-        self.filter.apply(attrs, |filtered| {
-            self.value_map.measure(measurement, filtered);
-        })
-    }
-}
-
-impl<T> ComputeAggregation for LastValue<T>
-where
-    T: Number,
-{
-    fn call(&self, dest: Option<&mut AggregatedMetrics>) -> (usize, Option<AggregatedMetrics>) {
-        let data = dest.and_then(|d| T::extract_metrics_data_mut(d));
-        let (len, new) = match self.temporality {
-            Temporality::Delta => self.delta(data),
-            _ => self.cumulative(data),
-        };
-        (len, new.map(T::make_aggregated_metrics))
+        }
     }
 }
