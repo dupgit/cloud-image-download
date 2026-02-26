@@ -11,6 +11,7 @@ use std::env::var;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use tokio::signal::unix::{SignalKind, signal};
 
 ///  `NO_COLOR` compliance: See [no color web site](https://no-color.org/)
 fn get_no_color_compliance_writestyle() -> WriteStyle {
@@ -31,8 +32,7 @@ fn init_log_environment(cli: &Cli) {
     env_logger::Builder::from_env(Env::default().default_filter_or(cli_debug_level)).write_style(color).init();
 }
 
-#[tokio::main]
-async fn main() {
+async fn run_main() {
     let cli = Cli::analyze();
     init_log_environment(&cli);
 
@@ -76,4 +76,23 @@ async fn main() {
 
         verify_downloaded_file(all_ws_image_lists, db, &downloaded_summary, cli.verify_skipped).await;
     }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::spawn(async {
+        let mut sigterm = signal(SignalKind::terminate()).expect("Can not create signal listener on SIGTERM");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Can not create signal listener on SIGINT");
+
+        tokio::select! {
+            _ = sigterm.recv() => error!("Signal SIGTERM received, exiting now"),
+            _ = sigint.recv() => error!("Signal SIGINT received, exiting now"),
+        }
+
+        std::process::exit(0);
+    });
+
+    run_main().await;
+
+    Ok(())
 }
