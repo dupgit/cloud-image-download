@@ -28,7 +28,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 serde = { version = "1.0.217", features = ["derive"] }
 sha2 = "0.10.8"
 shellexpand = { version = "3.1.0", features = ["full"] }
-tokio = { version = "1.42.0", features = ["full"] }
+tokio = { version = "1.42.0", features = ["signal", "rt-multi-thread", "macros"] }
 trauma = "2.4.0"
 
 [dev-dependencies]
