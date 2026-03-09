@@ -11,9 +11,9 @@
 
 [package]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.65"
 name = "snafu"
-version = "0.8.9"
+version = "0.9.0"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 build = false
 exclude = [
@@ -53,7 +53,7 @@ alloc = []
 backtraces-impl-backtrace-crate = ["backtrace"]
 default = [
     "std",
-    "rust_1_65",
+    "rust_1_81",
 ]
 futures = [
     "futures-core-crate",
@@ -61,11 +61,8 @@ futures = [
 ]
 guide = []
 internal-dev-dependencies = ["futures-crate"]
-rust_1_61 = ["snafu-derive/rust_1_61"]
-rust_1_65 = ["rust_1_61"]
-rust_1_81 = ["rust_1_65"]
+rust_1_81 = []
 std = ["alloc"]
-unstable-core-error = []
 unstable-provider-api = ["snafu-derive/unstable-provider-api"]
 unstable-try-trait = []
 
@@ -223,7 +220,9 @@ path = "tests/visibility.rs"
 
 [dependencies.backtrace]
 version = "0.3.0"
+features = ["std"]
 optional = true
+default-features = false
 
 [dependencies.futures-core-crate]
 version = "0.3.0"
@@ -233,6 +232,7 @@ package = "futures-core"
 
 [dependencies.futures-crate]
 version = "0.3.11"
+features = ["executor"]
 optional = true
 default-features = false
 package = "futures"
@@ -243,4 +243,4 @@ optional = true
 default-features = false
 
 [dependencies.snafu-derive]
-version = "0.8.9"
+version = "0.9.0"

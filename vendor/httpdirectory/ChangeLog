@@ -1,7 +1,27 @@
+0.19.2
+  * Updates snafu to 0.9.0 and hotpath to 0.14.0
+  * Adds missing versions in ChangeLog file
+  * Corrects typos in ChangeLog file
+  * Simplifying code using filter, filter_map and flat_map and by
+    splitting functions into smaller ones to reuse them in other
+    parts
+
+0.19.1
+  * Updates hotpath to 0.13.0
+  * Minor updates on other crates
+
+0.19.0
+  * Breaking change:
+    * Limits some snafu traits to the crate itself as it is not meant
+      to be public
+  * Stil (STatic Index Listing) website format is now recognized and
+    parsed
+  * Updates hotpath to 0.11.0
+
 0.18.0
   * Breaking changes:
-    * log library was replaced by tracing one
-    * error management is now done using snafu library: some error messages
+    * Log library was replaced by tracing one
+    * Error management is now done using snafu library: some error messages
       are different.
     * Request structure has been simplify and only supports reqwest library
     * Sorting enum as been replaced by a boolean: true means ascending sort
@@ -20,17 +40,17 @@
 0.17.1
   * Removes lazy_static in favor of std::sync::LazyLock
   * Simplify Regex for h5ai
-  * examples:
-    * mirrors example uses a JoinSet instead of task vector
-  * tools:
-    * added a target to run examples with hotpath feature
-    * added a target to run clippy in pedantic mode
+  * Examples:
+    * Mirrors example uses a JoinSet instead of task vector
+  * Tools:
+    * Added a target to run examples with hotpath feature
+    * Added a target to run clippy in pedantic mode
 
 0.17.0
   * Speed improvements
   * Computing the size of a file only once and keeping it along in
     the Entry structure.
-  * hotpath features to enable timing of some chosen functions
+  * Hotpath features to enable timing of some chosen functions
   * MSRV is 1.88
 
 0.16.3

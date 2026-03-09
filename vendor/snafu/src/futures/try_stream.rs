@@ -23,6 +23,7 @@ pub trait TryStreamExt: TryStream + Sized {
     /// information.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::TryStream;
     /// # use futures::stream;
@@ -49,6 +50,7 @@ pub trait TryStreamExt: TryStream + Sized {
     ///     /* ... */
     /// # stream::empty()
     /// }
+    /// }
     /// ```
     ///
     /// Note that the context selector will call [`Into::into`] on
@@ -62,6 +64,7 @@ pub trait TryStreamExt: TryStream + Sized {
     /// context-sensitive information.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::TryStream;
     /// # use futures::stream;
@@ -88,6 +91,7 @@ pub trait TryStreamExt: TryStream + Sized {
     ///     /* ... */
     /// # stream::empty()
     /// }
+    /// # }
     /// ```
     ///
     /// Note that this *may not* be needed in many cases because the
@@ -111,6 +115,7 @@ pub trait TryStreamExt: TryStream + Sized {
     /// suited for when you have a string literal.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::TryStream;
     /// # use futures::stream;
@@ -120,11 +125,12 @@ pub trait TryStreamExt: TryStream + Sized {
     ///     stock_prices().whatever_context("Couldn't get stock prices")
     /// }
     ///
-    /// # type ApiError = Box<dyn std::error::Error>;
+    /// # type ApiError = Box<dyn std::error::Error + Send + Sync>;
     /// fn stock_prices() -> impl TryStream<Ok = i32, Error = ApiError> {
     ///     /* ... */
     /// # stream::empty()
     /// }
+    /// # }
     /// ```
     #[cfg(any(feature = "alloc", test))]
     fn whatever_context<S, E>(self, context: S) -> WhateverContext<Self, S, E>
@@ -141,6 +147,7 @@ pub trait TryStreamExt: TryStream + Sized {
     /// attribute. The premade [`Whatever`](crate::Whatever) type is also available.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::TryStream;
     /// # use futures::stream;
@@ -151,11 +158,12 @@ pub trait TryStreamExt: TryStream + Sized {
     ///         .with_whatever_context(move |_| format!("Couldn't get stock prices for {symbol}"))
     /// }
     ///
-    /// # type ApiError = Box<dyn std::error::Error>;
+    /// # type ApiError = Box<dyn std::error::Error + Send + Sync>;
     /// fn stock_prices(symbol: &'static str) -> impl TryStream<Ok = i32, Error = ApiError> {
     ///     /* ... */
     /// # stream::empty()
     /// }
+    /// # }
     /// ```
     #[cfg(any(feature = "alloc", test))]
     fn with_whatever_context<F, S, E>(self, context: F) -> WithWhateverContext<Self, F, E>

@@ -1,9 +1,9 @@
 [package]
 name = "snafu"
-version = "0.8.9"
+version = "0.9.0"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.65"
 
 readme = "README.md"
 description = "An ergonomic error handling library"
@@ -29,7 +29,7 @@ exclude = [
 features = ["futures", "guide"]
 
 [features]
-default = ["std", "rust_1_65"]
+default = ["std", "rust_1_81"]
 
 # Implement the `std::error::Error` trait.
 std = ["alloc"]
@@ -37,17 +37,8 @@ std = ["alloc"]
 # Support `Box<dyn Error>` and `String` (for `Whatever`, `CleanedErrorText`)
 alloc = []
 
-# Implement the `core::error::Error` trait.
-unstable-core-error = []
-
-# Add support for `Termination` for `Report`
-rust_1_61 = ["snafu-derive/rust_1_61"]
-
-# `Backtrace` was stabilized
-rust_1_65 = ["rust_1_61"]
-
 # `core::error` was stabilized
-rust_1_81 = ["rust_1_65"]
+rust_1_81 = []
 
 # The backtrace type becomes `backtrace::Backtrace`
 backtraces-impl-backtrace-crate = ["backtrace"]
@@ -74,8 +65,8 @@ guide = []
 exclude = ["compatibility-tests"]
 
 [dependencies]
-snafu-derive = { path = "snafu-derive", version = "0.8.9" }
-backtrace = { version = "0.3.0", optional = true }
-futures-crate = { package = "futures", version = "0.3.11", optional = true, default-features = false }
+snafu-derive = { path = "snafu-derive", version = "0.9.0" }
+backtrace = { version = "0.3.0", optional = true, default-features = false, features = ["std"] }
+futures-crate = { package = "futures", version = "0.3.11", optional = true, default-features = false, features = ["executor"] }
 futures-core-crate = { package = "futures-core", version = "0.3.0", optional = true, default-features = false }
 pin-project = { version = "1.0.2", optional = true, default-features = false }

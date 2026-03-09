@@ -119,6 +119,7 @@ macro_rules! attrgen {
             (unchecked_return_type, true, ReturnType(Span, String, Span)),
             (return_description, true, ReturnDesc(Span, String, Span)),
             (unchecked_param_type, true, ParamType(Span, String, Span)),
+            (unchecked_optional_param_type, true, OptionalParamType(Span, String, Span)),
             (param_description, true, ParamDesc(Span, String, Span)),
 
             // For testing purposes only.
@@ -494,6 +495,8 @@ impl ConvertToAst<&ast::Program> for &mut syn::ItemStruct {
 
         let is_inspectable = attrs.inspectable().is_some();
         let getter_with_clone = attrs.getter_with_clone();
+        let js_namespace = attrs.js_namespace().map(|(ns, _)| ns.0);
+        let qualified_name = wasm_bindgen_shared::qualified_name(js_namespace.as_deref(), &js_name);
         for (i, field) in self.fields.iter_mut().enumerate() {
             match field.vis {
                 syn::Visibility::Public(..) => {}
@@ -516,8 +519,8 @@ impl ConvertToAst<&ast::Program> for &mut syn::ItemStruct {
             };
 
             let comments = extract_doc_comments(&field.attrs);
-            let getter = wasm_bindgen_shared::struct_field_get(&js_name, &js_field_name);
-            let setter = wasm_bindgen_shared::struct_field_set(&js_name, &js_field_name);
+            let getter = wasm_bindgen_shared::struct_field_get(&qualified_name, &js_field_name);
+            let setter = wasm_bindgen_shared::struct_field_set(&qualified_name, &js_field_name);
 
             fields.push(ast::StructField {
                 rust_name: member,
@@ -538,11 +541,11 @@ impl ConvertToAst<&ast::Program> for &mut syn::ItemStruct {
         let generate_typescript = attrs.skip_typescript().is_none();
         let private = attrs.private().is_some();
         let comments: Vec<String> = extract_doc_comments(&self.attrs);
-        let js_namespace = attrs.js_namespace().map(|(ns, _)| ns.0);
         attrs.check_used();
         Ok(ast::Struct {
             rust_name: self.ident.clone(),
             js_name,
+            qualified_name,
             fields,
             comments,
             is_inspectable,
@@ -1226,6 +1229,7 @@ fn function_from_decl(
                     pat_type,
                     js_name: attrs.js_name,
                     js_type: attrs.js_type,
+                    optional: attrs.optional,
                     desc: attrs.desc,
                 })
                 .collect(),
@@ -1239,15 +1243,83 @@ fn function_from_decl(
 struct FnArgAttrs {
     js_name: Option<String>,
     js_type: Option<String>,
+    optional: bool,
     desc: Option<String>,
 }
 
 /// Extracts function arguments attributes
 fn extract_args_attrs(sig: &mut syn::Signature) -> Result<Vec<FnArgAttrs>, Diagnostic> {
     let mut args_attrs = vec![];
+    let mut seen_optional: Option<Span> = None;
     for input in sig.inputs.iter_mut() {
         if let syn::FnArg::Typed(pat_type) = input {
             let attrs = BindgenAttrs::find(&mut pat_type.attrs)?;
+
+            // Check for mutually exclusive param type attributes
+            let param_type = attrs.unchecked_param_type();
+            let optional_param_type = attrs.unchecked_optional_param_type();
+
+            if param_type.is_some() && optional_param_type.is_some() {
+                // Find the positions and spans of both attributes in the attrs list
+                let mut param_pos_and_span: Option<(usize, Span)> = None;
+                let mut optional_pos_and_span: Option<(usize, Span)> = None;
+                for (pos, (_, attr)) in attrs.attrs.iter().enumerate() {
+                    match attr {
+                        BindgenAttr::ParamType(span, _, _) => {
+                            param_pos_and_span = Some((pos, *span));
+                        }
+                        BindgenAttr::OptionalParamType(span, _, _) => {
+                            optional_pos_and_span = Some((pos, *span));
+                        }
+                        _ => {}
+                    }
+                }
+                // Report error at the position of the attribute that appears later
+                let error_span = match (param_pos_and_span, optional_pos_and_span) {
+                    (Some((p_pos, p_span)), Some((o_pos, o_span))) => {
+                        if p_pos > o_pos {
+                            p_span
+                        } else {
+                            o_span
+                        }
+                    }
+                    (Some((_, p_span)), None) => p_span,
+                    (None, Some((_, o_span))) => o_span,
+                    (None, None) => unreachable!(
+                        "both param_type and optional_param_type are Some, but attrs not found"
+                    ),
+                };
+                return Err(Diagnostic::span_error(
+                    error_span,
+                    "cannot use both `unchecked_param_type` and `unchecked_optional_param_type` on the same parameter",
+                ));
+            }
+
+            // Determine the type and whether it's optional
+            let js_type = param_type
+                .or(optional_param_type)
+                .map_or::<Result<_, Diagnostic>, _>(Ok(None), |(ty, span)| {
+                    check_invalid_type(ty, span)?;
+                    Ok(Some(ty.to_string()))
+                })?;
+
+            let is_optional = optional_param_type.is_some();
+
+            // Check that a non-optional param doesn't follow an optional one
+            if let Some(optional_span) = seen_optional {
+                if !is_optional {
+                    return Err(Diagnostic::span_error(
+                        optional_span,
+                        "a required parameter cannot follow an optional parameter",
+                    ));
+                }
+            }
+            if is_optional {
+                if let Some((_, span)) = optional_param_type {
+                    seen_optional = Some(span);
+                }
+            }
+
             let arg_attrs = FnArgAttrs {
                 js_name: attrs
                     .js_name()
@@ -1257,12 +1329,8 @@ fn extract_args_attrs(sig: &mut syn::Signature) -> Result<Vec<FnArgAttrs>, Diagn
                         }
                         Ok(Some(js_name_override.to_string()))
                     })?,
-                js_type: attrs
-                    .unchecked_param_type()
-                    .map_or::<Result<_, Diagnostic>, _>(Ok(None), |(ty, span)| {
-                        check_invalid_type(ty, span)?;
-                        Ok(Some(ty.to_string()))
-                    })?,
+                js_type,
+                optional: is_optional,
                 desc: attrs
                     .param_description()
                     .map_or::<Result<_, Diagnostic>, _>(Ok(None), |(description, span)| {

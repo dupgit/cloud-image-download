@@ -24,6 +24,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     /// information.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::future::TryFuture;
     /// use snafu::prelude::*;
@@ -49,6 +50,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     ///     /* ... */
     /// # futures::future::ok(42)
     /// }
+    /// # }
     /// ```
     ///
     /// Note that the context selector will call [`Into::into`] on
@@ -62,6 +64,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     /// information.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::future::TryFuture;
     /// use snafu::prelude::*;
@@ -87,6 +90,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     ///     /* ... */
     /// # futures::future::ok(42)
     /// }
+    /// # }
     /// ```
     ///
     /// Note that this *may not* be needed in many cases because the
@@ -110,6 +114,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     /// suited for when you have a string literal.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::future::TryFuture;
     /// use snafu::{prelude::*, Whatever};
@@ -118,11 +123,12 @@ pub trait TryFutureExt: TryFuture + Sized {
     ///     api_function().whatever_context("The API failed")
     /// }
     ///
-    /// # type ApiError = Box<dyn std::error::Error>;
+    /// # type ApiError = Box<dyn std::error::Error + Send + Sync>;
     /// fn api_function() -> impl TryFuture<Ok = i32, Error = ApiError> {
     ///     /* ... */
     /// # futures::future::ok(42)
     /// }
+    /// # }
     /// ```
     #[cfg(any(feature = "alloc", test))]
     fn whatever_context<S, E>(self, context: S) -> WhateverContext<Self, S, E>
@@ -139,6 +145,7 @@ pub trait TryFutureExt: TryFuture + Sized {
     /// attribute. The premade [`Whatever`](crate::Whatever) type is also available.
     ///
     /// ```rust
+    /// # #[cfg(feature = "internal-dev-dependencies")] {
     /// # use futures_crate as futures;
     /// use futures::future::TryFuture;
     /// use snafu::{prelude::*, Whatever};
@@ -148,11 +155,12 @@ pub trait TryFutureExt: TryFuture + Sized {
     ///         .with_whatever_context(move |_| format!("The API failed for argument {arg}"))
     /// }
     ///
-    /// # type ApiError = Box<dyn std::error::Error>;
+    /// # type ApiError = Box<dyn std::error::Error + Send + Sync>;
     /// fn api_function(arg: &'static str) -> impl TryFuture<Ok = i32, Error = ApiError> {
     ///     /* ... */
     /// # futures::future::ok(42)
     /// }
+    /// # }
     /// ```
     #[cfg(any(feature = "alloc", test))]
     fn with_whatever_context<F, S, E>(self, context: F) -> WithWhateverContext<Self, F, E>

@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "jiff-static"
-version = "0.2.21"
+version = "0.2.23"
 dependencies = [
  "jiff-tzdb",
  "proc-macro2",
@@ -14,9 +14,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-tzdb"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68971ebff725b9e2ca27a601c5eb38a4c5d64422c4cbab0c535f248087eda5c2"
+checksum = "c900ef84826f1338a557697dc8fc601df9ca9af4ac137c7fb61d4c6f2dfd3076"
 
 [[package]]
 name = "proc-macro2"
