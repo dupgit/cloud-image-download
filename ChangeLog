@@ -1,3 +1,12 @@
+## [0.5.7] - 2026-03-09
+
+### 🚀 Features
+
+- Handles signals displaying a message before exiting
+
+### 🐛 Bug Fixes
+
+- Limits used tokio features
 ## [0.5.6] - 2026-02-22
 ## [0.5.5] - 2026-02-22
 ## [0.5.4] - 2026-02-09
