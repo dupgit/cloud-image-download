@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71.0"
 name = "html5ever"
-version = "0.36.1"
+version = "0.39.0"
 authors = ["The html5ever Project Developers"]
 build = false
 autolib = false
@@ -38,6 +38,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/servo/html5ever"
 
 [features]
+serde = ["markup5ever/serde"]
 trace_tokenizer = []
 
 [lib]
@@ -64,6 +65,10 @@ path = "examples/print-tree-actions.rs"
 name = "tokenize"
 path = "examples/tokenize.rs"
 
+[[test]]
+name = "driver"
+path = "tests/driver.rs"
+
 [[bench]]
 name = "html5ever"
 path = "benches/html5ever.rs"
@@ -73,10 +78,10 @@ harness = false
 version = "0.4"
 
 [dependencies.markup5ever]
-version = "0.36.1"
+version = "0.39"
 
 [dev-dependencies.criterion]
-version = "0.7"
+version = "0.8"
 
 [dev-dependencies.typed-arena]
 version = "2.0.2"

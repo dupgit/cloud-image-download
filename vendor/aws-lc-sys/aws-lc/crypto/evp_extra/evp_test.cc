@@ -1,55 +1,6 @@
-/*
- * Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
- * project.
- */
-/* ====================================================================
- * Copyright (c) 2015 The OpenSSL Project.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. All advertising materials mentioning features or use of this
- *    software must display the following acknowledgment:
- *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit. (http://www.OpenSSL.org/)"
- *
- * 4. The names "OpenSSL Toolkit" and "OpenSSL Project" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For written permission, please contact
- *    licensing@OpenSSL.org.
- *
- * 5. Products derived from this software may not be called "OpenSSL"
- *    nor may "OpenSSL" appear in their names without prior written
- *    permission of the OpenSSL Project.
- *
- * 6. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit (http://www.OpenSSL.org/)"
- *
- * THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
- * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE OpenSSL PROJECT OR
- * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- * OF THE POSSIBILITY OF SUCH DAMAGE.
- * ====================================================================
- */
+// Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL project.
+// Copyright (c) 2015 The OpenSSL Project.  All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #include <openssl/curve25519.h>
 #include <openssl/ec_key.h>
@@ -1008,6 +959,22 @@ static void RunWycheproofDecryptTest(
     // BoringSSL does not enforce policies on weak keys and leaves it to the
     // caller.
     bool is_valid = result.IsValid({"SmallModulus"});
+
+    // AWS-LC enforces FIPS 800-56B Rev. 2 §7.1.2.1 which requires 1 < c < (n-1).
+    // But Wycheproof mistakenly marks some vectors with c values outside this range as valid.
+    if (is_valid) {
+      const RSA *rsa = EVP_PKEY_get0_RSA(key.get());
+      const BIGNUM *n = RSA_get0_n(rsa);
+      bssl::UniquePtr<BIGNUM> c(BN_bin2bn(ct.data(), ct.size(), nullptr));
+      bssl::UniquePtr<BIGNUM> n_minus_one(BN_dup(n));
+      ASSERT_TRUE(c && n_minus_one);
+      ASSERT_TRUE(BN_sub_word(n_minus_one.get(), 1));
+      if (BN_is_zero(c.get()) || BN_is_one(c.get()) ||
+          BN_cmp(c.get(), n_minus_one.get()) >= 0) {
+        is_valid = false;
+      }
+    }
+
     EXPECT_EQ(ret, is_valid ? 1 : 0);
     if (is_valid) {
       out.resize(len);
@@ -1715,7 +1682,7 @@ TEST(EVPTest, ED25519PH) {
                                    pkey.get()));
 
     ASSERT_TRUE(
-        EVP_PKEY_CTX_set_signature_context(pctx, context, sizeof(context)));
+        EVP_PKEY_CTX_set1_signature_context_string(pctx, context, sizeof(context)));
     const uint8_t *sctx = NULL;
     size_t sctx_len = 0;
     ASSERT_TRUE(EVP_PKEY_CTX_get0_signature_context(pctx, &sctx, &sctx_len));
@@ -1733,7 +1700,7 @@ TEST(EVPTest, ED25519PH) {
     ASSERT_TRUE(EVP_DigestVerifyInit(md_ctx.get(), &pctx, EVP_sha512(), nullptr,
                                      pubkey.get()));
     ASSERT_TRUE(
-        EVP_PKEY_CTX_set_signature_context(pctx, context, sizeof(context)));
+        EVP_PKEY_CTX_set1_signature_context_string(pctx, context, sizeof(context)));
     ASSERT_TRUE(EVP_DigestVerifyUpdate(md_ctx.get(), &message[0], 3));
     ASSERT_TRUE(
         EVP_DigestVerifyUpdate(md_ctx.get(), &message[3], sizeof(message) - 3));
@@ -1747,7 +1714,7 @@ TEST(EVPTest, ED25519PH) {
     bssl::UniquePtr<EVP_PKEY_CTX> ctx(EVP_PKEY_CTX_new(pkey.get(), nullptr));
     ASSERT_TRUE(ctx.get());
     ASSERT_TRUE(EVP_PKEY_sign_init(ctx.get()));
-    ASSERT_TRUE(EVP_PKEY_CTX_set_signature_context(ctx.get(), context,
+    ASSERT_TRUE(EVP_PKEY_CTX_set1_signature_context_string(ctx.get(), context,
                                                    sizeof(context)));
     ASSERT_TRUE(EVP_PKEY_sign(ctx.get(), working_signature, &working_signature_len, message_sha512, sizeof(message_sha512)));
     ASSERT_EQ(working_signature_len, (size_t)ED25519_SIGNATURE_LEN);
@@ -1755,7 +1722,7 @@ TEST(EVPTest, ED25519PH) {
     ctx.reset(EVP_PKEY_CTX_new(pubkey.get(), nullptr));
     ASSERT_TRUE(ctx.get());
     ASSERT_TRUE(EVP_PKEY_verify_init(ctx.get()));
-    ASSERT_TRUE(EVP_PKEY_CTX_set_signature_context(ctx.get(), context,
+    ASSERT_TRUE(EVP_PKEY_CTX_set1_signature_context_string(ctx.get(), context,
                                                    sizeof(context)));
     ASSERT_TRUE(EVP_PKEY_verify(ctx.get(), working_signature,
                                 working_signature_len, message_sha512,
@@ -1903,7 +1870,7 @@ TEST(EVPTest, Ed25519phTestVectors) {
     ASSERT_TRUE(EVP_DigestSignInit(md_ctx.get(), &pctx, EVP_sha512(), nullptr,
                                    pkey.get()));
     ASSERT_TRUE(
-        EVP_PKEY_CTX_set_signature_context(pctx, context.data(), context.size()));
+        EVP_PKEY_CTX_set1_signature_context_string(pctx, context.data(), context.size()));
     ASSERT_TRUE(EVP_DigestSignUpdate(md_ctx.get(), message.data(), message.size()));
     ASSERT_TRUE(EVP_DigestSignFinal(md_ctx.get(), signature,
                                     &signature_len));
@@ -1913,7 +1880,7 @@ TEST(EVPTest, Ed25519phTestVectors) {
     ASSERT_TRUE(EVP_DigestVerifyInit(md_ctx.get(), &pctx, EVP_sha512(), nullptr,
                                      pubkey.get()));
     ASSERT_TRUE(
-        EVP_PKEY_CTX_set_signature_context(pctx, context.data(), context.size()));
+        EVP_PKEY_CTX_set1_signature_context_string(pctx, context.data(), context.size()));
     ASSERT_TRUE(EVP_DigestVerifyUpdate(md_ctx.get(), message.data(), message.size()));
     ASSERT_TRUE(EVP_DigestVerifyFinal(md_ctx.get(), signature,
                                       signature_len));

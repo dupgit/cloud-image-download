@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "reqwest-tracing"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>"]
 build = false
 autolib = false
@@ -82,6 +82,10 @@ opentelemetry_0_30 = [
 opentelemetry_0_31 = [
     "opentelemetry_0_31_pkg",
     "tracing-opentelemetry_0_32_pkg",
+]
+opentelemetry_0_32 = [
+    "opentelemetry_0_32_pkg",
+    "tracing-opentelemetry_0_33_pkg",
 ]
 
 [lib]
@@ -160,6 +164,11 @@ version = "0.31.0"
 optional = true
 package = "opentelemetry"
 
+[dependencies.opentelemetry_0_32_pkg]
+version = "0.32.0"
+optional = true
+package = "opentelemetry"
+
 [dependencies.reqwest]
 version = "0.13.1"
 default-features = false
@@ -230,6 +239,11 @@ version = "0.32.0"
 optional = true
 package = "tracing-opentelemetry"
 
+[dependencies.tracing-opentelemetry_0_33_pkg]
+version = "0.33.0"
+optional = true
+package = "tracing-opentelemetry"
+
 [dev-dependencies.opentelemetry_sdk_0_21]
 version = "0.21.0"
 features = ["trace"]
@@ -282,6 +296,11 @@ package = "opentelemetry_sdk"
 
 [dev-dependencies.opentelemetry_sdk_0_31]
 version = "0.31.0"
+features = ["trace"]
+package = "opentelemetry_sdk"
+
+[dev-dependencies.opentelemetry_sdk_0_32]
+version = "0.32.0"
 features = ["trace"]
 package = "opentelemetry_sdk"
 

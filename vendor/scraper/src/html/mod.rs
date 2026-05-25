@@ -5,11 +5,11 @@ use std::borrow::Cow;
 use std::fmt;
 use std::iter::FusedIterator;
 
-use ego_tree::iter::Nodes;
 use ego_tree::Tree;
+use ego_tree::iter::Nodes;
 use html5ever::serialize::SerializeOpts;
 use html5ever::tree_builder::QuirksMode;
-use html5ever::{driver, serialize, QualName};
+use html5ever::{QualName, driver, serialize};
 use selectors::matching::SelectorCaches;
 use tendril::TendrilSink;
 
@@ -159,14 +159,13 @@ impl<'a> Iterator for Select<'a, '_> {
 
     fn next(&mut self) -> Option<ElementRef<'a>> {
         for node in self.inner.by_ref() {
-            if let Some(element) = ElementRef::wrap(node) {
-                if element.parent().is_some()
-                    && self
-                        .selector
-                        .matches_with_scope_and_cache(&element, None, &mut self.caches)
-                {
-                    return Some(element);
-                }
+            if let Some(element) = ElementRef::wrap(node)
+                && element.parent().is_some()
+                && self
+                    .selector
+                    .matches_with_scope_and_cache(&element, None, &mut self.caches)
+            {
+                return Some(element);
             }
         }
         None
@@ -182,14 +181,13 @@ impl<'a> Iterator for Select<'a, '_> {
 impl DoubleEndedIterator for Select<'_, '_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         for node in self.inner.by_ref().rev() {
-            if let Some(element) = ElementRef::wrap(node) {
-                if element.parent().is_some()
-                    && self
-                        .selector
-                        .matches_with_scope_and_cache(&element, None, &mut self.caches)
-                {
-                    return Some(element);
-                }
+            if let Some(element) = ElementRef::wrap(node)
+                && element.parent().is_some()
+                && self
+                    .selector
+                    .matches_with_scope_and_cache(&element, None, &mut self.caches)
+            {
+                return Some(element);
             }
         }
         None

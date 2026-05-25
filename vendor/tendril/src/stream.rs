@@ -6,8 +6,8 @@
 
 //! Streams of tendrils.
 
-use fmt;
-use tendril::{Atomicity, NonAtomic, Tendril};
+use crate::fmt;
+use crate::{Atomicity, NonAtomic, Tendril};
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -15,8 +15,6 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
 
-#[cfg(feature = "encoding")]
-use encoding;
 #[cfg(feature = "encoding_rs")]
 use encoding_rs::{self, DecoderResult};
 use utf8;
@@ -94,8 +92,8 @@ where
                         tendril.pop_back(BUFFER_SIZE - n as u32);
                         self.process(tendril);
                         break;
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    },
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {},
                     Err(e) => return Err(e),
                 }
             }
@@ -139,7 +137,7 @@ where
     #[inline]
     pub fn new(inner_sink: Sink) -> Self {
         Utf8LossyDecoder {
-            inner_sink: inner_sink,
+            inner_sink,
             incomplete: None,
             marker: PhantomData,
         }
@@ -162,7 +160,7 @@ where
                         self.inner_sink.error("invalid byte sequence".into());
                         self.inner_sink
                             .process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
-                    }
+                    },
                 }
                 t.len() - rest.len()
             });
@@ -170,7 +168,7 @@ where
                 None => {
                     self.incomplete = Some(incomplete);
                     return;
-                }
+                },
                 Some(resume_at) => t.pop_front(resume_at as u32),
             }
         }
@@ -180,7 +178,7 @@ where
                     debug_assert!(s.as_ptr() == t.as_ptr());
                     debug_assert!(s.len() == t.len());
                     Ok(())
-                }
+                },
                 Err(utf8::DecodeError::Invalid {
                     valid_prefix,
                     invalid_sequence,
@@ -192,7 +190,7 @@ where
                         valid_prefix.len(),
                         Err(valid_prefix.len() + invalid_sequence.len()),
                     ))
-                }
+                },
                 Err(utf8::DecodeError::Incomplete {
                     valid_prefix,
                     incomplete_suffix,
@@ -200,13 +198,13 @@ where
                     debug_assert!(valid_prefix.as_ptr() == t.as_ptr());
                     debug_assert!(valid_prefix.len() <= t.len());
                     Err((valid_prefix.len(), Ok(incomplete_suffix)))
-                }
+                },
             };
             match unborrowed_result {
                 Ok(()) => {
                     unsafe { self.inner_sink.process(t.reinterpret_without_validating()) }
                     return;
-                }
+                },
                 Err((valid_len, and_then)) => {
                     if valid_len > 0 {
                         let subtendril = t.subtendril(0, valid_len as u32);
@@ -219,15 +217,15 @@ where
                         Ok(incomplete) => {
                             self.incomplete = Some(incomplete);
                             return;
-                        }
+                        },
                         Err(offset) => {
                             self.inner_sink.error("invalid byte sequence".into());
                             self.inner_sink
                                 .process(Tendril::from_slice(utf8::REPLACEMENT_CHARACTER));
                             t.pop_front(offset as u32);
-                        }
+                        },
                     }
-                }
+                },
             }
         }
     }
@@ -256,7 +254,7 @@ where
 /// and emits Unicode (`StrTendril`).
 ///
 /// This allocates new tendrils for encodings other than UTF-8.
-#[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+#[cfg(feature = "encoding_rs")]
 pub struct LossyDecoder<Sink, A = NonAtomic>
 where
     Sink: TendrilSink<fmt::UTF8, A>,
@@ -265,38 +263,23 @@ where
     inner: LossyDecoderInner<Sink, A>,
 }
 
-#[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+#[cfg(feature = "encoding_rs")]
 enum LossyDecoderInner<Sink, A>
 where
     Sink: TendrilSink<fmt::UTF8, A>,
     A: Atomicity,
 {
     Utf8(Utf8LossyDecoder<Sink, A>),
-    #[cfg(feature = "encoding")]
-    Encoding(Box<encoding::RawDecoder>, Sink),
     #[cfg(feature = "encoding_rs")]
     EncodingRs(encoding_rs::Decoder, Sink),
 }
 
-#[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+#[cfg(feature = "encoding_rs")]
 impl<Sink, A> LossyDecoder<Sink, A>
 where
     Sink: TendrilSink<fmt::UTF8, A>,
     A: Atomicity,
 {
-    /// Create a new incremental decoder using the encoding crate.
-    #[cfg(feature = "encoding")]
-    #[inline]
-    pub fn new(encoding: encoding::EncodingRef, sink: Sink) -> Self {
-        if encoding.name() == "utf-8" {
-            LossyDecoder::utf8(sink)
-        } else {
-            LossyDecoder {
-                inner: LossyDecoderInner::Encoding(encoding.raw_decoder(), sink),
-            }
-        }
-    }
-
     /// Create a new incremental decoder using the encoding_rs crate.
     #[cfg(feature = "encoding_rs")]
     #[inline]
@@ -306,6 +289,18 @@ where
         }
         Self {
             inner: LossyDecoderInner::EncodingRs(encoding.new_decoder(), sink),
+        }
+    }
+
+    /// Create a new incremental decoder using the encoding_rs crate.
+    ///
+    /// This is a more flexible version of [Self::new_encoding_rs], allowing the caller
+    /// to configure the decoder themselves.
+    #[cfg(feature = "encoding_rs")]
+    #[inline]
+    pub fn new_from_encoding_rs_decoder(decoder: encoding_rs::Decoder, sink: Sink) -> Self {
+        Self {
+            inner: LossyDecoderInner::EncodingRs(decoder, sink),
         }
     }
 
@@ -324,8 +319,6 @@ where
     pub fn inner_sink(&self) -> &Sink {
         match self.inner {
             LossyDecoderInner::Utf8(ref utf8) => &utf8.inner_sink,
-            #[cfg(feature = "encoding")]
-            LossyDecoderInner::Encoding(_, ref inner_sink) => inner_sink,
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(_, ref inner_sink) => inner_sink,
         }
@@ -335,15 +328,13 @@ where
     pub fn inner_sink_mut(&mut self) -> &mut Sink {
         match self.inner {
             LossyDecoderInner::Utf8(ref mut utf8) => &mut utf8.inner_sink,
-            #[cfg(feature = "encoding")]
-            LossyDecoderInner::Encoding(_, ref mut inner_sink) => inner_sink,
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(_, ref mut inner_sink) => inner_sink,
         }
     }
 }
 
-#[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+#[cfg(feature = "encoding_rs")]
 impl<Sink, A> TendrilSink<fmt::Bytes, A> for LossyDecoder<Sink, A>
 where
     Sink: TendrilSink<fmt::UTF8, A>,
@@ -352,34 +343,14 @@ where
     #[inline]
     fn process(&mut self, t: Tendril<fmt::Bytes, A>) {
         match self.inner {
-            LossyDecoderInner::Utf8(ref mut utf8) => return utf8.process(t),
-            #[cfg(feature = "encoding")]
-            LossyDecoderInner::Encoding(ref mut decoder, ref mut sink) => {
-                let mut out = Tendril::new();
-                let mut t = t;
-                loop {
-                    match decoder.raw_feed(&*t, &mut out) {
-                        (_, Some(err)) => {
-                            out.push_char('\u{fffd}');
-                            sink.error(err.cause);
-                            debug_assert!(err.upto >= 0);
-                            t.pop_front(err.upto as u32);
-                            // continue loop and process remainder of t
-                        }
-                        (_, None) => break,
-                    }
-                }
-                if out.len() > 0 {
-                    sink.process(out);
-                }
-            }
+            LossyDecoderInner::Utf8(ref mut utf8) => utf8.process(t),
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(ref mut decoder, ref mut sink) => {
                 if t.is_empty() {
                     return;
                 }
                 decode_to_sink(t, decoder, sink, false);
-            }
+            },
         }
     }
 
@@ -387,8 +358,6 @@ where
     fn error(&mut self, desc: Cow<'static, str>) {
         match self.inner {
             LossyDecoderInner::Utf8(ref mut utf8) => utf8.error(desc),
-            #[cfg(feature = "encoding")]
-            LossyDecoderInner::Encoding(_, ref mut sink) => sink.error(desc),
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(_, ref mut sink) => sink.error(desc),
         }
@@ -399,24 +368,12 @@ where
     #[inline]
     fn finish(self) -> Sink::Output {
         match self.inner {
-            LossyDecoderInner::Utf8(utf8) => return utf8.finish(),
-            #[cfg(feature = "encoding")]
-            LossyDecoderInner::Encoding(mut decoder, mut sink) => {
-                let mut out = Tendril::new();
-                if let Some(err) = decoder.raw_finish(&mut out) {
-                    out.push_char('\u{fffd}');
-                    sink.error(err.cause);
-                }
-                if out.len() > 0 {
-                    sink.process(out);
-                }
-                sink.finish()
-            }
+            LossyDecoderInner::Utf8(utf8) => utf8.finish(),
             #[cfg(feature = "encoding_rs")]
             LossyDecoderInner::EncodingRs(mut decoder, mut sink) => {
                 decode_to_sink(Tendril::new(), &mut decoder, &mut sink, true);
                 sink.finish()
-            }
+            },
         }
     }
 }
@@ -449,11 +406,11 @@ fn decode_to_sink<Sink, A>(
         }
         match result {
             DecoderResult::InputEmpty => return,
-            DecoderResult::OutputFull => {}
+            DecoderResult::OutputFull => {},
             DecoderResult::Malformed(_, _) => {
                 sink.error(Cow::Borrowed("invalid sequence"));
                 sink.process("\u{FFFD}".into());
-            }
+            },
         }
         t.pop_front(bytes_read as u32);
         if t.is_empty() {
@@ -465,17 +422,15 @@ fn decode_to_sink<Sink, A>(
 #[cfg(test)]
 mod test {
     use super::{TendrilSink, Utf8LossyDecoder};
-    use fmt;
+    use crate::fmt;
+    use crate::{Atomicity, NonAtomic, Tendril};
     use std::borrow::Cow;
-    use tendril::{Atomicity, NonAtomic, Tendril};
 
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     use super::LossyDecoder;
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
-    use tendril::SliceExt;
+    #[cfg(feature = "encoding_rs")]
+    use crate::SliceExt;
 
-    #[cfg(feature = "encoding")]
-    use encoding::all as enc;
     #[cfg(feature = "encoding_rs")]
     use encoding_rs as enc_rs;
 
@@ -583,7 +538,7 @@ mod test {
         check_utf8(&[b"\xEA\x99"], &["\u{fffd}"], 1);
     }
 
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     fn check_decode(
         mut decoder: LossyDecoder<Accumulate<NonAtomic>>,
         input: &[&[u8]],
@@ -602,32 +557,10 @@ mod test {
         assert_eq!(errs, errors.len());
     }
 
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     pub type Tests = &'static [(&'static [&'static [u8]], &'static str, usize)];
 
-    #[cfg(any(feature = "encoding"))]
-    const ASCII: Tests = &[
-        (&[], "", 0),
-        (&[b""], "", 0),
-        (&[b"xyz"], "xyz", 0),
-        (&[b"xy", b"", b"", b"z"], "xyz", 0),
-        (&[b"x", b"y", b"z"], "xyz", 0),
-        (&[b"\xFF"], "\u{fffd}", 1),
-        (&[b"x\xC0yz"], "x\u{fffd}yz", 1),
-        (&[b"x", b"\xC0y", b"z"], "x\u{fffd}yz", 1),
-        (&[b"x\xC0yz\xFF\xFFw"], "x\u{fffd}yz\u{fffd}\u{fffd}w", 3),
-    ];
-
-    #[cfg(feature = "encoding")]
-    #[test]
-    fn decode_ascii() {
-        for &(input, expected, errs) in ASCII {
-            let decoder = LossyDecoder::new(enc::ASCII, Accumulate::new());
-            check_decode(decoder, input, expected, errs);
-        }
-    }
-
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     const UTF_8: Tests = &[
         (&[], "", 0),
         (&[b""], "", 0),
@@ -655,15 +588,6 @@ mod test {
         (&[b"\xEA\x99"], "\u{fffd}", 1),
     ];
 
-    #[cfg(feature = "encoding")]
-    #[test]
-    fn decode_utf8() {
-        for &(input, expected, errs) in UTF_8 {
-            let decoder = LossyDecoder::new(enc::UTF_8, Accumulate::new());
-            check_decode(decoder, input, expected, errs);
-        }
-    }
-
     #[cfg(feature = "encoding_rs")]
     #[test]
     fn decode_utf8_encoding_rs() {
@@ -673,7 +597,7 @@ mod test {
         }
     }
 
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     const KOI8_U: Tests = &[
         (&[b"\xfc\xce\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0),
         (&[b"\xfc\xce", b"\xc5\xd2\xc7\xc9\xd1"], "Энергия", 0),
@@ -685,15 +609,6 @@ mod test {
         ),
     ];
 
-    #[cfg(feature = "encoding")]
-    #[test]
-    fn decode_koi8_u() {
-        for &(input, expected, errs) in KOI8_U {
-            let decoder = LossyDecoder::new(enc::KOI8_U, Accumulate::new());
-            check_decode(decoder, input, expected, errs);
-        }
-    }
-
     #[cfg(feature = "encoding_rs")]
     #[test]
     fn decode_koi8_u_encoding_rs() {
@@ -703,7 +618,7 @@ mod test {
         }
     }
 
-    #[cfg(any(feature = "encoding", feature = "encoding_rs"))]
+    #[cfg(feature = "encoding_rs")]
     const WINDOWS_949: Tests = &[
         (&[], "", 0),
         (&[b""], "", 0),
@@ -719,15 +634,6 @@ mod test {
         (&[b"\xbe", b"", b"\xc8\xb3"], "안\u{fffd}", 1),
         (&[b"\xbe\x28\xb3\xe7"], "\u{fffd}(녕", 1),
     ];
-
-    #[cfg(feature = "encoding")]
-    #[test]
-    fn decode_windows_949() {
-        for &(input, expected, errs) in WINDOWS_949 {
-            let decoder = LossyDecoder::new(enc::WINDOWS_949, Accumulate::new());
-            check_decode(decoder, input, expected, errs);
-        }
-    }
 
     #[cfg(feature = "encoding_rs")]
     #[test]

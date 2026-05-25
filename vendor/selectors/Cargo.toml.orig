@@ -1,6 +1,6 @@
 [package]
 name = "selectors"
-version = "0.33.0"
+version = "0.38.0"
 authors = ["The Servo Project Developers"]
 documentation = "https://docs.rs/selectors/"
 description = "CSS Selectors matching for Rust"
@@ -21,7 +21,7 @@ to_shmem = ["dep:to_shmem", "dep:to_shmem_derive"]
 
 [dependencies]
 bitflags = "2"
-cssparser = "0.36"
+cssparser = "0.37"
 derive_more = { version = "2", features = ["add", "add_assign"] }
 rustc-hash = "2.1.1"
 log = "0.4"

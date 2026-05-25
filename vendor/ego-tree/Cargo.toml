@@ -12,12 +12,13 @@
 [package]
 edition = "2021"
 name = "ego-tree"
-version = "0.10.0"
+version = "0.11.0"
 authors = [
     "June McEnroe <june@causal.agency>",
     "Carlo Federico Vescovo <vescovocarlofederico@gmail.com>",
 ]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -32,6 +33,9 @@ keywords = [
 ]
 license = "ISC"
 repository = "https://github.com/rust-scraper/ego-tree"
+
+[features]
+serde = ["dep:serde"]
 
 [lib]
 name = "ego_tree"
@@ -82,6 +86,3 @@ version = "1.0.209"
 
 [dev-dependencies.serde_test]
 version = "1.0.177"
-
-[features]
-serde = ["dep:serde"]

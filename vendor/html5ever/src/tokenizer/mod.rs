@@ -39,10 +39,24 @@ mod char_ref;
 mod interface;
 pub mod states;
 
+/// The result of invoking the tokenizer once.
 pub enum ProcessResult<Handle> {
+    /// The tokenizer should be re-invoked immediately.
     Continue,
+    /// The tokenizer has not finished, but it needs to wait for more
+    /// input to arrive before it can continue.
     Suspend,
+    /// The tokenizer was blocked by a `<script>`.
+    ///
+    /// This `<script>` needs to be executed before tokenization
+    /// can continue, as it might invoke `document.write`.
     Script(Handle),
+    /// The tokenizer was blocked because it found a `<meta charset>` tag.
+    ///
+    /// Such tags may force the user agent to re-parse the document with the new
+    /// encoding, but non-conformant implementations can reasonably treat
+    /// this as [Self::Continue].
+    EncodingIndicator(StrTendril),
 }
 
 fn option_push(opt_str: &mut Option<StrTendril>, c: char) {
@@ -133,6 +147,9 @@ pub struct Tokenizer<Sink> {
     /// Current tag is self-closing?
     current_tag_self_closing: Cell<bool>,
 
+    /// Current tag had duplicate attributes?
+    current_tag_had_duplicate_attributes: Cell<bool>,
+
     /// Current tag attributes.
     current_tag_attrs: RefCell<Vec<Attribute>>,
 
@@ -186,6 +203,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_tag_kind: Cell::new(StartTag),
             current_tag_name: RefCell::new(StrTendril::new()),
             current_tag_self_closing: Cell::new(false),
+            current_tag_had_duplicate_attributes: Cell::new(false),
             current_tag_attrs: RefCell::new(vec![]),
             current_attr_name: RefCell::new(StrTendril::new()),
             current_attr_value: RefCell::new(StrTendril::new()),
@@ -357,6 +375,9 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                     ProcessResult::Continue => (),
                     ProcessResult::Suspend => break,
                     ProcessResult::Script(node) => return TokenizerResult::Script(node),
+                    ProcessResult::EncodingIndicator(encoding) => {
+                        return TokenizerResult::EncodingIndicator(encoding)
+                    },
                 }
             }
         } else {
@@ -365,6 +386,9 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                     ProcessResult::Continue => (),
                     ProcessResult::Suspend => break,
                     ProcessResult::Script(node) => return TokenizerResult::Script(node),
+                    ProcessResult::EncodingIndicator(encoding) => {
+                        return TokenizerResult::EncodingIndicator(encoding)
+                    },
                 }
             }
         }
@@ -440,6 +464,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             name,
             self_closing: self.current_tag_self_closing.get(),
             attrs: std::mem::take(&mut self.current_tag_attrs.borrow_mut()),
+            had_duplicate_attributes: self.current_tag_had_duplicate_attributes.get(),
         });
 
         match self.process_token(token) {
@@ -455,6 +480,9 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             TokenSinkResult::RawData(kind) => {
                 self.state.set(states::RawData(kind));
                 ProcessResult::Continue
+            },
+            TokenSinkResult::EncodingIndicator(encoding) => {
+                ProcessResult::EncodingIndicator(encoding)
             },
         }
     }
@@ -481,6 +509,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn discard_tag(&self) {
         self.current_tag_name.borrow_mut().clear();
         self.current_tag_self_closing.set(false);
+        self.current_tag_had_duplicate_attributes.set(false);
         *self.current_tag_attrs.borrow_mut() = vec![];
     }
 
@@ -523,6 +552,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
         if dup {
             self.emit_error(Borrowed("Duplicate attribute"));
+            self.current_tag_had_duplicate_attributes.set(true);
             self.current_attr_name.borrow_mut().clear();
             self.current_attr_value.borrow_mut().clear();
         } else {
@@ -1726,7 +1756,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             match self.eof_step() {
                 ProcessResult::Continue => (),
                 ProcessResult::Suspend => break,
-                ProcessResult::Script(_) => unreachable!(),
+                ProcessResult::Script(_) | ProcessResult::EncodingIndicator(_) => unreachable!(),
             }
         }
 
@@ -2217,6 +2247,7 @@ mod test {
             name,
             self_closing: false,
             attrs: vec![],
+            had_duplicate_attributes: false,
         })
     }
 

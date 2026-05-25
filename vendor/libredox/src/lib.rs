@@ -115,6 +115,8 @@ pub mod flag {
         O_NONBLOCK, O_PATH, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY,
     };
 
+    pub use libc::{MSG_DONTROUTE, MSG_OOB, MSG_PEEK, MSG_DONTWAIT, MSG_EOR, };
+
     pub use libc::{CLOCK_MONOTONIC, CLOCK_REALTIME};
 
     pub use libc::{SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK};
@@ -828,6 +830,9 @@ pub mod protocol {
 
         // Temporary calls for getting process credentials
         GetProcCredentials = 15,
+
+        SetProcPriority = 16,
+        GetProcPriority = 17,
     }
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[repr(usize)]
@@ -880,6 +885,8 @@ pub mod protocol {
                 13 => Self::Rename,
                 14 => Self::DisableSetpgid,
                 15 => Self::GetProcCredentials,
+                16 => Self::SetProcPriority,
+                17 => Self::GetProcPriority,
                 _ => return None,
             })
         }

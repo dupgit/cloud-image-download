@@ -7,6 +7,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use markup5ever::ns;
+
 use crate::interface::Attribute;
 use crate::tendril::StrTendril;
 use crate::tokenizer::states;
@@ -18,15 +20,18 @@ pub use self::Token::{CharacterTokens, CommentToken, DoctypeToken, TagToken};
 pub use self::Token::{EOFToken, NullCharacterToken, ParseError};
 
 /// A `DOCTYPE` token.
-// FIXME: already exists in Servo DOM
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Doctype {
     pub name: Option<StrTendril>,
     pub public_id: Option<StrTendril>,
     pub system_id: Option<StrTendril>,
+    /// Indicates if this DOCTYPE token should put the document in [quirks mode].
+    ///
+    /// [quirks mode]: https://dom.spec.whatwg.org/#concept-document-quirks
     pub force_quirks: bool,
 }
 
+/// Whether the tag is a start or an end tag.
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub enum TagKind {
     StartTag,
@@ -36,10 +41,18 @@ pub enum TagKind {
 /// A tag token.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Tag {
+    /// Whether the tag is a start or an end tag.
     pub kind: TagKind,
     pub name: LocalName,
+    /// Whether the tag closes itself.
+    ///
+    /// An example of a self closing tag is `<foo />`.
     pub self_closing: bool,
     pub attrs: Vec<Attribute>,
+    /// Whether duplicate attributes were encountered during tokenization.
+    /// This is used for CSP nonce validation - elements with duplicate
+    /// attributes are not nonceable per the CSP spec.
+    pub had_duplicate_attributes: bool,
 }
 
 impl Tag {
@@ -57,42 +70,71 @@ impl Tag {
 
         self_attrs == other_attrs
     }
+
+    pub(crate) fn get_attribute(&self, name: &LocalName) -> Option<StrTendril> {
+        self.attrs
+            .iter()
+            .find(|attribute| attribute.name.ns == *ns!() && attribute.name.local == *name)
+            .map(|attribute| attribute.value.clone())
+    }
 }
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum Token {
+    /// A DOCTYPE declaration like `<!DOCTYPE html>`
     DoctypeToken(Doctype),
+    /// A opening or closing tag, like `<foo>` or `</bar>`
     TagToken(Tag),
+    /// A comment like `<!-- foo -->`.
     CommentToken(StrTendril),
+    /// A sequence of characters.
     CharacterTokens(StrTendril),
+    /// A `U+0000 NULL` character in the input.
     NullCharacterToken,
     EOFToken,
     ParseError(Cow<'static, str>),
 }
 
+/// The result of a [TokenSink] consuming a single token.
 #[derive(Debug, PartialEq)]
 #[must_use]
 pub enum TokenSinkResult<Handle> {
+    /// The tokenizer can continue parsing the input as usual.
     Continue,
+    /// The token sink has completed parsing a `<script>` tag, blocking the tokenizer
+    /// until the script is executed.
     Script(Handle),
+    /// The tokenizer should set its state to the [PLAINTEXT state](https://html.spec.whatwg.org/#plaintext-state).
     Plaintext,
+    /// The tokenizer should set its state to the given rawdata state.
     RawData(states::RawKind),
+    /// The document indicated that the given encoding should be used to parse it.
+    ///
+    /// HTML5-compatible implementations should parse the encoding label using the algorithm
+    /// described in <https://encoding.spec.whatwg.org/#concept-encoding-get>. The label
+    /// has not been validated by html5ever. Invalid or unknown encodings can be ignored.
+    ///
+    /// If the decoder is confident that the current encoding is correct then this message
+    /// can safely be ignored.
+    EncodingIndicator(StrTendril),
 }
 
 /// Types which can receive tokens from the tokenizer.
 pub trait TokenSink {
+    /// The type of a DOM node.
     type Handle;
 
     /// Process a token.
     fn process_token(&self, token: Token, line_number: u64) -> TokenSinkResult<Self::Handle>;
 
-    // Signal sink that tokenization reached the end.
+    /// Signal that tokenization reached the end of the document.
     fn end(&self) {}
 
-    /// Used in the markup declaration open state. By default, this always
+    /// Used in the [markup declaration open state]. By default, this always
     /// returns false and thus all CDATA sections are tokenized as bogus
     /// comments.
-    /// <https://html.spec.whatwg.org/multipage/#markup-declaration-open-state>
+    ///
+    /// [markup declaration open state]: https://html.spec.whatwg.org/multipage/#markup-declaration-open-state
     fn adjusted_current_node_present_but_not_in_html_namespace(&self) -> bool {
         false
     }

@@ -74,6 +74,12 @@ pub struct ParserCursor {
     last_ws_len: usize,
 }
 
+enum ParsedAttribute {
+    None,
+    Extensions(Extensions),
+    Ignored,
+}
+
 const WS_CURSOR_UNCLOSED_LINE: usize = usize::MAX;
 
 impl PartialEq for ParserCursor {
@@ -108,15 +114,16 @@ impl<'a> Parser<'a> {
 
         parser.skip_ws().map_err(|e| parser.span_error(e))?;
 
-        // Loop over all extensions attributes
+        // Loop over all document attributes
         loop {
-            let attribute = parser.extensions().map_err(|e| parser.span_error(e))?;
-
-            if attribute.is_empty() {
-                break;
+            match parser.attribute().map_err(|e| parser.span_error(e))? {
+                ParsedAttribute::None => break,
+                ParsedAttribute::Extensions(extensions) => {
+                    parser.exts |= extensions;
+                }
+                ParsedAttribute::Ignored => {}
             }
 
-            parser.exts |= attribute;
             parser.skip_ws().map_err(|e| parser.span_error(e))?;
         }
 
@@ -269,14 +276,7 @@ impl<'a> Parser<'a> {
         Ok(num_acc)
     }
 
-    fn parse_integer<T: Num>(&mut self, sign: i8) -> Result<T> {
-        let base = match () {
-            () if self.consume_str("0b") => 2,
-            () if self.consume_str("0o") => 8,
-            () if self.consume_str("0x") => 16,
-            () => 10,
-        };
-
+    fn parse_integer<T: Num>(&mut self, sign: i8, base: u8) -> Result<T> {
         let num_bytes = self.next_chars_while_len(is_int_char);
 
         if num_bytes == 0 {
@@ -337,6 +337,13 @@ impl<'a> Parser<'a> {
         };
         let sign = if is_negative { -1 } else { 1 };
 
+        let base = match () {
+            () if self.consume_str("0b") => 2,
+            () if self.consume_str("0o") => 8,
+            () if self.consume_str("0x") => 16,
+            () => 10,
+        };
+
         let num_bytes = self.next_chars_while_len(is_int_char);
 
         if self.src()[num_bytes..].starts_with(['i', 'u']) {
@@ -349,56 +356,62 @@ impl<'a> Parser<'a> {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<i8>(sign).map(ParsedInteger::I8),
+                        self.parse_integer::<i8>(sign, base).map(ParsedInteger::I8),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("i16") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<i16>(sign).map(ParsedInteger::I16),
+                        self.parse_integer::<i16>(sign, base)
+                            .map(ParsedInteger::I16),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("i32") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<i32>(sign).map(ParsedInteger::I32),
+                        self.parse_integer::<i32>(sign, base)
+                            .map(ParsedInteger::I32),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("i64") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<i64>(sign).map(ParsedInteger::I64),
+                        self.parse_integer::<i64>(sign, base)
+                            .map(ParsedInteger::I64),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("u8") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<u8>(sign).map(ParsedInteger::U8),
+                        self.parse_integer::<u8>(sign, base).map(ParsedInteger::U8),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("u16") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<u16>(sign).map(ParsedInteger::U16),
+                        self.parse_integer::<u16>(sign, base)
+                            .map(ParsedInteger::U16),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("u32") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<u32>(sign).map(ParsedInteger::U32),
+                        self.parse_integer::<u32>(sign, base)
+                            .map(ParsedInteger::U32),
                         suffix_bytes,
                     )
                 } else if self.consume_ident("u64") {
                     let suffix_bytes = self.src();
                     self.set_cursor(int_cursor);
                     (
-                        self.parse_integer::<u64>(sign).map(ParsedInteger::U64),
+                        self.parse_integer::<u64>(sign, base)
+                            .map(ParsedInteger::U64),
                         suffix_bytes,
                     )
                 } else {
@@ -407,14 +420,16 @@ impl<'a> Parser<'a> {
                         let suffix_bytes = self.src();
                         self.set_cursor(int_cursor);
                         (
-                            self.parse_integer::<i128>(sign).map(ParsedInteger::I128),
+                            self.parse_integer::<i128>(sign, base)
+                                .map(ParsedInteger::I128),
                             suffix_bytes,
                         )
                     } else if self.consume_ident("u128") {
                         let suffix_bytes = self.src();
                         self.set_cursor(int_cursor);
                         (
-                            self.parse_integer::<u128>(sign).map(ParsedInteger::U128),
+                            self.parse_integer::<u128>(sign, base)
+                                .map(ParsedInteger::U128),
                             suffix_bytes,
                         )
                     } else {
@@ -442,7 +457,7 @@ impl<'a> Parser<'a> {
             self.set_cursor(int_cursor);
         }
 
-        T::parse(self, sign)
+        T::parse(self, sign, base)
     }
 
     pub fn any_number(&mut self) -> Result<Number> {
@@ -712,17 +727,54 @@ impl<'a> Parser<'a> {
         Ok(true)
     }
 
-    /// Returns the extensions bit mask.
-    fn extensions(&mut self) -> Result<Extensions> {
+    /// Parse a document attribute at the current cursor position.
+    fn attribute(&mut self) -> Result<ParsedAttribute> {
         if !self.check_char('#') {
-            return Ok(Extensions::empty());
+            return Ok(ParsedAttribute::None);
         }
 
-        if !self.consume_all(&["#", "!", "[", "enable", "("])? {
+        if !self.consume_all(&["#", "!", "["])? {
             return Err(Error::ExpectedAttribute);
         }
 
         self.skip_ws()?;
+        if self.consume_ident("enable") {
+            self.skip_ws()?;
+            if !self.consume_str("(") {
+                return Err(Error::ExpectedAttribute);
+            }
+
+            self.skip_ws()?;
+            let extensions = self.extension_list()?;
+            self.skip_ws()?;
+
+            if self.consume_all(&[")", "]"])? {
+                Ok(ParsedAttribute::Extensions(extensions))
+            } else {
+                Err(Error::ExpectedAttributeEnd)
+            }
+        } else if self.consume_ident("type") || self.consume_ident("schema") {
+            self.skip_ws()?;
+            if !self.consume_str("=") {
+                return Err(Error::ExpectedAttribute);
+            }
+
+            self.skip_ws()?;
+            self.string()?;
+            self.skip_ws()?;
+
+            if self.consume_str("]") {
+                Ok(ParsedAttribute::Ignored)
+            } else {
+                Err(Error::ExpectedAttributeEnd)
+            }
+        } else {
+            Err(Error::ExpectedAttribute)
+        }
+    }
+
+    /// Returns the extensions bit mask.
+    fn extension_list(&mut self) -> Result<Extensions> {
         let mut extensions = Extensions::empty();
 
         loop {
@@ -747,13 +799,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.skip_ws()?;
-
-        if self.consume_all(&[")", "]"])? {
-            Ok(extensions)
-        } else {
-            Err(Error::ExpectedAttributeEnd)
-        }
+        Ok(extensions)
     }
 
     pub fn float<T: Float>(&mut self) -> Result<T> {
@@ -1423,7 +1469,7 @@ impl_num! { i8 i16 i32 i64 u8 u16 u32 u64 }
 impl_num! { i128 u128 }
 
 pub trait Integer: Sized {
-    fn parse(parser: &mut Parser, sign: i8) -> Result<Self>;
+    fn parse(parser: &mut Parser, sign: i8, base: u8) -> Result<Self>;
 
     fn try_from_parsed_integer(parsed: ParsedInteger, ron: &str) -> Result<Self>;
 }
@@ -1431,8 +1477,8 @@ pub trait Integer: Sized {
 macro_rules! impl_integer {
     ($wrap:ident($ty:ty)) => {
         impl Integer for $ty {
-            fn parse(parser: &mut Parser, sign: i8) -> Result<Self> {
-                parser.parse_integer(sign)
+            fn parse(parser: &mut Parser, sign: i8, base: u8) -> Result<Self> {
+                parser.parse_integer(sign, base)
             }
 
             fn try_from_parsed_integer(parsed: ParsedInteger, ron: &str) -> Result<Self> {
@@ -1480,9 +1526,9 @@ pub enum ParsedInteger {
 }
 
 impl Integer for ParsedInteger {
-    fn parse(parser: &mut Parser, sign: i8) -> Result<Self> {
+    fn parse(parser: &mut Parser, sign: i8, base: u8) -> Result<Self> {
         if sign < 0 {
-            let signed = parser.parse_integer::<LargeSInt>(-1)?;
+            let signed = parser.parse_integer::<LargeSInt>(-1, base)?;
 
             return if let Ok(x) = i8::try_from(signed) {
                 Ok(ParsedInteger::I8(x))
@@ -1504,7 +1550,7 @@ impl Integer for ParsedInteger {
             };
         }
 
-        let unsigned = parser.parse_integer::<LargeUInt>(1)?;
+        let unsigned = parser.parse_integer::<LargeUInt>(1, base)?;
 
         if let Ok(x) = u8::try_from(unsigned) {
             Ok(ParsedInteger::U8(x))

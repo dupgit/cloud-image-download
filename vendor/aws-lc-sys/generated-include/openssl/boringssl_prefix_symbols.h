@@ -1,23 +1,12 @@
 // Copyright (c) 2018, Google Inc.
-//
-// Permission to use, copy, modify, and/or distribute this software for any
-// purpose with or without fee is hereby granted, provided that the above
-// copyright notice and this permission notice appear in all copies.
-//
-// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-// SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-// OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-// CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+// SPDX-License-Identifier: ISC
 
 #ifndef BORINGSSL_PREFIX_SYMBOLS_H
 
 #define BORINGSSL_PREFIX_SYMBOLS_H	
 
 #ifndef BORINGSSL_PREFIX
-#define BORINGSSL_PREFIX aws_lc_0_38_0
+#define BORINGSSL_PREFIX aws_lc_0_41_0
 #endif // BORINGSSL_PREFIX
 
 
@@ -1279,6 +1268,7 @@
 #define EVP_PKEY_CTX_set0_rsa_oaep_label BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set0_rsa_oaep_label)
 #define EVP_PKEY_CTX_set1_hkdf_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set1_hkdf_key)
 #define EVP_PKEY_CTX_set1_hkdf_salt BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set1_hkdf_salt)
+#define EVP_PKEY_CTX_set1_signature_context_string BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set1_signature_context_string)
 #define EVP_PKEY_CTX_set_app_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set_app_data)
 #define EVP_PKEY_CTX_set_cb BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set_cb)
 #define EVP_PKEY_CTX_set_dh_pad BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_CTX_set_dh_pad)
@@ -1341,6 +1331,7 @@
 #define EVP_PKEY_get1_EC_KEY BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get1_EC_KEY)
 #define EVP_PKEY_get1_RSA BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get1_RSA)
 #define EVP_PKEY_get1_tls_encodedpoint BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get1_tls_encodedpoint)
+#define EVP_PKEY_get_private_seed BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get_private_seed)
 #define EVP_PKEY_get_raw_private_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get_raw_private_key)
 #define EVP_PKEY_get_raw_public_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_get_raw_public_key)
 #define EVP_PKEY_hkdf_pkey_meth BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_hkdf_pkey_meth)
@@ -1348,6 +1339,7 @@
 #define EVP_PKEY_id BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_id)
 #define EVP_PKEY_is_opaque BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_is_opaque)
 #define EVP_PKEY_kem_check_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_kem_check_key)
+#define EVP_PKEY_kem_get_type BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_kem_get_type)
 #define EVP_PKEY_kem_new_raw_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_kem_new_raw_key)
 #define EVP_PKEY_kem_new_raw_public_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_kem_new_raw_public_key)
 #define EVP_PKEY_kem_new_raw_secret_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_kem_new_raw_secret_key)
@@ -3562,8 +3554,8 @@
 #define edwards25519_scalarmulbase_alt BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, edwards25519_scalarmulbase_alt)
 #define edwards25519_scalarmuldouble BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, edwards25519_scalarmuldouble)
 #define edwards25519_scalarmuldouble_alt BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, edwards25519_scalarmuldouble_alt)
+#define evp_pkey_set0 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, evp_pkey_set0)
 #define evp_pkey_set_cb_translate BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, evp_pkey_set_cb_translate)
-#define evp_pkey_set_method BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, evp_pkey_set_method)
 #define extract_multiplier_2x20_win5 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, extract_multiplier_2x20_win5)
 #define extract_multiplier_2x30_win5 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, extract_multiplier_2x30_win5)
 #define extract_multiplier_2x40_win5 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, extract_multiplier_2x40_win5)
@@ -3877,7 +3869,15 @@
 #define mlkem_aarch64_ntt_zetas_layer67 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_aarch64_ntt_zetas_layer67)
 #define mlkem_aarch64_zetas_mulcache_native BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_aarch64_zetas_mulcache_native)
 #define mlkem_aarch64_zetas_mulcache_twisted_native BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_aarch64_zetas_mulcache_twisted_native)
+#define mlkem_compress_d10_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_compress_d10_data)
+#define mlkem_compress_d11_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_compress_d11_data)
+#define mlkem_compress_d4_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_compress_d4_data)
+#define mlkem_compress_d5_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_compress_d5_data)
 #define mlkem_ct_opt_blocker_u64 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_ct_opt_blocker_u64)
+#define mlkem_decompress_d10_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_decompress_d10_data)
+#define mlkem_decompress_d11_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_decompress_d11_data)
+#define mlkem_decompress_d4_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_decompress_d4_data)
+#define mlkem_decompress_d5_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_decompress_d5_data)
 #define mlkem_intt_asm BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_intt_asm)
 #define mlkem_invntt_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_invntt_avx2)
 #define mlkem_ntt_asm BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_ntt_asm)
@@ -3885,6 +3885,14 @@
 #define mlkem_nttfrombytes_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_nttfrombytes_avx2)
 #define mlkem_ntttobytes_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_ntttobytes_avx2)
 #define mlkem_nttunpack_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_nttunpack_avx2)
+#define mlkem_poly_compress_d10_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_compress_d10_avx2)
+#define mlkem_poly_compress_d11_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_compress_d11_avx2)
+#define mlkem_poly_compress_d4_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_compress_d4_avx2)
+#define mlkem_poly_compress_d5_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_compress_d5_avx2)
+#define mlkem_poly_decompress_d10_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_decompress_d10_avx2)
+#define mlkem_poly_decompress_d11_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_decompress_d11_avx2)
+#define mlkem_poly_decompress_d4_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_decompress_d4_avx2)
+#define mlkem_poly_decompress_d5_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_decompress_d5_avx2)
 #define mlkem_poly_mulcache_compute_asm BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_mulcache_compute_asm)
 #define mlkem_poly_mulcache_compute_avx2 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_mulcache_compute_avx2)
 #define mlkem_poly_reduce_asm BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, mlkem_poly_reduce_asm)
@@ -3959,6 +3967,7 @@
 #define poly_Rq_mul BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, poly_Rq_mul)
 #define pqdsa_asn1_meth BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, pqdsa_asn1_meth)
 #define rand_fips_library_destructor BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, rand_fips_library_destructor)
+#define rand_thread_local_state_clear_all_FOR_TESTING BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, rand_thread_local_state_clear_all_FOR_TESTING)
 #define rdrand_multiple8 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, rdrand_multiple8)
 #define rndr_multiple8 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, rndr_multiple8)
 #define rsa_asn1_meth BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, rsa_asn1_meth)
@@ -4106,6 +4115,7 @@
 #define x509V3_add_value_asn1_string BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509V3_add_value_asn1_string)
 #define x509_check_cert_time BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_check_cert_time)
 #define x509_check_issued_with_callback BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_check_issued_with_callback)
+#define x509_digest_nid_ok BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_digest_nid_ok)
 #define x509_digest_sign_algorithm BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_digest_sign_algorithm)
 #define x509_digest_verify_init BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_digest_verify_init)
 #define x509_init_signature_info BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, x509_init_signature_info)

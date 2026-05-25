@@ -10,9 +10,9 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
+edition = "2024"
 name = "scraper"
-version = "0.25.0"
+version = "0.27.0"
 authors = ["June McEnroe <june@causal.agency>"]
 build = false
 autolib = false
@@ -28,8 +28,13 @@ keywords = [
     "selector",
     "scraping",
 ]
+categories = [
+    "web-programming",
+    "text-processing",
+]
 license = "ISC"
 repository = "https://github.com/rust-scraper/scraper"
+resolver = "2"
 
 [features]
 atomic = []
@@ -37,9 +42,9 @@ default = [
     "main",
     "errors",
 ]
-deterministic = ["indexmap"]
+deterministic = ["dep:indexmap"]
 errors = []
-main = ["getopts"]
+main = ["dep:getopts"]
 serde = ["dep:serde"]
 
 [lib]
@@ -60,31 +65,31 @@ name = "fragment"
 path = "examples/fragment.rs"
 
 [dependencies.cssparser]
-version = "0.36.0"
+version = "0.37.0"
 
 [dependencies.ego-tree]
-version = "0.10.0"
+version = "0.11.0"
 
 [dependencies.getopts]
 version = "0.2.24"
 optional = true
 
 [dependencies.html5ever]
-version = "0.36.0"
+version = "0.39.0"
 
 [dependencies.indexmap]
-version = "2.12.1"
+version = "2.14.0"
 optional = true
 
 [dependencies.precomputed-hash]
 version = "0.1.1"
 
 [dependencies.selectors]
-version = "0.33.0"
+version = "0.38.0"
 
 [dependencies.serde]
 version = "1.0.228"
 optional = true
 
 [dependencies.tendril]
-version = "0.4.3"
+version = "0.5.0"

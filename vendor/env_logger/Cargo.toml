@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "env_logger"
-version = "0.11.9"
+version = "0.11.10"
 build = false
 include = [
     "build.rs",
@@ -134,13 +134,13 @@ name = "syslog_friendly_format"
 path = "examples/syslog_friendly_format.rs"
 
 [dependencies.anstream]
-version = "0.6.11"
+version = "1.0.0"
 features = ["wincon"]
 optional = true
 default-features = false
 
 [dependencies.anstyle]
-version = "1.0.6"
+version = "1.0.13"
 optional = true
 
 [dependencies.env_filter]
@@ -148,13 +148,13 @@ version = "1.0.0"
 default-features = false
 
 [dependencies.jiff]
-version = "0.2.3"
+version = "0.2.22"
 features = ["std"]
 optional = true
 default-features = false
 
 [dependencies.log]
-version = "0.4.21"
+version = "0.4.29"
 features = ["std"]
 
 [lints.clippy]

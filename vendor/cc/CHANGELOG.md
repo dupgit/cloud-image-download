@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.62](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.61...cc-v1.2.62) - 2026-05-08
+
+### Other
+
+- Regenerate target info ([#1721](https://github.com/rust-lang/cc-rs/pull/1721))
+- Allow exceptions on wasm platforms ([#1714](https://github.com/rust-lang/cc-rs/pull/1714))
+- Add relibc env ([#1710](https://github.com/rust-lang/cc-rs/pull/1710))
+- recognize sh4 architecture in parse_arch() ([#1712](https://github.com/rust-lang/cc-rs/pull/1712))
+
+## [1.2.61](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.60...cc-v1.2.61) - 2026-04-24
+
+### Other
+
+- fix `OutputKind::Capture` documentation ([#1705](https://github.com/rust-lang/cc-rs/pull/1705))
+
+## [1.2.60](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.59...cc-v1.2.60) - 2026-04-10
+
+### Fixed
+
+- *(ar)* suppress warnings from `D` modifier probe ([#1700](https://github.com/rust-lang/cc-rs/pull/1700))
+
+## [1.2.59](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.58...cc-v1.2.59) - 2026-04-03
+
+### Fixed
+
+- *(ar)* deterministic archives with `D` modifier ([#1697](https://github.com/rust-lang/cc-rs/pull/1697))
+
+### Other
+
+- Regenerate target info ([#1698](https://github.com/rust-lang/cc-rs/pull/1698))
+- Fix target abi parsing for sanitiser targets ([#1695](https://github.com/rust-lang/cc-rs/pull/1695))
+
+## [1.2.58](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.57...cc-v1.2.58) - 2026-03-27
+
+### Other
+
+- Update Compile-time Requirements to add info about clang-cl.exe ([#1693](https://github.com/rust-lang/cc-rs/pull/1693))
+
+## [1.2.57](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.56...cc-v1.2.57) - 2026-03-13
+
+### Other
+
+- Size archiver batches according to argument length not argument count ([#1689](https://github.com/rust-lang/cc-rs/pull/1689))
+- Added `Build::env` for setting environment variables of compiler invocations and other child processes ([#1656](https://github.com/rust-lang/cc-rs/pull/1656) [#1682](https://github.com/rust-lang/cc-rs/pull/1682))
+
 ## [1.2.56](https://github.com/rust-lang/cc-rs/compare/cc-v1.2.55...cc-v1.2.56) - 2026-02-13
 
 ### Other

@@ -22,7 +22,7 @@
 use std::default::Default;
 use std::{char, mem, str};
 
-use futf::{self, Codepoint, Meaning};
+use crate::futf::{self, Codepoint, Meaning};
 
 /// Implementation details.
 ///
@@ -30,7 +30,7 @@ use futf::{self, Codepoint, Meaning};
 /// a new format.
 pub mod imp {
     use std::default::Default;
-    use std::{iter, mem, slice};
+    use std::{iter, slice};
 
     /// Describes how to fix up encodings when concatenating.
     ///
@@ -55,11 +55,6 @@ pub mod imp {
         }
     }
 
-    #[inline(always)]
-    unsafe fn from_u32_unchecked(n: u32) -> char {
-        mem::transmute(n)
-    }
-
     pub struct SingleByteCharIndices<'a> {
         inner: iter::Enumerate<slice::Iter<'a, u8>>,
     }
@@ -71,7 +66,7 @@ pub mod imp {
         fn next(&mut self) -> Option<(usize, char)> {
             self.inner
                 .next()
-                .map(|(i, &b)| unsafe { (i, from_u32_unchecked(b as u32)) })
+                .map(|(i, &b)| unsafe { (i, char::from_u32_unchecked(b as u32)) })
         }
     }
 
@@ -293,30 +288,30 @@ unsafe impl Format for UTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
-        match futf::classify(buf, buf.len() - 1) {
+        matches!(
+            futf::classify(buf, buf.len() - 1),
             Some(Codepoint {
                 meaning: Meaning::Whole(_),
                 ..
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
-        match futf::classify(buf, 0) {
+        matches!(
+            futf::classify(buf, 0),
             Some(Codepoint {
                 meaning: Meaning::Whole(_),
                 ..
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     #[inline]
@@ -374,10 +369,10 @@ pub struct WTF8;
 
 #[inline]
 fn wtf8_meaningful(m: Meaning) -> bool {
-    match m {
-        Meaning::Whole(_) | Meaning::LeadSurrogate(_) | Meaning::TrailSurrogate(_) => true,
-        _ => false,
-    }
+    matches!(
+        m,
+        Meaning::Whole(_) | Meaning::LeadSurrogate(_) | Meaning::TrailSurrogate(_)
+    )
 }
 
 unsafe impl Format for WTF8 {
@@ -386,7 +381,9 @@ unsafe impl Format for WTF8 {
         let mut i = 0;
         let mut prev_lead = false;
         while i < buf.len() {
-            let codept = unwrap_or_return!(futf::classify(buf, i), false);
+            let Some(codept) = futf::classify(buf, i) else {
+                return false;
+            };
             if !wtf8_meaningful(codept.meaning) {
                 return false;
             }
@@ -403,7 +400,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_prefix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, buf.len() - 1) {
@@ -414,7 +411,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     fn validate_suffix(buf: &[u8]) -> bool {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return true;
         }
         match futf::classify(buf, 0) {
@@ -430,7 +427,7 @@ unsafe impl Format for WTF8 {
 
     #[inline]
     unsafe fn fixup(lhs: &[u8], rhs: &[u8]) -> imp::Fixup {
-        const ERR: &'static str = "WTF8: internal error";
+        const ERR: &str = "WTF8: internal error";
 
         if lhs.len() >= 3 && rhs.len() >= 3 {
             if let (

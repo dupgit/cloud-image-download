@@ -608,17 +608,17 @@ function(build_libcrypto)
   if(WIN32)
     target_link_libraries(${arg_NAME} PUBLIC ws2_32)
   endif()
-  if(NOT WIN32 AND NOT ANDROID)
-    target_link_libraries(${arg_NAME} PUBLIC pthread)
-  endif()
 
+  if(AWSLC_LINK_THREADS)
+    target_link_libraries(${arg_NAME} PUBLIC Threads::Threads)
+  endif()
   target_add_awslc_include_paths(TARGET ${arg_NAME} SCOPE PUBLIC)
 
   if(arg_SET_OUTPUT_NAME)
     set_target_properties(${arg_NAME} PROPERTIES OUTPUT_NAME "${CRYPTO_LIB_NAME}")
   endif()
 
-  if(PERFORM_SONAME_BUILD)
+  if(SET_LIB_SONAME)
     set_target_properties(${arg_NAME} PROPERTIES
       VERSION "${SOFTWARE_VERSION}"
       SOVERSION "${ABI_VERSION}")
@@ -629,30 +629,34 @@ if(FIPS_SHARED)
   # Rewrite libcrypto.so, libcrypto.dylib, or crypto.dll to inject the correct module
   # hash value. For now we support the FIPS build only on Linux, macOS, iOS, and Windows.
   if(MSVC)
-    # On Windows we use capture_hash.go to capture the computed integrity value that bcm.o prints to generate the
-    # correct value in generated_fips_shared_support.c. See FIPS.md for a full explanation of the process
-    build_libcrypto(NAME precrypto MODULE_SOURCE $<TARGET_OBJECTS:fipsmodule>)
+    # On Windows we use capture_hash.go: build crypto.dll with a placeholder
+    # hash, then run fips_empty_main.exe (which triggers the integrity check
+    # and prints the correct hash), then patch the placeholder in crypto.dll.
+    #
+    # The fips_integrity target (marked ALL) ensures the hash injection runs
+    # before 'install' copies crypto.dll. Without this, Cargo builds (which
+    # run 'cmake --build --target install') would skip the hash injection
+    # because fips_empty_main is not in crypto's dependency chain.
+    build_libcrypto(NAME crypto MODULE_SOURCE $<TARGET_OBJECTS:fipsmodule> SET_OUTPUT_NAME)
+
     add_executable(fips_empty_main fipsmodule/fips_empty_main.c)
-    target_link_libraries(fips_empty_main PUBLIC precrypto)
+    target_link_libraries(fips_empty_main PUBLIC crypto)
     target_add_awslc_include_paths(TARGET fips_empty_main SCOPE PRIVATE)
-    add_custom_command(OUTPUT generated_fips_shared_support.c
-            COMMAND ${GO_EXECUTABLE} run
-            ${AWSLC_SOURCE_DIR}/util/fipstools/capture_hash/capture_hash.go
-            -in-executable $<TARGET_FILE:fips_empty_main> > generated_fips_shared_support.c
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            DEPENDS fips_empty_main ${AWSLC_SOURCE_DIR}/util/fipstools/capture_hash/capture_hash.go
-            )
-    add_library(
-      generated_fipsmodule
 
-      OBJECT
-
-      generated_fips_shared_support.c
-      ${AWSLC_SOURCE_DIR}/crypto/fipsmodule/cpucap/cpucap.c
+    add_custom_command(
+      OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fips_hash_injected.stamp
+      COMMAND ${GO_EXECUTABLE} run
+        ${AWSLC_SOURCE_DIR}/util/fipstools/capture_hash/capture_hash.go
+        -in-executable $<TARGET_FILE:fips_empty_main>
+        -patch-dll $<TARGET_FILE:crypto>
+      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/fips_hash_injected.stamp
+      DEPENDS fips_empty_main crypto
+        ${AWSLC_SOURCE_DIR}/util/fipstools/capture_hash/capture_hash.go
+      WORKING_DIRECTORY ${AWSLC_SOURCE_DIR}
     )
-    target_add_awslc_include_paths(TARGET generated_fipsmodule SCOPE PRIVATE)
-
-    build_libcrypto(NAME crypto MODULE_SOURCE $<TARGET_OBJECTS:generated_fipsmodule> SET_OUTPUT_NAME)
+    add_custom_target(fips_integrity ALL
+      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fips_hash_injected.stamp
+    )
   else()
     # On Apple and Linux platforms inject_hash.go can parse libcrypto and inject
     # the hash directly into the final library.
@@ -695,18 +699,6 @@ if(FIPS_SHARED)
   endif()
 else()
   build_libcrypto(NAME crypto MODULE_SOURCE $<TARGET_OBJECTS:fipsmodule> SET_OUTPUT_NAME)
-endif()
-
-# CMAKE_SYSTEM_NAME is "Generic" for embedded OSes:
-# https://cmake.org/cmake/help/book/mastering-cmake/chapter/Cross%20Compiling%20With%20CMake.html#toolchain-files
-#
-# For now we assume embedded OSes do not have threads. Additionally, the Threads
-# package does not work with Android, but Android does not require any extra
-# parameters to link pthreads. Emscripten provides its own pthread implementation
-# via Web Workers and SharedArrayBuffer, configured through compiler flags.
-if(NOT CMAKE_SYSTEM_NAME MATCHES "^(Generic|Android|Emscripten)$")
-  find_package(Threads REQUIRED)
-  target_link_libraries(crypto PUBLIC Threads::Threads)
 endif()
 
 # Every target depends on crypto, so we add libcxx as a dependency here to
@@ -918,12 +910,21 @@ if(BUILD_TESTING)
 
 endif()
 
-install(TARGETS crypto
-        EXPORT crypto-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY
-          DESTINATION ${CMAKE_INSTALL_LIBDIR}
-          NAMELINK_SKIP)
+if(NOT CMAKE_VERSION VERSION_LESS "3.12")
+  install(TARGETS crypto
+          EXPORT crypto-targets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            NAMELINK_COMPONENT Development
+          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+  install(TARGETS crypto
+          EXPORT crypto-targets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 if(MSVC AND CMAKE_BUILD_TYPE_LOWER MATCHES "relwithdebinfo" AND FIPS)
   install (FILES $<TARGET_FILE_DIR:crypto>/crypto.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -947,13 +948,3 @@ install(EXPORT crypto-targets
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/crypto/cmake/${TARGET_DIR}"
     NAMESPACE AWS::
     COMPONENT Development)
-
-if(PERFORM_SONAME_BUILD)
-install(CODE "
-set(TGT lib${CRYPTO_LIB_NAME}.so.${ABI_VERSION})
-set(LNK \$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libcrypto.so)
-message(STATUS \"Creating symlink: \${LNK} → \${TGT}\")
-execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink \${TGT} \${LNK})
-"
-  COMPONENT Development)
-endif()

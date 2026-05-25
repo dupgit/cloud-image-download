@@ -14,19 +14,16 @@ use super::log_server_cert;
 /// A TLS certificate verifier that uses the system's root store and WebPKI.
 #[derive(Debug)]
 pub struct Verifier {
-    // We use a `OnceCell` so we only need
-    // to try loading native root certs once per verifier.
-    //
     // We currently keep one set of certificates per-verifier so that
-    // locking and unlocking the application will pull fresh root
-    // certificates from disk, picking up on any changes
-    // that might have been made since.
+    // recreating the verifier will pull fresh root certificates from disk,
+    // picking up on any changes that might have been made since.
     inner: Arc<WebPkiServerVerifier>,
 }
 
 impl Verifier {
     /// Creates a new verifier whose certificate validation is provided by
     /// WebPKI, using root certificates provided by the platform.
+    #[cfg_attr(docsrs, doc(cfg(all())))]
     pub fn new(crypto_provider: Arc<CryptoProvider>) -> Result<Self, TlsError> {
         Self::new_inner([], None, crypto_provider)
     }
@@ -34,6 +31,7 @@ impl Verifier {
     /// Creates a new verifier whose certificate validation is provided by
     /// WebPKI, using root certificates provided by the platform and augmented by
     /// the provided extra root certificates.
+    #[cfg_attr(docsrs, doc(cfg(not(target_os = "android"))))]
     pub fn new_with_extra_roots(
         extra_roots: impl IntoIterator<Item = pki_types::CertificateDer<'static>>,
         crypto_provider: Arc<CryptoProvider>,
@@ -130,6 +128,7 @@ impl Verifier {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(all())))]
 impl ServerCertVerifier for Verifier {
     fn verify_server_cert(
         &self,

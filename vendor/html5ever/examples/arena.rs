@@ -55,6 +55,7 @@ pub struct Node<'arena> {
 }
 
 /// HTML node data which can be an element, a comment, a string, a DOCTYPE, etc...
+#[derive(Clone)]
 pub enum NodeData<'arena> {
     Document,
     Doctype {
@@ -352,5 +353,33 @@ fn main() {
     io::stdin().read_to_end(&mut bytes).unwrap();
 
     let arena = typed_arena::Arena::new();
-    html5ever_parse_slice_into_arena(&bytes, &arena);
+    let dom = html5ever_parse_slice_into_arena(&bytes, &arena);
+
+    // Print the DOM structure
+    print_node(dom, 0);
+}
+
+fn print_node<'arena>(node: &Node<'arena>, depth: usize) {
+    let indent = "  ".repeat(depth);
+
+    match &node.data {
+        NodeData::Document => println!("{}Document", indent),
+        NodeData::Doctype { name, .. } => println!("{}<!DOCTYPE {}>", indent, name),
+        NodeData::Text { contents } => {
+            let text = contents.borrow();
+            if !text.trim().is_empty() {
+                println!("{}\"{}\"", indent, text.trim());
+            }
+        },
+        NodeData::Comment { contents } => println!("{}<!-- {} -->", indent, contents),
+        NodeData::Element { name, .. } => println!("{}<{}>", indent, name.local),
+        NodeData::ProcessingInstruction { target, .. } => println!("{}<?{}>", indent, target),
+    }
+
+    // Print all children
+    let mut child = node.first_child.get();
+    while let Some(current_child) = child {
+        print_node(current_child, depth + 1);
+        child = current_child.next_sibling.get();
+    }
 }

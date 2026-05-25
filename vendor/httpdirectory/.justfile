@@ -17,7 +17,7 @@ alias b := bench
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
-    cargo install cargo-release cargo-sbom cargo-tarpaulin cargo-nextest typos-cli conventional_commits_linter
+    cargo install cargo-release cargo-sbom cargo-tarpaulin cargo-nextest typos-cli conventional_commits_linter cargo-msrv cargo-llvm-cov cargo-crap
 
 # Linting commits from latest tag
 check-commits:
@@ -45,11 +45,16 @@ bump patch: check-typos check-commits
     cargo test --release --features test-output,test-helpers
     cargo doc --no-deps
 
-    # Generetaing a Software Bills of Materials in SPDX∘format (sorting will reduce the diff size and allow one to figure out what has really changed)
+    # Getting coverage information with cargo-llvm-cov and saving it for later use
+    # with cargo-crap: `just crap`
+    cargo llvm-cov --lcov --output-path lcov.info --features test-output,test-helpers
+    cargo crap --lcov lcov.info --path src/ --format json --output baseline.json
+
+    # Generetaing a Software Bills of Materials in SPDX format (sorting will reduce the diff size and allow one to figure out what has really changed)
     cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{ name }}.sbom.spdx.json
 
     # Creating the release
-    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json
+    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json baseline.json
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
 
@@ -78,6 +83,14 @@ publish: git-publish rust-publish
 coverage:
     cargo tarpaulin --frozen --exclude-files benches/*.rs -o Html --features test-helpers
     open tarpaulin-report.html
+
+# Runs cargo-crap to get the CRAP score of each functions
+crap:
+    # Running coverage report with llvm-cov
+    cargo llvm-cov --lcov --output-path lcov.info --features test-output,test-helpers
+
+    # Running crap with coverage information
+    cargo crap --lcov lcov.info --path src/ --baseline baseline.json --fail-regression`
 
 # Runs benches (use module name in benches/ as bench_name)
 bench bench_name='integration_bench':

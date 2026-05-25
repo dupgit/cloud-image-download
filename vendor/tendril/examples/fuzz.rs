@@ -8,18 +8,16 @@
 
 #![deny(warnings)]
 
-extern crate rand;
-extern crate tendril;
-
 use std::borrow::ToOwned;
 
-use rand::distributions::{IndependentSample, Range};
+use rand::distr::uniform::Uniform as Range;
+use rand::distr::Distribution;
 use rand::Rng;
 use tendril::StrTendril;
 
 fn fuzz() {
-    let mut rng = rand::thread_rng();
-    let capacity = Range::new(0u32, 1 << 14).ind_sample(&mut rng);
+    let mut rng = rand::rng();
+    let capacity = Range::new(0u32, 1 << 14).unwrap().sample(&mut rng);
     let mut buf_string = String::with_capacity(capacity as usize);
     let mut buf_tendril = StrTendril::with_capacity(capacity);
     let mut string_slices = vec![];
@@ -31,37 +29,37 @@ fn fuzz() {
             buf_tendril.clear();
         }
 
-        let dist_action = Range::new(0, 100);
-        match dist_action.ind_sample(&mut rng) {
+        let dist_action = Range::new(0, 100).unwrap();
+        match dist_action.sample(&mut rng) {
             0..=15 => {
                 let (start, end) = random_slice(&mut rng, TEXT);
                 let snip = &TEXT[start..end];
                 buf_string.push_str(snip);
                 buf_tendril.push_slice(snip);
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             16..=31 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 let snip = &buf_string[start..end].to_owned();
-                buf_string.push_str(&snip);
-                buf_tendril.push_slice(&snip);
+                buf_string.push_str(snip);
+                buf_tendril.push_slice(snip);
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             32..=47 => {
                 let lenstr = format!("[length = {}]", buf_tendril.len());
                 buf_string.push_str(&lenstr);
                 buf_tendril.push_slice(&lenstr);
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             48..=63 => {
                 let n = random_boundary(&mut rng, &buf_string);
                 buf_tendril.pop_front(n as u32);
                 buf_string = buf_string[n..].to_owned();
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             64..=79 => {
                 let new_len = random_boundary(&mut rng, &buf_string);
@@ -69,27 +67,27 @@ fn fuzz() {
                 buf_string.truncate(new_len);
                 buf_tendril.pop_back(n as u32);
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             80..=90 => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
                 buf_string = buf_string[start..end].to_owned();
                 buf_tendril = buf_tendril.subtendril(start as u32, (end - start) as u32);
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             91..=96 => {
-                let c = rng.gen();
+                let c = rng.random();
                 buf_string.push(c);
                 assert!(buf_tendril.try_push_char(c).is_ok());
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             97 => {
                 buf_string.truncate(0);
                 buf_tendril.clear();
                 assert_eq!(&*buf_string, &*buf_tendril);
-            }
+            },
 
             _ => {
                 let (start, end) = random_slice(&mut rng, &buf_string);
@@ -100,14 +98,14 @@ fn fuzz() {
                     .iter()
                     .zip(tendril_slices.iter())
                     .all(|(s, t)| **s == **t));
-            }
+            },
         }
     }
 }
 
 fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
     loop {
-        let i = Range::new(0, text.len() + 1).ind_sample(rng);
+        let i = Range::new(0, text.len() + 1).unwrap().sample(rng);
         if text.is_char_boundary(i) {
             return i;
         }
@@ -116,8 +114,8 @@ fn random_boundary<R: Rng>(rng: &mut R, text: &str) -> usize {
 
 fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     loop {
-        let start = Range::new(0, text.len() + 1).ind_sample(rng);
-        let end = Range::new(start, text.len() + 1).ind_sample(rng);
+        let start = Range::new(0, text.len() + 1).unwrap().sample(rng);
+        let end = Range::new(start, text.len() + 1).unwrap().sample(rng);
         if !text.is_char_boundary(start) {
             continue;
         }
@@ -128,8 +126,7 @@ fn random_slice<R: Rng>(rng: &mut R, text: &str) -> (usize, usize) {
     }
 }
 
-static TEXT: &'static str =
-    "It was from the artists and poets that the pertinent answers came, and I \
+static TEXT: &str = "It was from the artists and poets that the pertinent answers came, and I \
      know that panic would have broken loose had they been able to compare notes. \
      As it was, lacking their original letters, I half suspected the compiler of \
      having asked leading questions, or of having edited the correspondence in \

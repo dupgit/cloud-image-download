@@ -62,8 +62,8 @@ pub fn assert_cert_error_eq<E: StdError + PartialEq + 'static>(
 /// we know the test certificates are valid. This must be updated if the mock certificates
 /// are regenerated.
 pub(crate) fn verification_time() -> pki_types::UnixTime {
-    // Wed, 13 August 2025 19:31:53 UTC
-    pki_types::UnixTime::since_unix_epoch(Duration::from_secs(1_755_113_506))
+    // Wed, 8 April 2026 12:03 UTC
+    pki_types::UnixTime::since_unix_epoch(Duration::from_secs(1_775_649_786))
 }
 
 fn test_provider() -> Arc<CryptoProvider> {

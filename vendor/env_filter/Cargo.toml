@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "env_filter"
-version = "1.0.0"
+version = "1.0.1"
 build = false
 include = [
     "build.rs",
@@ -90,11 +90,11 @@ name = "env_filter"
 path = "src/lib.rs"
 
 [dependencies.log]
-version = "0.4.8"
+version = "0.4.29"
 features = ["std"]
 
 [dependencies.regex]
-version = "1.0.3"
+version = "1.12.3"
 features = [
     "std",
     "perf",
@@ -103,7 +103,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.snapbox]
-version = "0.6"
+version = "1.0"
 
 [lints.clippy]
 bool_assert_comparison = "allow"

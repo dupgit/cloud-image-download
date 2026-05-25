@@ -15,16 +15,15 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::atomic::{self, AtomicUsize};
-use std::{hash, io, mem, ptr, str, u32};
+use std::{hash, io, mem, ptr, str};
 
-#[cfg(feature = "encoding")]
-use encoding::{self, DecoderTrap, EncoderTrap, EncodingRef};
-
-use buf32::{self, Buf32};
-use fmt::imp::Fixup;
-use fmt::{self, Slice};
-use util::{copy_and_advance, copy_lifetime, copy_lifetime_mut, unsafe_slice, unsafe_slice_mut};
-use OFLOW;
+use crate::buf32::{self, Buf32};
+use crate::fmt::imp::Fixup;
+use crate::fmt::{self, Slice, ASCII, UTF8};
+use crate::util::{
+    copy_and_advance, copy_lifetime, copy_lifetime_mut, unsafe_slice, unsafe_slice_mut,
+};
+use crate::OFLOW;
 
 const MAX_INLINE_LEN: usize = 8;
 const MAX_INLINE_TAG: usize = 0xF;
@@ -464,10 +463,19 @@ where
     fn eq(&self, other: &Self) -> bool {
         self.as_byte_slice() == other.as_byte_slice()
     }
+}
 
+impl<A: Atomicity> PartialEq<str> for Tendril<ASCII, A> {
     #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        self.as_byte_slice() != other.as_byte_slice()
+    fn eq(&self, other: &str) -> bool {
+        self.as_byte_slice() == other.as_bytes()
+    }
+}
+
+impl<A: Atomicity> PartialEq<str> for Tendril<UTF8, A> {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_byte_slice() == other.as_bytes()
     }
 }
 
@@ -960,9 +968,7 @@ where
         } else {
             self.make_owned_with_capacity(new_len);
             let (owned, _, _) = self.assume_buf();
-            let mut dest = owned
-                .data_ptr()
-                .offset((owned.len as usize - drop_left) as isize);
+            let mut dest = owned.data_ptr().add(owned.len as usize - drop_left);
             copy_and_advance(
                 &mut dest,
                 unsafe_slice(&insert_bytes, 0, insert_len as usize),
@@ -1087,7 +1093,7 @@ where
             Buf32 {
                 ptr: header,
                 len: offset + self.len32(),
-                cap: cap,
+                cap,
             },
             shared,
             offset,
@@ -1144,7 +1150,7 @@ where
     }
 
     #[inline]
-    fn as_byte_slice<'a>(&'a self) -> &'a [u8] {
+    fn as_byte_slice(&self) -> &[u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &[],
@@ -1155,7 +1161,7 @@ where
                         self,
                         unsafe_slice(buf.data(), offset as usize, self.len32() as usize),
                     )
-                }
+                },
             }
         }
     }
@@ -1163,7 +1169,7 @@ where
     // There's no need to worry about locking on an atomic Tendril, because it makes it unique as
     // soon as you do that.
     #[inline]
-    fn as_mut_byte_slice<'a>(&'a mut self) -> &'a mut [u8] {
+    fn as_mut_byte_slice(&mut self) -> &mut [u8] {
         unsafe {
             match self.ptr.get().get() {
                 EMPTY_TAG => &mut [],
@@ -1173,7 +1179,7 @@ where
                     let (mut buf, _, offset) = self.assume_buf();
                     let len = self.len32() as usize;
                     copy_lifetime_mut(self, unsafe_slice_mut(buf.data_mut(), offset as usize, len))
-                }
+                },
             }
         }
     }
@@ -1283,7 +1289,7 @@ where
 {
     /// Remove and return the first character, if any.
     #[inline]
-    pub fn pop_front_char<'a>(&'a mut self) -> Option<char> {
+    pub fn pop_front_char(&mut self) -> Option<char> {
         unsafe {
             let next_char; // first char in iterator
             let mut skip = 0; // number of bytes to skip, or 0 to clear
@@ -1301,10 +1307,10 @@ where
                         if let Some((n, _)) = iter.next() {
                             skip = n as u32;
                         }
-                    }
+                    },
                     None => {
                         next_char = None;
-                    }
+                    },
                 }
             }
 
@@ -1323,7 +1329,7 @@ where
     ///
     /// Returns `None` on an empty string.
     #[inline]
-    pub fn pop_front_char_run<'a, C, R>(&'a mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
+    pub fn pop_front_char_run<C, R>(&mut self, mut classify: C) -> Option<(Tendril<F, A>, R)>
     where
         C: FnMut(char) -> R,
         R: PartialEq,
@@ -1331,9 +1337,9 @@ where
         let (class, first_mismatch);
         {
             let mut chars = unsafe { F::char_indices(self.as_byte_slice()) };
-            let (_, first) = unwrap_or_return!(chars.next(), None);
+            let (_, first) = chars.next()?;
             class = classify(first);
-            first_mismatch = chars.find(|&(_, ch)| &classify(ch) != &class);
+            first_mismatch = chars.find(|&(_, ch)| classify(ch) != class);
         }
 
         match first_mismatch {
@@ -1346,7 +1352,7 @@ where
                 let t = self.clone();
                 self.clear();
                 Some((t, class))
-            }
+            },
         }
     }
 
@@ -1400,13 +1406,13 @@ where
                 Ok(0) => {
                     ret = Ok(len - start_len);
                     break;
-                }
+                },
                 Ok(n) => len += n,
-                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {},
                 Err(e) => {
                     ret = Err(e);
                     break;
-                }
+                },
             }
         }
 
@@ -1438,47 +1444,11 @@ where
     }
 }
 
-#[cfg(feature = "encoding")]
-impl<A> encoding::ByteWriter for Tendril<fmt::Bytes, A>
-where
-    A: Atomicity,
-{
-    #[inline]
-    fn write_byte(&mut self, b: u8) {
-        self.push_slice(&[b]);
-    }
-
-    #[inline]
-    fn write_bytes(&mut self, v: &[u8]) {
-        self.push_slice(v);
-    }
-
-    #[inline]
-    fn writer_hint(&mut self, additional: usize) {
-        self.reserve(::std::cmp::min(u32::MAX as usize, additional) as u32);
-    }
-}
-
 impl<F, A> Tendril<F, A>
 where
     A: Atomicity,
     F: fmt::SliceFormat<Slice = [u8]>,
 {
-    /// Decode from some character encoding into UTF-8.
-    ///
-    /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
-    /// for more information.
-    #[inline]
-    #[cfg(feature = "encoding")]
-    pub fn decode(
-        &self,
-        encoding: EncodingRef,
-        trap: DecoderTrap,
-    ) -> Result<Tendril<fmt::UTF8, A>, ::std::borrow::Cow<'static, str>> {
-        let mut ret = Tendril::new();
-        encoding.decode_to(&*self, trap, &mut ret).map(|_| ret)
-    }
-
     /// Push "uninitialized bytes" onto the end.
     ///
     /// Really, this grows the tendril without writing anything to the new area.
@@ -1529,46 +1499,10 @@ where
     }
 }
 
-#[cfg(feature = "encoding")]
-impl<A> encoding::StringWriter for Tendril<fmt::UTF8, A>
-where
-    A: Atomicity,
-{
-    #[inline]
-    fn write_char(&mut self, c: char) {
-        self.push_char(c);
-    }
-
-    #[inline]
-    fn write_str(&mut self, s: &str) {
-        self.push_slice(s);
-    }
-
-    #[inline]
-    fn writer_hint(&mut self, additional: usize) {
-        self.reserve(::std::cmp::min(u32::MAX as usize, additional) as u32);
-    }
-}
-
 impl<A> Tendril<fmt::UTF8, A>
 where
     A: Atomicity,
 {
-    /// Encode from UTF-8 into some other character encoding.
-    ///
-    /// See the [rust-encoding docs](https://lifthrasiir.github.io/rust-encoding/encoding/)
-    /// for more information.
-    #[inline]
-    #[cfg(feature = "encoding")]
-    pub fn encode(
-        &self,
-        encoding: EncodingRef,
-        trap: EncoderTrap,
-    ) -> Result<Tendril<fmt::Bytes, A>, ::std::borrow::Cow<'static, str>> {
-        let mut ret = Tendril::new();
-        encoding.encode_to(&*self, trap, &mut ret).map(|_| ret)
-    }
-
     /// Push a character onto the end.
     #[inline]
     pub fn push_char(&mut self, c: char) {
@@ -1603,7 +1537,7 @@ macro_rules! format_tendril {
     ($($arg:tt)*) => ($crate::StrTendril::format(format_args!($($arg)*)))
 }
 
-impl<'a, F, A> From<&'a F::Slice> for Tendril<F, A>
+impl<F, A> From<&F::Slice> for Tendril<F, A>
 where
     F: fmt::SliceFormat,
     A: Atomicity,
@@ -1631,7 +1565,7 @@ where
 {
     #[inline]
     fn as_ref(&self) -> &F::Slice {
-        &**self
+        self
     }
 }
 
@@ -1655,16 +1589,12 @@ where
     }
 }
 
-#[cfg(all(test, feature = "bench"))]
-#[path = "bench.rs"]
-mod bench;
-
 #[cfg(test)]
 mod test {
     use super::{
         Atomic, ByteTendril, Header, NonAtomic, ReadExt, SendTendril, SliceExt, StrTendril, Tendril,
     };
-    use fmt;
+    use crate::fmt;
     use std::iter;
     use std::thread;
 
@@ -1701,8 +1631,9 @@ mod test {
         assert_eq!(correct, mem::size_of::<ByteTendril>());
         assert_eq!(correct, mem::size_of::<StrTendril>());
 
-        assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
-        assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
+        // This is no longer true. See https://github.com/servo/tendril/issues/66
+        // assert_eq!(correct, mem::size_of::<Option<ByteTendril>>());
+        // assert_eq!(correct, mem::size_of::<Option<StrTendril>>());
 
         assert_eq!(
             mem::size_of::<*const ()>() * 2,
@@ -1998,7 +1929,7 @@ mod test {
                     let (rt, rc) = res.unwrap();
                     assert_eq!(es, &*rt);
                     assert_eq!(ec, rc);
-                }
+                },
             }
         }
     }
@@ -2053,59 +1984,6 @@ mod test {
         t.push_char('\u{1f4a9}');
         assert_eq!("xyzoő\u{a66e}\u{1f4a9}", &*t);
         assert_eq!(t.len(), 13);
-    }
-
-    #[test]
-    #[cfg(feature = "encoding")]
-    fn encode() {
-        use encoding::{all, EncoderTrap};
-
-        let t = "안녕하세요 러스트".to_tendril();
-        assert_eq!(
-            b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae",
-            &*t.encode(all::WINDOWS_949, EncoderTrap::Strict).unwrap()
-        );
-
-        let t = "Энергия пробуждения ия-я-я! \u{a66e}".to_tendril();
-        assert_eq!(
-            b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
-                     \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21 ?",
-            &*t.encode(all::KOI8_U, EncoderTrap::Replace).unwrap()
-        );
-
-        let t = "\u{1f4a9}".to_tendril();
-        assert!(t.encode(all::WINDOWS_1252, EncoderTrap::Strict).is_err());
-    }
-
-    #[test]
-    #[cfg(feature = "encoding")]
-    fn decode() {
-        use encoding::{all, DecoderTrap};
-
-        let t = b"\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\
-                  \xbf\xe4\x20\xb7\xaf\xbd\xba\xc6\xae"
-            .to_tendril();
-        assert_eq!(
-            "안녕하세요 러스트",
-            &*t.decode(all::WINDOWS_949, DecoderTrap::Strict).unwrap()
-        );
-
-        let t = b"\xfc\xce\xc5\xd2\xc7\xc9\xd1 \xd0\xd2\xcf\xc2\xd5\xd6\xc4\xc5\xce\
-                  \xc9\xd1 \xc9\xd1\x2d\xd1\x2d\xd1\x21"
-            .to_tendril();
-        assert_eq!(
-            "Энергия пробуждения ия-я-я!",
-            &*t.decode(all::KOI8_U, DecoderTrap::Replace).unwrap()
-        );
-
-        let t = b"x \xff y".to_tendril();
-        assert!(t.decode(all::UTF_8, DecoderTrap::Strict).is_err());
-
-        let t = b"x \xff y".to_tendril();
-        assert_eq!(
-            "x \u{fffd} y",
-            &*t.decode(all::UTF_8, DecoderTrap::Replace).unwrap()
-        );
     }
 
     #[test]
@@ -2282,7 +2160,7 @@ mod test {
 
         // Tendril<F>
         let mut t = "Hello".to_tendril();
-        t.extend(None::<&Tendril<_>>.into_iter());
+        t.extend(None::<&Tendril<_>>);
         assert_eq!("Hello", &*t);
         t.extend(&[", ".to_tendril(), "world".to_tendril(), "!".to_tendril()]);
         assert_eq!("Hello, world!", &*t);
@@ -2300,26 +2178,26 @@ mod test {
 
         // &str
         let mut t = "Hello".to_tendril();
-        t.extend(None::<&str>.into_iter());
+        t.extend(None::<&str>);
         assert_eq!("Hello", &*t);
-        t.extend([", ", "world", "!"].iter().map(|&s| s));
+        t.extend([", ", "world", "!"].iter().copied());
         assert_eq!("Hello, world!", &*t);
         assert_eq!(
             "Hello, world!",
             &*["Hello", ", ", "world", "!"]
                 .iter()
-                .map(|&s| s)
+                .copied()
                 .collect::<StrTendril>()
         );
 
         // &[u8]
         let mut t = b"Hello".to_tendril();
-        t.extend(None::<&[u8]>.into_iter());
+        t.extend(None::<&[u8]>);
         assert_eq!(b"Hello", &*t);
         t.extend(
             [b", ".as_ref(), b"world".as_ref(), b"!".as_ref()]
                 .iter()
-                .map(|&s| s),
+                .copied(),
         );
         assert_eq!(b"Hello, world!", &*t);
         assert_eq!(
@@ -2331,7 +2209,7 @@ mod test {
                 b"!".as_ref()
             ]
             .iter()
-            .map(|&s| s)
+            .copied()
             .collect::<ByteTendril>()
         );
 
@@ -2341,21 +2219,24 @@ mod test {
         let bytes_expected = bytes.to_tendril();
 
         // char
-        assert_eq!(string_expected, string.chars().collect());
+        assert_eq!(string_expected, string.chars().collect::<Tendril<_>>());
         let mut tendril = StrTendril::new();
         tendril.extend(string.chars());
         assert_eq!(string_expected, tendril);
 
         // &u8
-        assert_eq!(bytes_expected, bytes.iter().collect());
+        assert_eq!(bytes_expected, bytes.iter().collect::<Tendril<_>>());
         let mut tendril = ByteTendril::new();
         tendril.extend(bytes);
         assert_eq!(bytes_expected, tendril);
 
         // u8
-        assert_eq!(bytes_expected, bytes.iter().map(|&b| b).collect());
+        assert_eq!(
+            bytes_expected,
+            bytes.iter().copied().collect::<Tendril<_>>()
+        );
         let mut tendril = ByteTendril::new();
-        tendril.extend(bytes.iter().map(|&b| b));
+        tendril.extend(bytes.iter().copied());
         assert_eq!(bytes_expected, tendril);
     }
 

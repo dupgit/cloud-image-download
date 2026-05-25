@@ -26,8 +26,7 @@ jobs:
           override: true
       - name: Generate the minimum version lockfile
         run: |
-          cargo update -Z minimal-versions
-          cargo update -Z direct-minimal-versions
+          cargo update -Z minimal-versions -Z direct-minimal-versions
           mv Cargo.lock Cargo.lock.min
       - name: Generate the current version lockfile
         run: cargo update
@@ -48,6 +47,9 @@ jobs:
       matrix:
         rust: [1.64.0, stable, nightly]
         lock: ["Cargo.lock", "Cargo.lock.min"]
+        exclude:
+          - rust: 1.64.0
+            lock: "Cargo.lock"
 
     steps:
       - uses: actions/checkout@v4
@@ -68,16 +70,6 @@ jobs:
           components: clippy
           override: true
       - uses: taiki-e/install-action@cargo-hack
-      - name: Downgrade dependencies to MSRV 1.64
-        run: |
-          cargo update -p serde_bytes --precise 0.11.16
-          cargo update -p indexmap --precise 2.5.0
-          cargo update -p once_cell --precise 1.20.3
-          cargo update -p quote --precise 1.0.41
-          cargo update -p syn$(perl -ne 'm/syn (2\.\d+\.\d+)/ && print "\@$1\n"' Cargo.lock) --precise 2.0.106
-          cargo update -p typetag --precise 0.2.20
-          cargo update -p erased-serde --precise 0.4.8
-        if: ${{ matrix.rust == '1.64.0' }}
       - name: Check
         run: |
           cargo hack check --feature-powerset --no-dev-deps

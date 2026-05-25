@@ -4,9 +4,9 @@ use std::fmt::{self, Debug};
 use std::iter::FusedIterator;
 use std::ops::Deref;
 
-use ego_tree::iter::{Edge, Traverse};
 use ego_tree::NodeRef;
-use html5ever::serialize::{serialize, SerializeOpts, TraversalScope};
+use ego_tree::iter::{Edge, Traverse};
+use html5ever::serialize::{SerializeOpts, TraversalScope, serialize};
 use selectors::matching::SelectorCaches;
 
 use crate::node::Element;
@@ -97,7 +97,7 @@ impl<'a> ElementRef<'a> {
     /// let children = fragment.root_element().child_elements().map(|element| element.value().name()).collect::<Vec<_>>();
     /// assert_eq!(children, ["span", "a"]);
     /// ```
-    pub fn child_elements(&self) -> impl Iterator<Item = ElementRef<'a>> {
+    pub fn child_elements(&self) -> impl Iterator<Item = ElementRef<'a>> + use<'a> {
         self.children().filter_map(ElementRef::wrap)
     }
 
@@ -112,7 +112,7 @@ impl<'a> ElementRef<'a> {
     /// let descendants = fragment.root_element().descendent_elements().map(|element| element.value().name()).collect::<Vec<_>>();
     /// assert_eq!(descendants, ["html", "span", "b", "a", "i"]);
     /// ```
-    pub fn descendent_elements(&self) -> impl Iterator<Item = ElementRef<'a>> {
+    pub fn descendent_elements(&self) -> impl Iterator<Item = ElementRef<'a>> + use<'a> {
         self.descendants().filter_map(ElementRef::wrap)
     }
 }
@@ -165,16 +165,15 @@ impl<'a> Iterator for Select<'a, '_> {
 
     fn next(&mut self) -> Option<ElementRef<'a>> {
         for edge in &mut self.inner {
-            if let Edge::Open(node) = edge {
-                if let Some(element) = ElementRef::wrap(node) {
-                    if self.selector.matches_with_scope_and_cache(
-                        &element,
-                        Some(self.scope),
-                        &mut self.caches,
-                    ) {
-                        return Some(element);
-                    }
-                }
+            if let Edge::Open(node) = edge
+                && let Some(element) = ElementRef::wrap(node)
+                && self.selector.matches_with_scope_and_cache(
+                    &element,
+                    Some(self.scope),
+                    &mut self.caches,
+                )
+            {
+                return Some(element);
             }
         }
         None
@@ -194,10 +193,10 @@ impl<'a> Iterator for Text<'a> {
 
     fn next(&mut self) -> Option<&'a str> {
         for edge in &mut self.inner {
-            if let Edge::Open(node) = edge {
-                if let Node::Text(ref text) = node.value() {
-                    return Some(&**text);
-                }
+            if let Edge::Open(node) = edge
+                && let Node::Text(text) = node.value()
+            {
+                return Some(&**text);
             }
         }
         None

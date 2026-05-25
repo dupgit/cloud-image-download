@@ -75,6 +75,77 @@ fn has_children() {
 }
 
 #[test]
+fn for_each_next_sibling() {
+    let mut tree = tree!(1 => { 2, 3, 4, 5, 6 });
+    let mut root = tree.root_mut();
+    let mut c = root.first_child().unwrap();
+
+    c.for_each_next_sibling(|n| {
+        *n.value() += 1;
+    });
+
+    let res = tree!(1 => { 2, 4, 5, 6, 7 });
+
+    assert_eq!(tree, res);
+}
+
+#[test]
+fn for_each_prev_sibling() {
+    let mut tree = tree!(1 => { 2, 3, 4, 5, 6 });
+    let mut root = tree.root_mut();
+    let mut c = root.last_child().unwrap();
+
+    c.for_each_prev_sibling(|n| {
+        *n.value() += 1;
+    });
+
+    let res = tree!(1 => { 3, 4, 5, 6, 6 });
+
+    assert_eq!(tree, res);
+}
+
+#[test]
+fn for_each_sibling() {
+    let rt = 2;
+    let mut tree = tree!(rt => { 2, 3, 4, 5, 6 });
+    let mut root = tree.root_mut();
+    let mut c = root.last_child().unwrap();
+
+    c.for_each_sibling(|n| {
+        let v = n.parent().map(|mut p| *p.value()).unwrap();
+        *n.value() += v;
+    });
+
+    let res = tree!(rt => { 4, 5, 6, 7, 8 });
+
+    assert_eq!(tree, res);
+}
+
+#[test]
+fn for_each_child() {
+    let mut tree = tree!(1 => { 2, 3, 4, 5, 6 });
+    let mut root = tree.root_mut();
+    root.for_each_child(|n| *n.value() += 1);
+
+    assert_eq!(*root.value(), 1);
+
+    let res = tree!(1 => { 3, 4, 5, 6, 7 });
+
+    assert_eq!(tree, res);
+}
+
+#[test]
+fn for_each_descendant() {
+    let mut tree = tree!(1 => { 2 => {3, 4, 5, 6}, 3, 4 => {0, 1}, 5, 6 => {1, 2} });
+    let mut root = tree.root_mut();
+    root.for_each_descendant(|n| *n.value() += 1);
+
+    let tree2 = tree!(2 => { 3 => {4, 5, 6, 7}, 4, 5 => {1, 2}, 6, 7 => {2, 3} });
+
+    assert_eq!(tree, tree2);
+}
+
+#[test]
 fn append_1() {
     let mut tree = tree!('a');
     tree.root_mut().append('b');
@@ -422,8 +493,117 @@ fn reparent_from_id_prepend() {
 }
 
 #[test]
+fn reparent_from_id_append_multiple_siblings() {
+    // Test reparenting when source has 3+ children to ensure all siblings get proper parent update
+    let mut tree = tree! {
+        'a' => {
+            'b' => { 'x' },  // destination node
+            'c' => { 'd', 'e', 'f' },  // source node with 3 children
+        }
+    };
+
+    let c_id = tree.root().last_child().unwrap().id();
+    let b_id = tree.root().first_child().unwrap().id();
+
+    // Reparent children from 'c' to 'b'
+    tree.root_mut()
+        .first_child()
+        .unwrap()
+        .reparent_from_id_append(c_id);
+
+    let b = tree.get(b_id).unwrap();
+    let x = b.first_child().unwrap(); // original child of b
+    let d = x.next_sibling().unwrap(); // first reparented child
+    let e = d.next_sibling().unwrap(); // middle reparented child
+    let f = e.next_sibling().unwrap(); // last reparented child
+
+    // All children should now have 'b' as their parent
+    assert_eq!(Some(b), x.parent());
+    assert_eq!(Some(b), d.parent());
+    assert_eq!(Some(b), e.parent());
+    assert_eq!(Some(b), f.parent());
+}
+
+#[test]
+fn reparent_from_id_prepend_multiple_siblings() {
+    // Test reparenting when source has 3+ children to ensure all siblings get proper parent update
+    let mut tree = tree! {
+        'a' => {
+            'b' => { 'x' },  // destination node
+            'c' => { 'd', 'e', 'f' },  // source node with 3 children
+        }
+    };
+
+    let c_id = tree.root().last_child().unwrap().id();
+    let b_id = tree.root().first_child().unwrap().id();
+
+    // Reparent children from 'c' to 'b'
+    tree.root_mut()
+        .first_child()
+        .unwrap()
+        .reparent_from_id_prepend(c_id);
+
+    let b = tree.get(b_id).unwrap();
+    let d = b.first_child().unwrap(); // first reparented child
+    let e = d.next_sibling().unwrap(); // middle reparented child
+    let f = e.next_sibling().unwrap(); // last reparented child
+    let x = f.next_sibling().unwrap(); // original child of b
+
+    // All children should now have 'b' as their parent
+    assert_eq!(Some(b), d.parent());
+    assert_eq!(Some(b), e.parent());
+    assert_eq!(Some(b), f.parent());
+    assert_eq!(Some(b), x.parent());
+}
+
+#[test]
 fn into() {
     let mut tree = tree!('a');
     let node_ref: NodeRef<_> = tree.root_mut().into();
     assert_eq!(&'a', node_ref.value());
+}
+
+#[test]
+fn test_clone_subtree() {
+    let mut tree = tree! {
+        'a' => {
+            'b' => {
+                'd',
+                'e' => { 'g', 'h' },
+                'f',
+            },
+            'c',
+        }
+    };
+
+    let b_id = tree.root().first_child().unwrap().id();
+    let mut b_node = tree.get_mut(b_id).unwrap();
+    let mut subtree = b_node.clone_subtree();
+    let subtree = subtree.as_ref();
+
+    assert_eq!(*subtree.value(), 'b');
+    assert!(subtree.parent().is_none());
+    assert!(subtree.prev_sibling().is_none());
+    assert!(subtree.next_sibling().is_none());
+
+    let children: Vec<_> = subtree.children().collect();
+    assert_eq!(children.len(), 3);
+    assert_eq!(*children[0].value(), 'd');
+    assert_eq!(children[0].parent(), Some(subtree));
+    assert_eq!(children[0].children().count(), 0);
+    assert_eq!(*children[1].value(), 'e');
+    assert_eq!(children[1].parent(), Some(subtree));
+    assert_eq!(children[1].children().count(), 2);
+    assert_eq!(children[2].parent(), Some(subtree));
+    assert_eq!(*children[2].value(), 'f');
+    assert_eq!(children[2].children().count(), 0);
+
+    let e_children: Vec<_> = children[1].children().collect();
+    assert_eq!(e_children.len(), 2);
+    assert_eq!(*e_children[0].value(), 'g');
+    assert_eq!(e_children[0].parent(), Some(children[1]));
+    assert_eq!(e_children[0].children().count(), 0);
+    assert_eq!(*e_children[1].value(), 'h');
+    assert_eq!(e_children[1].parent(), Some(children[1]));
+    assert_eq!(e_children[1].children().count(), 0);
 }

@@ -51,6 +51,7 @@ use core::mem::{self, ManuallyDrop};
 
 use crate::__rt::marker::ErasableGeneric;
 use crate::__rt::marker::MaybeUnwindSafe;
+use crate::__rt::WasmWord;
 use crate::describe::*;
 use crate::JsValue;
 use crate::{convert::*, JsCast};
@@ -59,6 +60,11 @@ use core::panic::AssertUnwindSafe;
 
 #[wasm_bindgen_macro::wasm_bindgen(wasm_bindgen = crate)]
 extern "C" {
+    // `no_into_js_generic` is required because closures are deliberately
+    // not `Clone`: duplicating the Rust wrapper over a JS callback would
+    // break the "owned once" destruction semantics the type is designed
+    // to enforce.
+    #[wasm_bindgen(no_into_js_generic)]
     type JsClosure;
 
     #[wasm_bindgen(method)]
@@ -450,10 +456,10 @@ where
         F: IntoWasmClosureRef<T> + ?Sized,
     {
         let t: &T = t.unsize_closure_ref();
-        let (ptr, len): (u32, u32) = unsafe { mem::transmute_copy(&t) };
+        let (ptr, len): (usize, usize) = unsafe { mem::transmute_copy(&t) };
         ScopedClosure {
             js: crate::__rt::wbg_cast(BorrowedClosure::<T, UNWIND_SAFE> {
-                data: WasmSlice { ptr, len },
+                data: WasmSlice::from_usize(ptr, len),
                 _marker: PhantomData,
             }),
             _marker: PhantomData,
@@ -529,10 +535,10 @@ where
         F: IntoWasmClosureRefMut<T> + ?Sized,
     {
         let t: &mut T = t.unsize_closure_ref();
-        let (ptr, len): (u32, u32) = unsafe { mem::transmute_copy(&t) };
+        let (ptr, len): (usize, usize) = unsafe { mem::transmute_copy(&t) };
         ScopedClosure {
             js: crate::__rt::wbg_cast(BorrowedClosure::<T, UNWIND_SAFE> {
-                data: WasmSlice { ptr, len },
+                data: WasmSlice::from_usize(ptr, len),
                 _marker: PhantomData,
             }),
             _marker: PhantomData,
@@ -737,11 +743,30 @@ struct BorrowedClosure<T: ?Sized, const UNWIND_SAFE: bool> {
     _marker: PhantomData<T>,
 }
 
-unsafe extern "C" fn destroy<T: ?Sized>(a: usize, b: usize) {
-    if a == 0 {
+/// Destroys an owned closure by reconstructing and dropping its
+/// `Box<dyn Trait>` representation from the raw pointer data `(a, b)`.
+///
+/// # Safety
+///
+/// `(a, b)` must be a valid pair previously produced by `Box::into_raw` on a
+/// `Box<dyn FnOnce/FnMut/Fn>` closure, or `a` must be zero (in which case this
+/// is a no-op).
+#[no_mangle]
+pub unsafe extern "C" fn __wbindgen_destroy_closure(a: WasmWord, b: WasmWord) {
+    if a.is_zero() {
         return;
     }
-    drop(mem::transmute_copy::<_, Box<T>>(&(a, b)));
+
+    // Usual way to erase any trait details, so we are just left with layout and
+    // drop implementation that any dyn trait has.
+    // See eg https://doc.rust-lang.org/beta/nightly-rustc/rustc_lint/traits/static.DYN_DROP.html#explanation
+    //
+    // This allows to use `destroy` in a non-generic way for any closures.
+    trait ErasedPlaceholderForDrop {}
+
+    drop(mem::transmute_copy::<_, Box<dyn ErasedPlaceholderForDrop>>(
+        &(a.into_usize(), b.into_usize()),
+    ));
 }
 
 impl<T, const UNWIND_SAFE: bool> WasmDescribe for OwnedClosure<T, UNWIND_SAFE>
@@ -751,7 +776,7 @@ where
     #[cfg_attr(wasm_bindgen_unstable_test_coverage, coverage(off))]
     fn describe() {
         inform(CLOSURE);
-        inform(destroy::<T> as *const () as usize as u32);
+        inform(1);
         inform(T::IS_MUT as u32);
         T::describe_invoke::<UNWIND_SAFE>();
     }
@@ -778,10 +803,7 @@ where
 
     fn into_abi(self) -> WasmSlice {
         let (a, b): (usize, usize) = unsafe { mem::transmute_copy(&ManuallyDrop::new(self)) };
-        WasmSlice {
-            ptr: a as u32,
-            len: b as u32,
-        }
+        WasmSlice::from_usize(a, b)
     }
 }
 

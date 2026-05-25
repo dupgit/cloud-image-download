@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "retry-policies"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Luca Palmieri <lpalmieri@truelayer.com>"]
 build = false
 autolib = false
@@ -36,4 +36,4 @@ name = "retry_policies"
 path = "src/lib.rs"
 
 [dependencies.rand]
-version = "0.9.1"
+version = "0.10.1"
