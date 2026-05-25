@@ -13,7 +13,7 @@ destination = "/dev/shm/centos"
 [[sites]]
 name = "Ubuntu"
 timeout = 45
-version_list = ["focal", "jammy", "noble"]
+version_list = ["jammy", "noble", "resolute"]
 base_url = "https://cloud-images.ubuntu.com"
 image_name_filter = "server-cloudimg-amd64.img"
 destination = "/dev/shm/ubuntu"
