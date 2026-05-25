@@ -1,3 +1,10 @@
+## [0.5.8] - 2026-05-25
+
+### 🐛 Bug Fixes
+
+- Adds a trailing empty line to separate paragraphs
+- Removes unmaintained focal and adds resolute LTS versions
+
 ## [0.5.7] - 2026-03-09
 
 ### 🚀 Features
