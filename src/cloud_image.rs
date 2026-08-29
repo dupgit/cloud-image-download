@@ -39,22 +39,21 @@ impl CloudImage {
             return false;
         };
         match self.checksum.verify_file(&filename) {
-            Ok(no_error) => match no_error {
-                Some(success) => {
+            Ok(no_error) => {
+                if let Some(success) = no_error {
                     if success {
                         info!("{} Successfully verified {filename}", "🗸".green());
                         return true;
                     }
                     warn!("{} Verifying failed for {filename}", "𐄂".red());
                     false
-                }
-                None => {
+                } else {
                     // File has not been verified because it has not any associated hash
                     // so let it be correctly not verified and return true :-)
                     warn!("{} {filename} not verified.", "𐄂".yellow());
                     true
                 }
-            },
+            }
             Err(e) => {
                 error!("Error verifying {filename}: {e}");
                 false
