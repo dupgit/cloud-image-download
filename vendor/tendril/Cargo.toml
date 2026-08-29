@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71.0"
 name = "tendril"
-version = "0.5.0"
+version = "0.5.1"
 authors = [
     "Keegan McAllister <mcallister.keegan@gmail.com>",
     "Simon Sapin <simon.sapin@exyr.org>",
@@ -57,9 +57,6 @@ optional = true
 
 [dependencies.new_debug_unreachable]
 version = "1.0.2"
-
-[dependencies.utf-8]
-version = "0.7"
 
 [dev-dependencies.criterion]
 version = "0.8"

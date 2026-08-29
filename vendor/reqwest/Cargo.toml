@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.64.0"
+rust-version = "1.85.0"
 name = "reqwest"
-version = "0.13.3"
+version = "0.13.4"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 include = [
@@ -313,7 +313,7 @@ version = "0.0.10"
 optional = true
 
 [target.'cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))'.dependencies.hickory-resolver]
-version = "0.25"
+version = "0.26"
 features = ["tokio"]
 optional = true
 
@@ -361,7 +361,7 @@ version = "0.3.16"
 optional = true
 
 [target.'cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))'.dependencies.native-tls-crate]
-version = "0.2.10"
+version = "0.2.16"
 optional = true
 package = "native-tls"
 

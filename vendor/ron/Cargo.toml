@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.64.0"
 name = "ron"
-version = "0.12.1"
+version = "0.12.2"
 authors = [
     "Christopher Durham <cad97@cad97.com>",
     "Dzmitry Malyshau <kvarkus@gmail.com>",
@@ -307,6 +307,10 @@ name = "599_integer_suffix"
 path = "tests/599_integer_suffix.rs"
 
 [[test]]
+name = "601_support_for_number_ranges"
+path = "tests/601_support_for_number_ranges.rs"
+
+[[test]]
 name = "big_struct"
 path = "tests/big_struct.rs"
 
@@ -398,12 +402,12 @@ features = [
 default-features = false
 
 [dependencies.serde]
-version = "1.0.181"
+version = "1.0.193"
 features = ["alloc"]
 default-features = false
 
 [dependencies.serde_derive]
-version = "1.0.181"
+version = "1.0.193"
 default-features = false
 
 [dependencies.typeid]
@@ -434,7 +438,7 @@ version = "0.3"
 default-features = false
 
 [dev-dependencies.serde]
-version = "1.0.181"
+version = "1.0.193"
 features = [
     "std",
     "derive",

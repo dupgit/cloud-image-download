@@ -6,7 +6,7 @@
 //! ```not_rust
 //! mkdir -p examples/miniserve
 //! cd examples/miniserve
-//! curl -sLO http://212.183.159.230/5MB.zip
+//! curl -sLO https://samplefile.com/samples/download/archive/zip/zip_sample_file_50MB.zip
 //! miniserve .
 //! ```
 //! Run with:
@@ -18,16 +18,13 @@
 //! Miniserve is a utility written in rust to serve files over HTTP:
 //! https://github.com/svenstaro/miniserve
 
-use std::path::PathBuf;
-use trauma::{download::Download, downloader::DownloaderBuilder, Error};
+use trauma::{download::Download, downloader::Downloader, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let five_mb = "http://localhost:8080/5MB.zip";
-    let downloads = vec![Download::try_from(five_mb).unwrap()];
-    let downloader = DownloaderBuilder::new()
-        .directory(PathBuf::from("output"))
-        .build();
+    let downloads = vec![Download::builder().url(five_mb)?.build()];
+    let downloader = Downloader::builder().directory("output").build();
     let summary = downloader.download(&downloads).await;
     dbg!(summary);
     Ok(())

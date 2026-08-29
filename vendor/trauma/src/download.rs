@@ -1,155 +1,179 @@
 //! Represents a file to be downloaded.
 
-use crate::Error;
-use reqwest::{
-    header::{ACCEPT_RANGES, CONTENT_LENGTH},
-    StatusCode, Url,
-};
+use crate::{Error, ResponseExt};
+use bon::Builder;
+use reqwest::{IntoUrl, StatusCode, Url};
 use reqwest_middleware::ClientWithMiddleware;
-use std::convert::TryFrom;
 
 /// Represents a file to be downloaded.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
+#[builder(on(String, into))]
 pub struct Download {
     /// URL of the file to download.
-    pub url: Url,
-    /// File name used to save the file on disk.
-    pub filename: String,
+    #[builder(with = |value: impl IntoUrl| -> Result<_, Error> {
+        value.into_url().map_err(|e| Error::InvalidUrl(format!("the url cannot be parsed: {e}")))
+    })]
+    url: Url,
+    /// File name used to save the file on disk. Overrides the file name
+    /// extracted from the URL.
+    filename_override: Option<String>,
 }
 
 impl Download {
-    /// Creates a new [`Download`].
-    ///
-    /// When using the [`Download::try_from`] method, the file name is
-    /// automatically extracted from the URL.
-    ///
-    /// ## Example
-    ///
-    /// The following calls are equivalent, minus some extra URL validations
-    /// performed by `try_from`:
-    ///
-    /// ```no_run
-    /// # use color_eyre::{eyre::Report, Result};
-    /// use trauma::download::Download;
-    /// use reqwest::Url;
-    ///
-    /// # fn main() -> Result<(), Report> {
-    /// Download::try_from("https://example.com/file-0.1.2.zip")?;
-    /// Download::new(&Url::parse("https://example.com/file-0.1.2.zip")?, "file-0.1.2.zip");
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn new(url: &Url, filename: &str) -> Self {
-        Self {
-            url: url.clone(),
-            filename: String::from(filename),
-        }
+    pub async fn head(
+        &self,
+        client: &ClientWithMiddleware,
+    ) -> Result<reqwest::Response, reqwest_middleware::Error> {
+        client.head(self.url.clone()).send().await
+    }
+
+    pub async fn get(
+        &self,
+        client: &ClientWithMiddleware,
+    ) -> Result<reqwest::Response, reqwest_middleware::Error> {
+        client.get(self.url.clone()).send().await
     }
 
     /// Check whether the download is resumable.
-    pub async fn is_resumable(
-        &self,
-        client: &ClientWithMiddleware,
-    ) -> Result<bool, reqwest_middleware::Error> {
-        let res = client.head(self.url.clone()).send().await?;
-        let headers = res.headers();
-        match headers.get(ACCEPT_RANGES) {
-            None => Ok(false),
-            Some(x) if x == "none" => Ok(false),
-            Some(_) => Ok(true),
+    pub fn is_resumable(response: &reqwest::Response) -> bool {
+        let accept_ranges = response.accept_ranges();
+
+        // If the server doesn't support range requests, we consider the
+        // download as not resumable.
+        if !accept_ranges {
+            return false;
         }
+
+        // If we don't get a content length or if we get a content length of 0,
+        // we also consider the download as not resumable.
+        let content_length = response.content_length_header();
+        content_length.is_some() && content_length != Some(0)
     }
 
-    /// Retrieve the content_length of the download.
+    /// Get the filename from the `Content-Disposition` header.
     ///
-    /// Returns None if the "content-length" header is missing or if its value
-    /// is not a u64.
-    pub async fn content_length(
-        &self,
-        client: &ClientWithMiddleware,
-    ) -> Result<Option<u64>, reqwest_middleware::Error> {
-        let res = client.head(self.url.clone()).send().await?;
-        let headers = res.headers();
-        match headers.get(CONTENT_LENGTH) {
-            None => Ok(None),
-            Some(header_value) => match header_value.to_str() {
-                Ok(v) => match v.to_string().parse::<u64>() {
-                    Ok(v) => Ok(Some(v)),
-                    Err(_) => Ok(None),
-                },
-                Err(_) => Ok(None),
-            },
+    /// Returns `None` if the header is not set or if its value cannot be parsed.
+    pub fn filename_from_content_disposition(response: &reqwest::Response) -> Option<String> {
+        if let Some(value) = response.content_disposition() {
+            return Download::parse_content_disposition(&value);
         }
+
+        None
     }
-}
 
-impl TryFrom<&Url> for Download {
-    type Error = crate::Error;
+    /// Parse the value of the `Content-Dispostion` header.
+    ///
+    /// Attempts to extract the filename form the header value.
+    fn parse_content_disposition(value: &str) -> Option<String> {
+        if let Some(filename) = value.split(';').find_map(|part| {
+            if part.trim().starts_with("filename=") {
+                return Some(
+                    part.trim()
+                        .split('=')
+                        .nth(1)
+                        .unwrap()
+                        .trim_matches('"')
+                        .to_string(),
+                );
+            }
+            None
+        }) {
+            return Some(filename);
+        }
 
-    fn try_from(value: &Url) -> Result<Self, Self::Error> {
-        value
+        None
+    }
+
+    /// Get the filename from the URL.
+    ///
+    /// Returns an error if the URL does not contain a filename.
+    pub fn filename_from_url(&self) -> Result<String, Error> {
+        let path = self.url.path();
+
+        // Check for root path early.
+        if path == "/" || path.is_empty() {
+            return Err(Error::InvalidUrl(format!(
+                "the URL \"{}\" has no filename",
+                self.url
+            )));
+        }
+
+        // Get the last segment item.
+        self.url
             .path_segments()
-            .ok_or_else(|| {
-                Error::InvalidUrl(format!("the url \"{value}\" does not contain a valid path"))
-            })?
+            .ok_or_else(|| Error::InvalidUrl(format!("not an absolute URL: {}", self.url)))?
             .next_back()
             .map(String::from)
-            .map(|filename| Download {
-                url: value.clone(),
-                filename: form_urlencoded::parse(filename.as_bytes())
-                    .map(|(key, val)| [key, val].concat())
-                    .collect(),
-            })
-            .ok_or_else(|| {
-                Error::InvalidUrl(format!("the url \"{value}\" does not contain a filename"))
-            })
+            .ok_or_else(|| Error::InvalidUrl(format!("the URL \"{}\" has no filename", self.url)))
+    }
+
+    /// Get the filename from multiple sources.
+    ///
+    /// Here is the precedence order:
+    ///   - filename override
+    ///   - filename from `Content-Disposition` header
+    ///   - filename from URL
+    ///
+    /// Returns `None` if the name cannot be determined.
+    pub fn infer_filename(&self, response: &reqwest::Response) -> Option<String> {
+        if self.filename_override.is_some() {
+            return self.filename_override.clone();
+        }
+
+        let filename = Download::filename_from_content_disposition(response);
+        if filename.is_some() {
+            return filename;
+        }
+
+        self.filename_from_url().ok()
+    }
+
+    /// Get the filename override if any.
+    pub fn filename_override(&self) -> Option<&String> {
+        self.filename_override.as_ref()
+    }
+
+    /// Get the URL.
+    ///
+    /// Returns a clone of the URL.
+    pub fn url(&self) -> Url {
+        self.url.clone()
+    }
+
+    /// Get the URL as &str.
+    pub fn url_as_str(&self) -> &str {
+        self.url.as_str()
     }
 }
 
-impl TryFrom<&str> for Download {
-    type Error = crate::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Url::parse(value)
-            .map_err(|e| Error::InvalidUrl(format!("the url \"{value}\" cannot be parsed: {e}")))
-            .and_then(|u| Download::try_from(&u))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Status {
     Fail(String),
+    #[default]
     NotStarted,
     Skipped(String),
     Success,
 }
 /// Represents a [`Download`] summary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct Summary {
     /// Downloaded items.
     download: Download,
     /// HTTP status code.
+    #[builder(default = StatusCode::PROCESSING)]
     statuscode: StatusCode,
     /// Download size in bytes.
+    #[builder(default)]
     size: u64,
     /// Status.
+    #[builder(default)]
     status: Status,
     /// Resumable.
+    #[builder(default)]
     resumable: bool,
 }
 
 impl Summary {
-    /// Create a new [`Download`] [`Summary`].
-    pub fn new(download: Download, statuscode: StatusCode, size: u64, resumable: bool) -> Self {
-        Self {
-            download,
-            statuscode,
-            size,
-            status: Status::NotStarted,
-            resumable,
-        }
-    }
-
     /// Attach a status to a [`Download`] [`Summary`].
     pub fn with_status(self, status: Status) -> Self {
         Self { status, ..self }
@@ -176,10 +200,10 @@ impl Summary {
     }
 
     pub fn fail(self, msg: impl std::fmt::Display) -> Self {
-        Self {
-            status: Status::Fail(format!("{msg}")),
-            ..self
-        }
+        Self::builder()
+            .download(self.download)
+            .status(Status::Fail(format!("{msg}")))
+            .build()
     }
 
     /// Set the summary's resumable.
@@ -201,15 +225,18 @@ mod test {
     const DOMAIN: &str = "http://domain.com/file.zip";
 
     #[test]
-    fn test_try_from_url() {
-        let u = Url::parse(DOMAIN).unwrap();
-        let d = Download::try_from(&u).unwrap();
-        assert_eq!(d.filename, "file.zip")
+    fn test_builder_from_url_as_str() {
+        let d = Download::builder().url(DOMAIN).unwrap().build();
+        assert_eq!(d.filename_from_url().unwrap(), "file.zip".to_string())
     }
 
     #[test]
-    fn test_try_from_string() {
-        let d = Download::try_from(DOMAIN).unwrap();
-        assert_eq!(d.filename, "file.zip")
+    fn test_parse_content_disposition() {
+        let value = "attachment; filename=VSCodeUserSetup-x64-1.124.2.exe; filename*=UTF-8''VSCodeUserSetup-x64-1.124.2.exe";
+        let filename = Download::parse_content_disposition(value);
+        assert_eq!(
+            filename,
+            Some("VSCodeUserSetup-x64-1.124.2.exe".to_string())
+        )
     }
 }

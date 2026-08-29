@@ -117,6 +117,11 @@ It's important to get Jiff 1.0 as "right" as possible. Namely, once it's
 released, I plan to commit to its API indefinitely. At which point, users of
 Jiff should feel comfortable using it as a stable base in public APIs.
 
+Once Jiff 1.0 is released, Jiff 0.2 will continue to get critical bug fix
+updates. There won't be any active feature development, but since so many folks
+are already using Jiff 0.2, it makes sense to offer a transition grace period.
+My plan here is to do it for 1 year after Jiff 1.0 is released.
+
 ### Performance
 
 The most important design goal of Jiff is to be a high level datetime library
@@ -178,8 +183,7 @@ Jiff is very conservative. I consider there to be two primary use cases for
 adding new dependencies:
 
 1. When a dependency is _practically_ required in order to interact with a
-platform. For example, `windows-sys` for discovering the system time zone on
-Windows.
+platform.
 2. When a dependency is necessary for interoperability. For example, `serde`.
 But even here, I expect to be conservative, where I'm generally only willing
 to depend on things that have fewer breaking change releases than Jiff.

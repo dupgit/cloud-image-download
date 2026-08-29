@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85.0"
 name = "config"
-version = "0.15.23"
+version = "0.15.25"
 build = false
 include = [
     "build.rs",

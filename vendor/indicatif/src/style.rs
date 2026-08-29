@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Formatter, Write};
 use std::mem;
+use std::str::FromStr;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(feature = "unicode-width")]
@@ -28,43 +29,6 @@ pub struct ProgressStyle {
     char_width: usize,
     tab_width: usize,
     pub(crate) format_map: HashMap<&'static str, Box<dyn ProgressTracker>>,
-}
-
-#[cfg(feature = "unicode-segmentation")]
-fn segment(s: &str) -> Vec<Box<str>> {
-    UnicodeSegmentation::graphemes(s, true)
-        .map(|s| s.into())
-        .collect()
-}
-
-#[cfg(not(feature = "unicode-segmentation"))]
-fn segment(s: &str) -> Vec<Box<str>> {
-    s.chars().map(|x| x.to_string().into()).collect()
-}
-
-#[cfg(feature = "unicode-width")]
-fn measure(s: &str) -> usize {
-    unicode_width::UnicodeWidthStr::width(s)
-}
-
-#[cfg(not(feature = "unicode-width"))]
-fn measure(s: &str) -> usize {
-    s.chars().count()
-}
-
-/// finds the unicode-aware width of the passed grapheme cluters
-/// panics on an empty parameter, or if the characters are not equal-width
-fn width(c: &[Box<str>]) -> usize {
-    c.iter()
-        .map(|s| measure(s.as_ref()))
-        .fold(None, |acc, new| {
-            match acc {
-                None => return Some(new),
-                Some(old) => assert_eq!(old, new, "got passed un-equal width progress characters"),
-            }
-            acc
-        })
-        .unwrap()
 }
 
 impl ProgressStyle {
@@ -508,7 +472,21 @@ struct Template {
 }
 
 impl Template {
-    fn from_str_with_tab_width(s: &str, tab_width: usize) -> Result<Self, TemplateError> {
+    fn set_tab_width(&mut self, new_tab_width: usize) {
+        for part in &mut self.parts {
+            if let TemplatePart::Literal(s) = part {
+                s.set_tab_width(new_tab_width);
+            }
+        }
+    }
+}
+
+impl FromStr for Template {
+    type Err = TemplateError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let tab_width = DEFAULT_TAB_WIDTH;
+
         use State::*;
         let (mut state, mut parts, mut buf) = (Literal, vec![], String::new());
         for c in s.chars() {
@@ -637,18 +615,6 @@ impl Template {
         }
 
         Ok(Self { parts })
-    }
-
-    fn from_str(s: &str) -> Result<Self, TemplateError> {
-        Self::from_str_with_tab_width(s, DEFAULT_TAB_WIDTH)
-    }
-
-    fn set_tab_width(&mut self, new_tab_width: usize) {
-        for part in &mut self.parts {
-            if let TemplatePart::Literal(s) = part {
-                s.set_tab_width(new_tab_width);
-            }
-        }
     }
 }
 
@@ -844,6 +810,43 @@ where
     fn write(&self, state: &ProgressState, w: &mut dyn fmt::Write) {
         (self)(state, w);
     }
+}
+
+#[cfg(feature = "unicode-segmentation")]
+fn segment(s: &str) -> Vec<Box<str>> {
+    UnicodeSegmentation::graphemes(s, true)
+        .map(|s| s.into())
+        .collect()
+}
+
+#[cfg(not(feature = "unicode-segmentation"))]
+fn segment(s: &str) -> Vec<Box<str>> {
+    s.chars().map(|x| x.to_string().into()).collect()
+}
+
+#[cfg(feature = "unicode-width")]
+fn measure(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+#[cfg(not(feature = "unicode-width"))]
+fn measure(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// finds the unicode-aware width of the passed grapheme cluters
+/// panics on an empty parameter, or if the characters are not equal-width
+fn width(c: &[Box<str>]) -> usize {
+    c.iter()
+        .map(|s| measure(s.as_ref()))
+        .fold(None, |acc, new| {
+            match acc {
+                None => return Some(new),
+                Some(old) => assert_eq!(old, new, "got passed un-equal width progress characters"),
+            }
+            acc
+        })
+        .unwrap()
 }
 
 #[cfg(test)]

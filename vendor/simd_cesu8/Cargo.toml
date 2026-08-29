@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.85.0"
 name = "simd_cesu8"
-version = "1.1.1"
+version = "1.2.0"
 authors = ["Sean C. Roach <me@seancroach.dev>"]
 build = false
 autolib = false

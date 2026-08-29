@@ -106,13 +106,9 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
     #[inline]
     pub fn clear(&mut self) {
         self.table.clear();
-        if let Some(mut values) = self.values {
+        if let Some(values) = self.values {
             unsafe {
                 drop_value_nodes(values);
-                values.as_mut().links.value = ValueLinks {
-                    prev: values,
-                    next: values,
-                };
             }
         }
     }
@@ -272,6 +268,36 @@ where
                 key,
                 raw_entry: vacant,
             }),
+        }
+    }
+
+    #[inline]
+    pub fn back_entry(&mut self) -> Option<RawOccupiedEntryMut<'_, K, V, S>> {
+        if self.is_empty() {
+            return None;
+        }
+        unsafe {
+            let last_key = (&*(*self.values.as_ptr()).links.value.prev.as_ptr()).key_ref();
+            let RawEntryMut::Occupied(occu) = self.raw_entry_mut().from_key(last_key) else {
+                unreachable!("the back entry's key was not found in the hashtable")
+            };
+
+            Some(occu)
+        }
+    }
+
+    #[inline]
+    pub fn front_entry(&mut self) -> Option<RawOccupiedEntryMut<'_, K, V, S>> {
+        if self.is_empty() {
+            return None;
+        }
+        unsafe {
+            let first_key = (&*((*self.values.as_ptr()).links.value.next.as_ptr())).key_ref();
+            let RawEntryMut::Occupied(occu) = self.raw_entry_mut().from_key(first_key) else {
+                unreachable!("the front entry's key was not found in the hashtable")
+            };
+
+            Some(occu)
         }
     }
 
@@ -486,17 +512,22 @@ where
                 let mut cur = values.as_ref().links.value.next;
                 while cur != values {
                     let next = cur.as_ref().links.value.next;
+                    // Compute the hash before invoking the callback. The callback
+                    // only receives `&K`, but interior mutability could change the
+                    // key's hash or equality, and this node is stored in the table
+                    // under its *original* hash.
+                    let hash = hash_key(&self.hash_builder, (*cur.as_ptr()).key_ref());
                     let filter = {
                         let (k, v) = (*cur.as_ptr()).entry_mut();
                         !f(k, v)
                     };
                     if filter {
-                        let k = (*cur.as_ptr()).key_ref();
-                        let hash = hash_key(&self.hash_builder, k);
-                        self.table
-                            .find_entry(hash, |o| (*o).as_ref().key_ref().eq(k))
-                            .unwrap()
-                            .remove();
+                        // Remove the table entry pointing at *this* node, matching
+                        // by pointer identity rather than key equality: the callback
+                        // may have mutated the key to compare equal to a different
+                        // entry, which would otherwise leave the table referencing a
+                        // freed node.
+                        self.table.find_entry(hash, |o| *o == cur).unwrap().remove();
                         drop_filtered_values.drop_later(cur);
                     }
                     cur = next;
@@ -874,6 +905,16 @@ impl<'a, K, V, S> OccupiedEntry<'a, K, V, S> {
         self.raw_entry.cursor_mut()
     }
 
+    /// Returns a `RawOccupiedEntryMut` over the current entry.
+    #[inline]
+    pub fn raw_entry_mut(self) -> RawOccupiedEntryMut<'a, K, V, S>
+    where
+        K: Eq + Hash,
+        S: BuildHasher,
+    {
+        self.raw_entry
+    }
+
     /// Replaces the entry's key with the key provided to `LinkedHashMap::entry`, and replaces the
     /// entry's value with the given `value` parameter.
     ///
@@ -925,6 +966,30 @@ impl<'a, K, V, S> VacantEntry<'a, K, V, S> {
         S: BuildHasher,
     {
         self.raw_entry.insert(self.key, value).1
+    }
+
+    /// Insert's the key for this vacant entry paired with the given value as a new entry at the
+    /// *back* of the internal linked list.
+    /// This function then also then returns the OccupiedEntry pointing to the inserted element.
+    pub fn insert_entry(self, value: V) -> RawOccupiedEntryMut<'a, K, V, S>
+    where
+        K: Hash,
+        S: BuildHasher,
+    {
+        //We cannot return OccupiedEntry only RawOccupiedEntryMut because
+        //OccupiedEntry has api methods like replace_key which assume that we hold a copy of the key.
+        //We certainly do not hold a copy of the key anymore after inserting it.
+        self.raw_entry.insert_entry(self.key, value)
+    }
+
+    /// Returns a `RawVacantEntryMut` over the current entry.
+    #[inline]
+    pub fn raw_entry_mut(self) -> RawVacantEntryMut<'a, K, V, S>
+    where
+        K: Eq + Hash,
+        S: BuildHasher,
+    {
+        self.raw_entry
     }
 }
 
@@ -1256,6 +1321,21 @@ impl<'a, K, V, S> RawVacantEntryMut<'a, K, V, S> {
     where
         S: BuildHasher,
     {
+        self.insert_entry_with_hasher(hash, key, value, hasher)
+            .into_key_value()
+    }
+
+    #[inline]
+    pub fn insert_entry_with_hasher(
+        self,
+        hash: u64,
+        key: K,
+        value: V,
+        hasher: impl Fn(&K) -> u64,
+    ) -> RawOccupiedEntryMut<'a, K, V, S>
+    where
+        S: BuildHasher,
+    {
         unsafe {
             ensure_guard_node(self.values);
             let mut new_node = allocate_node(self.free);
@@ -1265,12 +1345,40 @@ impl<'a, K, V, S> RawVacantEntryMut<'a, K, V, S> {
             let node = self
                 .entry
                 .into_table()
-                .insert_unique(hash, new_node, move |k| hasher((*k).as_ref().key_ref()))
-                .into_mut();
+                .insert_unique(hash, new_node, move |k| hasher((*k).as_ref().key_ref()));
 
-            let (key, value) = (*node.as_ptr()).entry_mut();
-            (key, value)
+            RawOccupiedEntryMut {
+                hash_builder: self.hash_builder,
+                free: self.free,
+                values: self.values,
+                entry: node,
+            }
         }
+    }
+
+    #[inline]
+    pub fn insert_entry_hashed_nocheck(
+        self,
+        hash: u64,
+        key: K,
+        value: V,
+    ) -> RawOccupiedEntryMut<'a, K, V, S>
+    where
+        K: Hash,
+        S: BuildHasher,
+    {
+        let hash_builder = self.hash_builder;
+        self.insert_entry_with_hasher(hash, key, value, |k| hash_key(hash_builder, k))
+    }
+
+    #[inline]
+    pub fn insert_entry(self, key: K, value: V) -> RawOccupiedEntryMut<'a, K, V, S>
+    where
+        K: Hash,
+        S: BuildHasher,
+    {
+        let hash = hash_key(self.hash_builder, &key);
+        self.insert_entry_hashed_nocheck(hash, key, value)
     }
 }
 
@@ -1731,7 +1839,7 @@ pub struct CursorMut<'a, K, V, S> {
     table: &'a mut hashbrown::HashTable<NonNull<Node<K, V>>>,
 }
 
-impl<K, V, S> CursorMut<'_, K, V, S> {
+impl<'a, K, V, S> CursorMut<'a, K, V, S> {
     /// Returns an `Option` of the current element in the list, provided it is not the
     /// _guard_ node, and `None` overwise.
     #[inline]
@@ -1739,6 +1847,41 @@ impl<K, V, S> CursorMut<'_, K, V, S> {
         unsafe {
             let at = NonNull::new_unchecked(self.cur);
             self.peek(at)
+        }
+    }
+
+    #[inline]
+    pub fn current_entry(self) -> Result<RawOccupiedEntryMut<'a, K, V, S>, Self>
+    where
+        K: Eq + Hash,
+        S: BuildHasher,
+    {
+        unsafe {
+            let Some(values) = self.values else {
+                return Err(self);
+            };
+
+            if values.as_ptr() == self.cur {
+                return Err(self);
+            }
+
+            let key = (*self.cur).key_ref();
+
+            let hash = hash_key(self.hash_builder, &key);
+
+            let Ok(entry) = self
+                .table
+                .find_entry(hash, |o| (*o).as_ref().key_ref().eq(key))
+            else {
+                unreachable!("current entry not found in hash table");
+            };
+
+            Ok(RawOccupiedEntryMut {
+                hash_builder: self.hash_builder,
+                free: self.free,
+                values: self.values,
+                entry,
+            })
         }
     }
 
@@ -2107,27 +2250,27 @@ struct Node<K, V> {
 impl<K, V> Node<K, V> {
     #[inline]
     unsafe fn put_entry(&mut self, entry: (K, V)) {
-        self.entry.as_mut_ptr().write(entry)
+        unsafe { self.entry.as_mut_ptr().write(entry) }
     }
 
     #[inline]
     unsafe fn entry_ref(&self) -> &(K, V) {
-        &*self.entry.as_ptr()
+        unsafe { &*self.entry.as_ptr() }
     }
 
     #[inline]
     unsafe fn key_ref(&self) -> &K {
-        &(*self.entry.as_ptr()).0
+        unsafe { &(*self.entry.as_ptr()).0 }
     }
 
     #[inline]
     unsafe fn entry_mut(&mut self) -> &mut (K, V) {
-        &mut *self.entry.as_mut_ptr()
+        unsafe { &mut *self.entry.as_mut_ptr() }
     }
 
     #[inline]
     unsafe fn take_entry(&mut self) -> (K, V) {
-        self.entry.as_ptr().read()
+        unsafe { self.entry.as_ptr().read() }
     }
 }
 
@@ -2150,16 +2293,18 @@ impl<T> OptNonNullExt<T> for Option<NonNull<T>> {
 #[inline]
 unsafe fn ensure_guard_node<K, V>(head: &mut Option<NonNull<Node<K, V>>>) {
     if head.is_none() {
-        let mut p = NonNull::new_unchecked(Box::into_raw(Box::new(Node {
-            entry: MaybeUninit::uninit(),
-            links: Links {
-                value: ValueLinks {
-                    next: NonNull::dangling(),
-                    prev: NonNull::dangling(),
+        let mut p = unsafe {
+            NonNull::new_unchecked(Box::into_raw(Box::new(Node {
+                entry: MaybeUninit::uninit(),
+                links: Links {
+                    value: ValueLinks {
+                        next: NonNull::dangling(),
+                        prev: NonNull::dangling(),
+                    },
                 },
-            },
-        })));
-        p.as_mut().links.value = ValueLinks { next: p, prev: p };
+            })))
+        };
+        unsafe { p.as_mut().links.value = ValueLinks { next: p, prev: p } };
         *head = Some(p);
     }
 }
@@ -2167,21 +2312,25 @@ unsafe fn ensure_guard_node<K, V>(head: &mut Option<NonNull<Node<K, V>>>) {
 // Attach the `to_attach` node to the existing circular list *before* `node`.
 #[inline]
 unsafe fn attach_before<K, V>(mut to_attach: NonNull<Node<K, V>>, mut node: NonNull<Node<K, V>>) {
-    to_attach.as_mut().links.value = ValueLinks {
-        prev: node.as_ref().links.value.prev,
-        next: node,
-    };
-    node.as_mut().links.value.prev = to_attach;
-    (*to_attach.as_mut().links.value.prev.as_ptr())
-        .links
-        .value
-        .next = to_attach;
+    unsafe {
+        to_attach.as_mut().links.value = ValueLinks {
+            prev: node.as_ref().links.value.prev,
+            next: node,
+        };
+        node.as_mut().links.value.prev = to_attach;
+        (*to_attach.as_mut().links.value.prev.as_ptr())
+            .links
+            .value
+            .next = to_attach;
+    }
 }
 
 #[inline]
 unsafe fn detach_node<K, V>(mut node: NonNull<Node<K, V>>) {
-    node.as_mut().links.value.prev.as_mut().links.value.next = node.as_ref().links.value.next;
-    node.as_mut().links.value.next.as_mut().links.value.prev = node.as_ref().links.value.prev;
+    unsafe {
+        node.as_mut().links.value.prev.as_mut().links.value.next = node.as_ref().links.value.next;
+        node.as_mut().links.value.next.as_mut().links.value.prev = node.as_ref().links.value.prev;
+    }
 }
 
 #[inline]
@@ -2189,7 +2338,7 @@ unsafe fn push_free<K, V>(
     free_list: &mut Option<NonNull<Node<K, V>>>,
     mut node: NonNull<Node<K, V>>,
 ) {
-    node.as_mut().links.free.next = *free_list;
+    unsafe { node.as_mut().links.free.next = *free_list };
     *free_list = Some(node);
 }
 
@@ -2198,7 +2347,7 @@ unsafe fn pop_free<K, V>(
     free_list: &mut Option<NonNull<Node<K, V>>>,
 ) -> Option<NonNull<Node<K, V>>> {
     if let Some(free) = *free_list {
-        *free_list = free.as_ref().links.free.next;
+        *free_list = unsafe { free.as_ref().links.free.next };
         Some(free)
     } else {
         None
@@ -2207,34 +2356,75 @@ unsafe fn pop_free<K, V>(
 
 #[inline]
 unsafe fn allocate_node<K, V>(free_list: &mut Option<NonNull<Node<K, V>>>) -> NonNull<Node<K, V>> {
-    if let Some(mut free) = pop_free(free_list) {
-        free.as_mut().links.value = ValueLinks {
-            next: NonNull::dangling(),
-            prev: NonNull::dangling(),
-        };
+    if let Some(mut free) = unsafe { pop_free(free_list) } {
+        unsafe {
+            free.as_mut().links.value = ValueLinks {
+                next: NonNull::dangling(),
+                prev: NonNull::dangling(),
+            };
+        }
         free
     } else {
-        NonNull::new_unchecked(Box::into_raw(Box::new(Node {
-            entry: MaybeUninit::uninit(),
-            links: Links {
-                value: ValueLinks {
-                    next: NonNull::dangling(),
-                    prev: NonNull::dangling(),
+        unsafe {
+            NonNull::new_unchecked(Box::into_raw(Box::new(Node {
+                entry: MaybeUninit::uninit(),
+                links: Links {
+                    value: ValueLinks {
+                        next: NonNull::dangling(),
+                        prev: NonNull::dangling(),
+                    },
                 },
-            },
-        })))
+            })))
+        }
     }
 }
 
 // Given node is assumed to be the guard node and is *not* dropped.
 #[inline]
-unsafe fn drop_value_nodes<K, V>(guard: NonNull<Node<K, V>>) {
-    let mut cur = guard.as_ref().links.value.prev;
-    while cur != guard {
-        let prev = cur.as_ref().links.value.prev;
-        cur.as_mut().take_entry();
-        let _ = Box::from_raw(cur.as_ptr());
-        cur = prev;
+unsafe fn drop_value_nodes<K, V>(mut guard: NonNull<Node<K, V>>) {
+    // Detach the value list from the guard before dropping any nodes, so the
+    // guard is always left as an empty, consistent list.  This matters when an
+    // entry's `Drop` panics: without it, a caught panic (e.g. via `clear`)
+    // could observe a node whose entry was already moved out and drop it again.
+    let cur = unsafe { guard.as_ref().links.value.prev };
+    unsafe {
+        guard.as_mut().links.value = ValueLinks {
+            prev: guard,
+            next: guard,
+        };
+    }
+
+    // `Remainder` owns the not-yet-freed tail of the detached chain.  If
+    // dropping an entry panics, its `Drop` frees the remaining nodes during
+    // unwinding (rather than leaking them), matching how the standard library
+    // drops the rest of a collection when one element's destructor panics.
+    struct Remainder<K, V> {
+        cur: NonNull<Node<K, V>>,
+        guard: NonNull<Node<K, V>>,
+    }
+
+    impl<K, V> Drop for Remainder<K, V> {
+        fn drop(&mut self) {
+            while self.cur != self.guard {
+                unsafe {
+                    let prev = self.cur.as_ref().links.value.prev;
+                    let _ = self.cur.as_mut().take_entry();
+                    let _ = Box::from_raw(self.cur.as_ptr());
+                    self.cur = prev;
+                }
+            }
+        }
+    }
+
+    let mut rem = Remainder { cur, guard };
+    while rem.cur != guard {
+        let prev = unsafe { rem.cur.as_ref().links.value.prev };
+        let entry = unsafe { rem.cur.as_mut().take_entry() };
+        // Free the node and advance past it before dropping the entry, so that
+        // if the entry's `Drop` panics, `Remainder` resumes from the next node.
+        let _ = unsafe { Box::from_raw(rem.cur.as_ptr()) };
+        rem.cur = prev;
+        drop(entry);
     }
 }
 
@@ -2243,8 +2433,8 @@ unsafe fn drop_value_nodes<K, V>(guard: NonNull<Node<K, V>>) {
 #[inline]
 unsafe fn drop_free_nodes<K, V>(mut free: Option<NonNull<Node<K, V>>>) {
     while let Some(some_free) = free {
-        let next_free = some_free.as_ref().links.free.next;
-        let _ = Box::from_raw(some_free.as_ptr());
+        let next_free = unsafe { some_free.as_ref().links.free.next };
+        let _ = unsafe { Box::from_raw(some_free.as_ptr()) };
         free = next_free;
     }
 }
@@ -2254,9 +2444,11 @@ unsafe fn remove_node<K, V>(
     free_list: &mut Option<NonNull<Node<K, V>>>,
     mut node: NonNull<Node<K, V>>,
 ) -> (K, V) {
-    detach_node(node);
-    push_free(free_list, node);
-    node.as_mut().take_entry()
+    unsafe {
+        detach_node(node);
+        push_free(free_list, node);
+        node.as_mut().take_entry()
+    }
 }
 
 #[inline]
@@ -2265,7 +2457,7 @@ where
     S: BuildHasher,
     K: Hash,
 {
-    hash_key(s, node.as_ref().key_ref())
+    hash_key(s, unsafe { node.as_ref().key_ref() })
 }
 
 #[inline]
@@ -2274,9 +2466,7 @@ where
     S: BuildHasher,
     Q: Hash + ?Sized,
 {
-    let mut hasher = s.build_hasher();
-    k.hash(&mut hasher);
-    hasher.finish()
+    s.hash_one(k)
 }
 
 // We do not drop the key and value when a value is filtered from the map during the call to

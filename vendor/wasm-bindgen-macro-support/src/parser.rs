@@ -910,17 +910,19 @@ impl<'a>
         BindgenAttrs,
         &'a Option<ast::ImportModule>,
         bool,
+        Option<&'a [String]>,
     )> for syn::ForeignItemFn
 {
     type Target = ast::ImportKind;
 
     fn convert(
         mut self,
-        (program, opts, module, block_slice_to_array): (
+        (program, opts, module, block_slice_to_array, js_namespace): (
             &ast::Program,
             BindgenAttrs,
             &'a Option<ast::ImportModule>,
             bool,
+            Option<&'a [String]>,
         ),
     ) -> Result<Self::Target, Diagnostic> {
         // `slice_to_array` is inherited from the enclosing `extern "C"`
@@ -929,7 +931,7 @@ impl<'a>
         // individual arg overrides it via its own attribute (the
         // attribute is additive — you can only opt in, not out).
         let fn_slice_to_array = block_slice_to_array || opts.slice_to_array().is_some();
-        let args_attrs = extract_args_attrs(&mut self.sig, fn_slice_to_array)?;
+        let args_attrs = extract_args_attrs(&mut self.sig, Some(fn_slice_to_array))?;
         let (mut wasm, _) = function_from_decl(
             &self.sig.ident,
             &opts,
@@ -1074,13 +1076,22 @@ impl<'a>
                 module,
                 cfg_attrs,
             );
+            // The *resolved* `js_namespace` (item-level, or inherited from the
+            // enclosing `extern "C"` block) is part of a binding's identity:
+            // two otherwise identical imports that differ only in their
+            // namespace resolve to different JS values, so they must not share
+            // a shim name. Hashing is gated on `None` so that shim names for
+            // imports without a namespace are unchanged.
+            let hash = match js_namespace {
+                None => ShortHash(data).to_string(),
+                Some(ns) => ShortHash((data, ns)).to_string(),
+            };
             format!(
-                "__wbg_{}_{}",
+                "__wbg_{}_{hash}",
                 wasm.name
                     .chars()
                     .filter(|&c| c.is_ascii_alphanumeric() || c == '_')
                     .collect::<String>(),
-                ShortHash(data)
             )
         };
         if let Some(span) = opts.r#final() {
@@ -1224,14 +1235,24 @@ impl ConvertToAst<(&ast::Program, BindgenAttrs)> for syn::ForeignItemType {
     }
 }
 
-impl<'a> ConvertToAst<(&ast::Program, BindgenAttrs, &'a Option<ast::ImportModule>)>
-    for syn::ForeignItemStatic
+impl<'a>
+    ConvertToAst<(
+        &ast::Program,
+        BindgenAttrs,
+        &'a Option<ast::ImportModule>,
+        Option<&'a [String]>,
+    )> for syn::ForeignItemStatic
 {
     type Target = ast::ImportKind;
 
     fn convert(
         self,
-        (program, opts, module): (&ast::Program, BindgenAttrs, &'a Option<ast::ImportModule>),
+        (program, opts, module, js_namespace): (
+            &ast::Program,
+            BindgenAttrs,
+            &'a Option<ast::ImportModule>,
+            Option<&'a [String]>,
+        ),
     ) -> Result<Self::Target, Diagnostic> {
         if let syn::StaticMutability::Mut(_) = self.mutability {
             bail_span!(self.mutability, "cannot import mutable globals yet")
@@ -1250,7 +1271,12 @@ impl<'a> ConvertToAst<(&ast::Program, BindgenAttrs, &'a Option<ast::ImportModule
             .unwrap_or(&default_name)
             .to_string();
         let unraw_ident = self.ident.unraw();
-        let hash = ShortHash((&js_name, module, &unraw_ident));
+        // As for functions above, the resolved `js_namespace` is part of the
+        // binding's identity, gated on `None` to keep existing names.
+        let hash = match js_namespace {
+            None => ShortHash((&js_name, module, &unraw_ident)).to_string(),
+            Some(ns) => ShortHash((&js_name, module, &unraw_ident, ns)).to_string(),
+        };
         let shim = format!("__wbg_static_accessor_{unraw_ident}_{hash}");
         let thread_local = opts.get_thread_local()?;
 
@@ -1599,23 +1625,75 @@ struct FnArgAttrs {
     js_type: Option<String>,
     optional: bool,
     desc: Option<String>,
-    /// When set, an `&[T]` (or `Option<&[T]>`) argument is converted to a
-    /// freshly-allocated buffer that JS receives as a plain `Array` rather
-    /// than a typed array (for primitive element kinds). The wire format
-    /// matches `Vec<T>` (ownership transferred + freed by JS) but the
-    /// JS-visible type is always a plain `Array`.
+    /// When set, an `&[T]` (or `Option<&[T]>`) argument is routed through
+    /// `VectorRefIntoWasmAbi` so JS receives a plain `Array` rather than a
+    /// typed array. Ownership of the underlying buffer depends on the
+    /// element kind: primitive elements are a zero-copy *borrow* of the
+    /// caller's slice and are never freed, while string/externref-shaped
+    /// elements arrive in a freshly allocated index buffer that JS owns and
+    /// must free (see `VectorLoadAsArray` in `cli-support`'s `js/binding.rs`).
     slice_to_array: bool,
 }
 
-/// Extracts function arguments attributes. `default_slice_to_array` is the
-/// inherited flag from the enclosing function / `extern "C"` block; per-arg
-/// `#[wasm_bindgen(slice_to_array)]` ORs on top of it.
+/// Rejects the invalid `slice_to_array` argument shapes on an imported
+/// function, however the flag was applied (argument, function, or enclosing
+/// `extern "C"` block):
+///
+/// * `&mut [T]` / `Option<&mut [T]>`: `slice_to_array` hands JS an owned
+///   `Array` copied out of linear memory, so JS's writes are silently
+///   discarded rather than written back through the `&mut` — silent data
+///   loss, so a compile error rather than a no-op.
+/// * a slice element type mentioning a type parameter: the rewrite names
+///   `<#elem_ty as VectorRefIntoWasmAbi>`, which no user-writable bound can
+///   satisfy since the impls are keyed on concrete ABI shapes. Left
+///   unchecked, the user sees `E0277`s naming private traits.
+fn check_slice_to_array_arg(ty: &syn::Type, type_param_names: &[&Ident]) -> Result<(), Diagnostic> {
+    let Some(slice) = crate::codegen::detect_slice_or_option_slice(ty) else {
+        return Ok(());
+    };
+    if slice.is_mut {
+        return Err(Diagnostic::spanned_error(
+            ty,
+            "`slice_to_array` cannot be applied to a `&mut` slice: JS receives an owned \
+             `Array`, so its writes are never written back into the caller's slice — use a \
+             shared slice if JS only needs to read the elements, or remove `slice_to_array` \
+             (it may be inherited from the function or the enclosing `extern \"C\"` block) \
+             to keep the writable typed-array view",
+        ));
+    }
+    if !type_param_names.is_empty()
+        && crate::generics::uses_generic_params(&slice.elem_ty, &type_param_names.to_vec())
+    {
+        return Err(Diagnostic::spanned_error(
+            ty,
+            "`slice_to_array` requires a concrete slice element type (e.g. `&[u16]`); a type \
+             parameter cannot work here because `VectorRefIntoWasmAbi` is implemented per \
+             concrete ABI shape — drop `slice_to_array`, or take the argument by value",
+        ));
+    }
+    Ok(())
+}
+
+/// Extracts function arguments attributes.
+///
+/// `import_slice_to_array` is `Some(inherited)` only when `sig` belongs to an
+/// imported (`extern "C"`) function, where `slice_to_array` actually changes
+/// the outgoing-argument codegen; `inherited` is the flag from the enclosing
+/// function / `extern "C"` block, which per-arg
+/// `#[wasm_bindgen(slice_to_array)]` ORs on top of. It is `None` for exported
+/// free functions and impl-block methods, where the attribute is a documented
+/// no-op: a misapplied `slice_to_array` there stays inert instead of tripping
+/// the import-only shape checks.
 fn extract_args_attrs(
     sig: &mut syn::Signature,
-    default_slice_to_array: bool,
+    import_slice_to_array: Option<bool>,
 ) -> Result<Vec<FnArgAttrs>, Diagnostic> {
+    let type_param_names: Vec<&Ident> = sig.generics.type_params().map(|tp| &tp.ident).collect();
     let mut args_attrs = vec![];
     let mut seen_optional: Option<Span> = None;
+    // Collected rather than returned eagerly so that every offending
+    // `slice_to_array` argument in the signature is reported in one compile.
+    let mut slice_to_array_errors = vec![];
     for input in sig.inputs.iter_mut() {
         if let syn::FnArg::Typed(pat_type) = input {
             let attrs = BindgenAttrs::find(&mut pat_type.attrs)?;
@@ -1708,13 +1786,20 @@ fn extract_args_attrs(
                         check_js_comment_close(description, span)?;
                         Ok(Some(description.to_string()))
                     })?,
-                slice_to_array: default_slice_to_array || attrs.slice_to_array().is_some(),
+                slice_to_array: import_slice_to_array.unwrap_or(false)
+                    || attrs.slice_to_array().is_some(),
             };
+            if import_slice_to_array.is_some() && arg_attrs.slice_to_array {
+                if let Err(diagnostic) = check_slice_to_array_arg(&pat_type.ty, &type_param_names) {
+                    slice_to_array_errors.push(diagnostic);
+                }
+            }
             // throw error for any unused attrs
             attrs.enforce_used()?;
             args_attrs.push(arg_attrs);
         }
     }
+    Diagnostic::from_vec(slice_to_array_errors)?;
     Ok(args_attrs)
 }
 
@@ -1759,8 +1844,9 @@ impl<'a> MacroParse<(Option<BindgenAttrs>, &'a mut TokenStream)> for syn::Item {
                     f.attrs.remove(i);
                 }
                 // extract fn args attributes before parsing to tokens stream;
-                // `slice_to_array` is irrelevant for exported free functions.
-                let args_attrs = extract_args_attrs(&mut f.sig, false)?;
+                // `slice_to_array` is irrelevant (a documented no-op) for
+                // exported free functions.
+                let args_attrs = extract_args_attrs(&mut f.sig, None)?;
                 let comments = extract_doc_comments(&f.attrs);
                 // If the function isn't used for anything other than being exported to JS,
                 // it'll be unused when not building for the Wasm target and produce a
@@ -2041,10 +2127,10 @@ impl MacroParse<&ClassMarker> for &mut syn::ImplItemFn {
         }
 
         let comments = extract_doc_comments(&self.attrs);
-        // `slice_to_array` is meaningless on exported impl-block methods (the
-        // attribute only changes the outgoing-argument codegen for imported
-        // functions), so we always pass `false` here.
-        let args_attrs: Vec<FnArgAttrs> = extract_args_attrs(&mut self.sig, false)?;
+        // `slice_to_array` is meaningless (a documented no-op) on exported
+        // impl-block methods; the attribute only changes the
+        // outgoing-argument codegen for imported functions.
+        let args_attrs: Vec<FnArgAttrs> = extract_args_attrs(&mut self.sig, None)?;
         let (function, method_self) = function_from_decl(
             &self.sig.ident,
             &opts,
@@ -2608,11 +2694,17 @@ impl MacroParse<ForeignItemCtx> for syn::ForeignItem {
         }
 
         let kind = match self {
-            syn::ForeignItem::Fn(f) => {
-                f.convert((program, item_opts, &module, block_slice_to_array))?
-            }
+            syn::ForeignItem::Fn(f) => f.convert((
+                program,
+                item_opts,
+                &module,
+                block_slice_to_array,
+                js_namespace.as_deref(),
+            ))?,
             syn::ForeignItem::Type(t) => t.convert((program, item_opts))?,
-            syn::ForeignItem::Static(s) => s.convert((program, item_opts, &module))?,
+            syn::ForeignItem::Static(s) => {
+                s.convert((program, item_opts, &module, js_namespace.as_deref()))?
+            }
             _ => panic!("only foreign functions/types allowed for now"),
         };
 

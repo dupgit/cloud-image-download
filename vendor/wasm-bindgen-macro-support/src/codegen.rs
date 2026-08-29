@@ -165,7 +165,7 @@ impl TryToTokens for ast::Program {
         let prefix_json_bytes = syn::LitByteStr::new(&prefix_json_bytes, Span::call_site());
 
         (quote! {
-            #[cfg(target_family = "wasm")]
+            #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
             #[automatically_derived]
             const _: () = {
                 use #wasm_bindgen::__rt::{flat_len, flat_byte_slices};
@@ -220,7 +220,7 @@ impl ToTokens for ast::Struct {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let name = &self.rust_name;
         let name_str = self.qualified_name.to_string();
-        let name_len = name_str.len() as u32;
+        let name_len = name_str.chars().count() as u32;
         let name_chars: Vec<u32> = name_str.chars().map(|c| c as u32).collect();
         let new_fn = Ident::new(&shared::new_function(&name_str), Span::call_site());
         let free_fn = Ident::new(&shared::free_function(&name_str), Span::call_site());
@@ -287,12 +287,12 @@ impl ToTokens for ast::Struct {
                     let ptr = #wasm_bindgen::convert::IntoWasmAbi::into_abi(value);
 
                     #[link(wasm_import_module = "__wbindgen_placeholder__")]
-                    #[cfg(target_family = "wasm")]
+                    #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
                     extern "C" {
                         fn #new_fn(ptr: #class_abi) -> u32;
                     }
 
-                    #[cfg(not(target_family = "wasm"))]
+                    #[cfg(not(all(target_family = "wasm", not(target_os = "wasi"))))]
                     unsafe fn #new_fn(_: #class_abi) -> u32 {
                         panic!("cannot convert to JsValue outside of the Wasm target")
                     }
@@ -306,7 +306,7 @@ impl ToTokens for ast::Struct {
 
 
 
-            #[cfg(target_family = "wasm")]
+            #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
             #[automatically_derived]
             const _: () = {
                 #wasm_bindgen::__wbindgen_coverage! {
@@ -396,12 +396,12 @@ impl ToTokens for ast::Struct {
                     let idx = #wasm_bindgen::convert::IntoWasmAbi::into_abi(value);
 
                     #[link(wasm_import_module = "__wbindgen_placeholder__")]
-                    #[cfg(target_family = "wasm")]
+                    #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
                     extern "C" {
                         fn #unwrap_fn(ptr: u32) -> #class_abi;
                     }
 
-                    #[cfg(not(target_family = "wasm"))]
+                    #[cfg(not(all(target_family = "wasm", not(target_os = "wasi"))))]
                     unsafe fn #unwrap_fn(_: u32) -> #class_abi {
                         panic!("cannot convert from JsValue outside of the Wasm target")
                     }
@@ -511,7 +511,7 @@ impl ToTokens for ast::Struct {
                         }
                     }
 
-                    #[cfg(target_family = "wasm")]
+                    #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
                     #[automatically_derived]
                     const _: () = {
                         #[no_mangle]
@@ -581,7 +581,7 @@ impl ToTokens for ast::StructField {
             #[automatically_derived]
             const _: () = {
                 #wasm_bindgen::__wbindgen_coverage! {
-                #[cfg_attr(target_family = "wasm", no_mangle)]
+                #[cfg_attr(all(target_family = "wasm", not(target_os = "wasi")), no_mangle)]
                 #[doc(hidden)]
                 pub unsafe extern "C-unwind" fn #getter(js: #struct_abi)
                     -> #wasm_bindgen::convert::WasmRet<<#ty as #wasm_bindgen::convert::IntoWasmAbi>::Abi>
@@ -620,7 +620,7 @@ impl ToTokens for ast::StructField {
         let (args, names) = splat(wasm_bindgen, &Ident::new("val", rust_name.span()), &abi);
 
         (quote! {
-            #[cfg(target_family = "wasm")]
+            #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
             #[automatically_derived]
             const _: () = {
                 #wasm_bindgen::__wbindgen_coverage! {
@@ -814,7 +814,7 @@ impl TryToTokens for ast::Export {
                                     )
                             };
                             let #ident = <<#elem as #wasm_bindgen::convert::LongRefFromWasmAbi>
-                                ::Anchor as core::borrow::Borrow<#elem>>
+                                ::Anchor as #wasm_bindgen::__rt::core::borrow::Borrow<#elem>>
                                 ::borrow(&#ident);
                         });
                     } else {
@@ -1008,7 +1008,7 @@ impl TryToTokens for ast::Export {
                 #wasm_bindgen::__wbindgen_coverage! {
                 #(#attrs)*
                 #[cfg_attr(
-                    target_family = "wasm",
+                    all(target_family = "wasm", not(target_os = "wasi")),
                     export_name = #export_name,
                 )]
                 pub unsafe extern "C-unwind" fn #generated_name(#(#args),*) -> #wasm_bindgen::convert::WasmRet<#projection::Abi> {
@@ -1112,7 +1112,8 @@ impl TryToTokens for ast::ImportType {
         };
 
         let description = if let Some(typescript_type) = &self.typescript_type {
-            let typescript_type_len = typescript_type.len() as u32;
+            // One descriptor word per `char`, so count `char`s, not bytes.
+            let typescript_type_len = typescript_type.chars().count() as u32;
             let typescript_type_chars = typescript_type.chars().map(|c| c as u32);
             quote! {
                 use #wasm_bindgen::describe::*;
@@ -1182,9 +1183,9 @@ impl TryToTokens for ast::ImportType {
             let generic_param_names: Vec<_> = class_generic_params.iter().map(|p| p.0).collect();
             let lifetime_refs = lifetime_params.iter().map(|lt| quote! { &#lt () });
             phantom = quote! {
-                generics: ::core::marker::PhantomData<(#(#generic_param_names,)* #(#lifetime_refs),*)>
+                generics: #wasm_bindgen::__rt::core::marker::PhantomData<(#(#generic_param_names,)* #(#lifetime_refs),*)>
             };
-            phantom_init = quote! { generics: ::core::marker::PhantomData };
+            phantom_init = quote! { generics: #wasm_bindgen::__rt::core::marker::PhantomData };
         } else {
             phantom = quote! {};
             phantom_init = quote! {};
@@ -1234,7 +1235,7 @@ impl TryToTokens for ast::ImportType {
                     type JsCanon = #rust_name #ty_generics;
                     #[inline]
                     fn to_js(self) -> #rust_name #ty_generics {
-            unsafe { core::mem::transmute_copy(&core::mem::ManuallyDrop::new(self)) }
+            unsafe { #wasm_bindgen::__rt::core::mem::transmute_copy(&#wasm_bindgen::__rt::core::mem::ManuallyDrop::new(self)) }
                     }
                 }
             }
@@ -1324,13 +1325,13 @@ impl TryToTokens for ast::ImportType {
                 #[automatically_derived]
                 impl #impl_generics RefFromWasmAbi for #rust_name #ty_generics #where_clause {
                     type Abi = <JsValue as RefFromWasmAbi>::Abi;
-                    type Anchor = core::mem::ManuallyDrop<#rust_name #ty_generics>;
+                    type Anchor = #wasm_bindgen::__rt::core::mem::ManuallyDrop<#rust_name #ty_generics>;
 
                     #[inline]
                     unsafe fn ref_from_abi(js: Self::Abi) -> Self::Anchor {
                         let tmp = <JsValue as RefFromWasmAbi>::ref_from_abi(js);
-                        core::mem::ManuallyDrop::new(#rust_name {
-                            obj: core::mem::ManuallyDrop::into_inner(tmp).into(),
+                        #wasm_bindgen::__rt::core::mem::ManuallyDrop::new(#rust_name {
+                            obj: #wasm_bindgen::__rt::core::mem::ManuallyDrop::into_inner(tmp).into(),
                             #phantom_init
                         })
                     }
@@ -1391,11 +1392,11 @@ impl TryToTokens for ast::ImportType {
                 impl #impl_generics JsCast for #rust_name #ty_generics #where_clause {
                     fn instanceof(val: &JsValue) -> bool {
                         #[link(wasm_import_module = "__wbindgen_placeholder__")]
-                        #[cfg(target_family = "wasm")]
+                        #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
                         extern "C" {
                             fn #instanceof_shim(val: u32) -> u32;
                         }
-                        #[cfg(not(target_family = "wasm"))]
+                        #[cfg(not(all(target_family = "wasm", not(target_os = "wasi"))))]
                         unsafe fn #instanceof_shim(_: u32) -> u32 {
                             panic!("cannot check instanceof on non-wasm targets");
                         }
@@ -1480,7 +1481,8 @@ impl TryToTokens for ast::ImportType {
 
         // Generate UpcastFrom implementations (unless no_upcast is set)
         if !self.no_upcast {
-            // 1. Always generate UpcastFrom<Self> for JsValue
+            // 1. Always generate UpcastFrom<Self> for JsValue, including its
+            // JsOption/JsNullable wrappers (like superclass targets below)
             (quote! {
                 #[automatically_derived]
                 impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
@@ -1488,10 +1490,22 @@ impl TryToTokens for ast::ImportType {
                 #where_clause
                 {
                 }
+                #[automatically_derived]
+                impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
+                    for #wasm_bindgen::sys::JsOption<#wasm_bindgen::JsValue>
+                #where_clause
+                {
+                }
+                #[automatically_derived]
+                impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
+                    for #wasm_bindgen::sys::JsNullable<#wasm_bindgen::JsValue>
+                #where_clause
+                {
+                }
             })
             .to_tokens(tokens);
 
-            // 2. For non-generic types: generate identity upcast (UpcastFrom<Self> for Self, UpcastFrom<Self> for JsOption<Self>)
+            // 2. For non-generic types: generate identity upcast (UpcastFrom<Self> for Self, UpcastFrom<Self> for JsOption<Self>/JsNullable<Self>)
             // 3. For generic types: generate structural covariance
             let type_params: Vec<_> = self.generics.type_params().collect();
             if type_params.is_empty() {
@@ -1507,6 +1521,12 @@ impl TryToTokens for ast::ImportType {
                     #[automatically_derived]
                     impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
                         for #wasm_bindgen::sys::JsOption<#rust_name #ty_generics>
+                    #where_clause
+                    {
+                    }
+                    #[automatically_derived]
+                    impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
+                        for #wasm_bindgen::sys::JsNullable<#rust_name #ty_generics>
                     #where_clause
                     {
                     }
@@ -1575,6 +1595,12 @@ impl TryToTokens for ast::ImportType {
                     #where_clause_extended
                     {
                     }
+                    #[automatically_derived]
+                    impl #impl_generics_split #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
+                        for #wasm_bindgen::sys::JsNullable<#rust_name #target_ty_generics>
+                    #where_clause_extended
+                    {
+                    }
                 })
                 .to_tokens(tokens);
             }
@@ -1591,6 +1617,12 @@ impl TryToTokens for ast::ImportType {
                     #[automatically_derived]
                     impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
                         for #wasm_bindgen::sys::JsOption<#superclass>
+                    #where_clause
+                    {
+                    }
+                    #[automatically_derived]
+                    impl #impl_generics #wasm_bindgen::convert::UpcastFrom<#rust_name #ty_generics>
+                        for #wasm_bindgen::sys::JsNullable<#superclass>
                     #where_clause
                     {
                     }
@@ -1628,7 +1660,7 @@ impl ToTokens for ast::StringEnum {
         let vis = &self.vis;
         let enum_name = &self.name;
         let name_str = &self.export_name;
-        let name_len = name_str.len() as u32;
+        let name_len = name_str.chars().count() as u32;
         let name_chars = name_str.chars().map(u32::from);
         let variants = &self.variants;
         let variant_count = self.variant_values.len() as u32;
@@ -1898,7 +1930,7 @@ impl ToTokens for ast::DynamicUnion {
         };
 
         let name_str = &self.js_name;
-        let name_len = name_str.len() as u32;
+        let name_len = name_str.chars().count() as u32;
         let name_chars = name_str.chars().map(u32::from);
 
         let mut string_variants = Vec::new();
@@ -2164,7 +2196,7 @@ impl TryToTokens for ast::ImportFunction {
                     quote! { #concrete_ty }
                 };
 
-                convert_arg = quote! { unsafe { core::mem::transmute_copy(&core::mem::ManuallyDrop::new(#var)) } };
+                convert_arg = quote! { unsafe { #wasm_bindgen::__rt::core::mem::transmute_copy(&#wasm_bindgen::__rt::core::mem::ManuallyDrop::new(#var)) } };
             } else if let Some((is_mut, fn_bounds)) = detect_raw_fn_trait_obj(ty) {
                 // Raw `&dyn Fn(...)` or `&mut dyn FnMut(...)` argument.
                 //
@@ -2206,59 +2238,17 @@ impl TryToTokens for ast::ImportFunction {
                 convert_arg = quote! { #var };
             }
 
-            // `slice_to_array`: re-route an `&[T]` (or `Option<&[T]>`)
-            // outgoing argument through `<T as VectorRefIntoWasmAbi>`
-            // instead of the default `&[T]: IntoWasmAbi`. The user-facing
-            // parameter is unchanged; only the ABI / describe path
-            // changes. `VectorRefIntoWasmAbi`'s impls cover the two
-            // genuine ABI shapes (zero-copy primitive borrow,
-            // fresh-`Box<[u32]>` for handle-shaped element types) — no
-            // `T: Clone` bound is introduced.
-            //
-            // Wire format is `WasmSlice` either way; the cli-support
-            // side picks the right JS shim based on the element
-            // `VectorKind` recovered from the descriptor.
-            // `slice_to_array` is set per-fn or per-`extern "C"` block
-            // and applies to every `&[T]` / `Option<&[T]>` argument of
-            // every fn it covers. Args that aren't slice-shaped (e.g.
-            // the `this: &Foo` of a method, or any other non-slice
-            // argument of a slice_to_array fn) silently fall through to
-            // the default ABI path — there's no per-arg opt-out form
-            // in Rust attribute syntax to require, so silent no-op is
-            // the only sensible behaviour.
-            if arg.slice_to_array && detect_slice_or_option_slice(ty).is_some() {
-                let (elem_ty, is_option) = detect_slice_or_option_slice(ty).unwrap();
-
-                let abi = quote! { #wasm_bindgen::convert::WasmSlice };
-                let (prim_args, prim_names) = splat(wasm_bindgen, &name, &abi);
-                abi_arguments.extend(prim_args);
-                abi_argument_names.extend(prim_names.iter().cloned());
-
-                let body = if is_option {
-                    quote! {
-                        match #var {
-                            ::core::option::Option::Some(s) =>
-                                <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
-                                    ::slice_into_abi(s),
-                            ::core::option::Option::None =>
-                                <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
-                                    ::slice_none(),
-                        }
-                    }
-                } else {
-                    quote! {
-                        <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
-                            ::slice_into_abi(#var)
-                    }
-                };
-
-                arg_conversions.push(quote! {
-                    let #name: #wasm_bindgen::convert::WasmSlice = #body;
-                    let (#(#prim_names),*) =
-                        <#wasm_bindgen::convert::WasmSlice as #wasm_bindgen::convert::WasmAbi>
-                            ::split(#name);
-                });
-                continue;
+            // `slice_to_array` re-routes a slice-shaped argument through
+            // `VectorRefIntoWasmAbi`; see `slice_to_array_rewrite` for the full
+            // rationale, including why a non-slice argument silently falls
+            // through to the default ABI path.
+            if arg.slice_to_array {
+                if let Some(rewrite) = slice_to_array_rewrite(wasm_bindgen, &name, &var, ty) {
+                    abi_arguments.extend(rewrite.abi_args);
+                    abi_argument_names.extend(rewrite.prim_names.iter().cloned());
+                    arg_conversions.push(rewrite.conversion);
+                    continue;
+                }
             }
 
             let abi = quote! { <#abi_ty as #wasm_bindgen::convert::IntoWasmAbi>::Abi };
@@ -2300,7 +2290,7 @@ impl TryToTokens for ast::ImportFunction {
                     fn_class_generics.add_fn_bound(
                         parse_quote! { #ty: #wasm_bindgen::__rt::marker::ErasableGenericOwn<#concrete_ty> },
                     );
-                    convert_ret = quote! { unsafe { core::mem::transmute_copy(&core::mem::ManuallyDrop::new(<#concrete_ty as #wasm_bindgen::convert::FromWasmAbi>::from_abi(#ret_ident.join()))) } };
+                    convert_ret = quote! { unsafe { #wasm_bindgen::__rt::core::mem::transmute_copy(&#wasm_bindgen::__rt::core::mem::ManuallyDrop::new(<#concrete_ty as #wasm_bindgen::convert::FromWasmAbi>::from_abi(#ret_ident.join()))) } };
                     abi_ret = quote! { #wasm_bindgen::convert::WasmRet<<#concrete_ty as #wasm_bindgen::convert::FromWasmAbi>::Abi> };
                 } else {
                     convert_ret = quote! { <#ty as #wasm_bindgen::convert::FromWasmAbi>::from_abi(#ret_ident.join()) };
@@ -2847,6 +2837,7 @@ impl TryToTokens for DescribeImport<'_> {
         };
         let fn_class_generics = f.get_fn_generics()?;
         let fn_lifetime_params = generics::lifetime_params(&f.generics);
+        let wasm_bindgen = self.wasm_bindgen;
         let argtys = f
             .function
             .arguments
@@ -2866,32 +2857,33 @@ impl TryToTokens for DescribeImport<'_> {
                 // to their default describe — slice_to_array is a mode that
                 // only acts on slice-shaped args.
                 if arg.slice_to_array {
-                    if let Some((elem_ty, is_option)) = detect_slice_or_option_slice(&ty) {
-                        if is_option {
-                            return Ok(parse_quote! {
-                                ::core::option::Option<&::std::vec::Vec<#elem_ty>>
-                            });
-                        } else {
-                            return Ok(parse_quote! { &::std::vec::Vec<#elem_ty> });
-                        }
+                    if let Some(described) = slice_to_array_describe_ty(wasm_bindgen, &ty) {
+                        return Ok(described);
                     }
                 }
                 Ok(ty)
             })
             .collect::<Result<Vec<syn::Type>, Diagnostic>>()?;
         let nargs = f.function.arguments.len() as u32;
-        let inform_ret = match &f.js_ret {
-            Some(ref t) => {
+        let inform_ret = {
+            let wasm_bindgen = self.wasm_bindgen;
+            let describe = quote! { #wasm_bindgen::describe::WasmDescribe };
+            if f.function.r#async {
+                // An `async` import hands back a `Promise` handle regardless of
+                // its declared return type, which never reaches the ABI: the
+                // resolved value is converted separately when the returned
+                // `JsFuture` is awaited. So describe an externref.
+                quote! { <#wasm_bindgen::JsValue as #describe>::describe(); }
+            } else if let Some(t) = &f.js_ret {
                 let t = generics::generic_to_concrete(
                     t.clone(),
                     &fn_class_generics.concrete_defaults,
                     &fn_lifetime_params,
                 )?;
-                quote! { <#t as WasmDescribe>::describe(); }
+                quote! { <#t as #describe>::describe(); }
+            } else {
+                quote! { <() as #describe>::describe(); }
             }
-            // async functions always return a JsValue, even if they say to return ()
-            None if f.function.r#async => quote! { <JsValue as WasmDescribe>::describe(); },
-            None => quote! { <() as WasmDescribe>::describe(); },
         };
 
         Descriptor {
@@ -2916,7 +2908,7 @@ impl ToTokens for ast::Enum {
     fn to_tokens(&self, into: &mut TokenStream) {
         let enum_name = &self.rust_name;
         let name_str = shared::qualified_name(self.js_namespace.as_deref(), &self.js_name);
-        let name_len = name_str.len() as u32;
+        let name_len = name_str.chars().count() as u32;
         let name_chars = name_str.chars().map(|c| c as u32);
         let hole = &self.hole;
         let underlying = if self.signed {
@@ -3154,12 +3146,12 @@ fn static_init(wasm_bindgen: &syn::Path, ty: &syn::Type, shim_name: &Ident) -> T
     };
     quote! {
         #[link(wasm_import_module = "__wbindgen_placeholder__")]
-        #[cfg(target_family = "wasm")]
+        #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
         extern "C" {
             fn #shim_name() -> #abi_ret;
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(not(all(target_family = "wasm", not(target_os = "wasi"))))]
         unsafe fn #shim_name() -> #abi_ret {
             panic!("cannot access imported statics on non-wasm targets")
         }
@@ -3204,7 +3196,7 @@ impl<T: ToTokens> ToTokens for Descriptor<'_, T> {
         let attrs = &self.attrs;
         let wasm_bindgen = &self.wasm_bindgen;
         (quote! {
-            #[cfg(target_family = "wasm")]
+            #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
             #[automatically_derived]
             const _: () = {
                 #wasm_bindgen::__wbindgen_coverage! {
@@ -3232,14 +3224,14 @@ fn extern_fn(
     abi_ret: TokenStream,
 ) -> TokenStream {
     quote! {
-        #[cfg(target_family = "wasm")]
+        #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
         #(#attrs)*
         #[link(wasm_import_module = "__wbindgen_placeholder__")]
         extern "C" {
             fn #import_name(#(#abi_arguments),*) -> #abi_ret;
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(not(all(target_family = "wasm", not(target_os = "wasi"))))]
         unsafe fn #import_name(#(#abi_arguments),*) -> #abi_ret {
             #(
                 drop(#abi_argument_names);
@@ -3310,23 +3302,36 @@ fn get_ty(mut ty: &syn::Type) -> &syn::Type {
     ty
 }
 
-/// Detects whether a type is a raw `&dyn Fn(...)` or `&mut dyn FnMut(...)` argument.
-///
-/// Returns `Some((is_mut, fn_trait_bounds))` where:
-/// - `is_mut` is `true` for `&mut dyn FnMut`, `false` for `&dyn Fn`
-/// - `fn_trait_bounds` are the `TypeParamBound`s from the `dyn` trait object (e.g. `FnMut(A)->R`)
-///
-/// This is used by the import function codegen to auto-inject `MaybeUnwindSafe`
-/// bounds for closure arguments, ensuring unwind safety when `panic = "unwind"`.
-/// Recognise `&[T]` and `Option<&[T]>` argument types. Returns the element
-/// type plus a flag indicating whether the outer `Option` was present. Used
-/// by the `slice_to_array` codegen to rewrite the ABI path.
-fn detect_slice_or_option_slice(ty: &syn::Type) -> Option<(syn::Type, bool)> {
-    // Direct `&[T]` (mutability ignored — `&mut [T]` is intentionally
-    // accepted too; the ABI layer treats it the same as `&[T]`).
-    if let syn::Type::Reference(syn::TypeReference { elem, .. }) = ty {
+/// A slice-shaped argument recognised by the `slice_to_array` codegen.
+pub(crate) struct SliceArg {
+    /// The slice's element type `T`.
+    pub elem_ty: syn::Type,
+    /// Whether the slice was wrapped in an outer `Option`.
+    pub is_option: bool,
+    /// Whether the reference was `&mut` rather than `&`.
+    ///
+    /// `slice_to_array` cannot honour this: it hands JS an owned `Array`, and
+    /// mutations to that `Array` are not written back into the caller's slice.
+    /// The parser rejects the combination rather than silently dropping the
+    /// write-back; see `check_slice_to_array_arg` in `parser.rs`.
+    pub is_mut: bool,
+}
+
+/// Recognise `&[T]`, `&mut [T]`, and either wrapped in `Option`. Used by the
+/// `slice_to_array` codegen to rewrite the ABI path, and by the parser to
+/// reject the mutable and generic-element forms.
+pub(crate) fn detect_slice_or_option_slice(ty: &syn::Type) -> Option<SliceArg> {
+    // Direct `&[T]` / `&mut [T]`.
+    if let syn::Type::Reference(syn::TypeReference {
+        elem, mutability, ..
+    }) = ty
+    {
         if let syn::Type::Slice(syn::TypeSlice { elem: inner, .. }) = &**elem {
-            return Some(((**inner).clone(), false));
+            return Some(SliceArg {
+                elem_ty: (**inner).clone(),
+                is_option: false,
+                is_mut: mutability.is_some(),
+            });
         }
     }
     // `Option<&[T]>` — match shape `Option<...>` and recurse once.
@@ -3336,8 +3341,13 @@ fn detect_slice_or_option_slice(ty: &syn::Type) -> Option<(syn::Type, bool)> {
                 if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
                     if args.args.len() == 1 {
                         if let syn::GenericArgument::Type(inner) = &args.args[0] {
-                            if let Some((elem, false)) = detect_slice_or_option_slice(inner) {
-                                return Some((elem, true));
+                            if let Some(inner) = detect_slice_or_option_slice(inner) {
+                                if !inner.is_option {
+                                    return Some(SliceArg {
+                                        is_option: true,
+                                        ..inner
+                                    });
+                                }
                             }
                         }
                     }
@@ -3348,6 +3358,114 @@ fn detect_slice_or_option_slice(ty: &syn::Type) -> Option<(syn::Type, bool)> {
     None
 }
 
+/// The type to hand `WasmDescribe::describe` for a `slice_to_array` argument,
+/// or `None` if `ty` is not slice-shaped.
+///
+/// Describing through `&Vec<T>` / `Option<&Vec<T>>` makes the descriptor
+/// `Ref(Vector(T))` / `Option(Ref(Vector(T)))`, which is what cli-support
+/// recognises as "hand JS an owned `Array`" rather than "hand JS a typed-array
+/// view". This must stay in lockstep with the ABI rewrite in
+/// [`slice_to_array_rewrite`]: the descriptor is what selects the JS shim, and
+/// the ABI is what the shim is handed.
+fn slice_to_array_describe_ty(wasm_bindgen: &syn::Path, ty: &syn::Type) -> Option<syn::Type> {
+    let SliceArg {
+        elem_ty, is_option, ..
+    } = detect_slice_or_option_slice(ty)?;
+    // `alloc`, not `std`: `wasm-bindgen` is `#![no_std]` and supports `no_std`
+    // consumers, so generated code must never name `::std`.
+    let vec = quote! { #wasm_bindgen::__rt::alloc::vec::Vec };
+    // `Option` likewise goes through the `__rt::core` re-export rather than a
+    // bare `::core`, for the same call-site-hygiene reason as `Vec` above.
+    let option = quote! { #wasm_bindgen::__rt::core::option::Option };
+    Some(if is_option {
+        parse_quote! { #option<&#vec<#elem_ty>> }
+    } else {
+        parse_quote! { &#vec<#elem_ty> }
+    })
+}
+
+/// The pieces of the `slice_to_array` rewrite for one argument.
+struct SliceToArrayRewrite {
+    /// Flattened wasm ABI parameters to splice into the shim signature.
+    abi_args: Vec<TokenStream>,
+    /// The names `conversion` binds, in ABI order.
+    prim_names: Vec<Ident>,
+    /// Statements converting the user-facing argument into `prim_names`.
+    conversion: TokenStream,
+}
+
+/// Build the `slice_to_array` rewrite for one argument, or `None` if `ty` is not
+/// slice-shaped (`&[T]` / `Option<&[T]>`).
+///
+/// This re-routes the argument through `<T as VectorRefIntoWasmAbi>` instead of
+/// the default `&[T]: IntoWasmAbi`. The user-facing parameter is unchanged; only
+/// the ABI and describe paths move. `VectorRefIntoWasmAbi`'s impls cover the two
+/// genuine ABI shapes (zero-copy borrow for primitive elements, freshly
+/// allocated `Box<[u32]>` for handle-shaped ones), so no `T: Clone` bound is
+/// introduced. The wire format is `WasmSlice` either way; cli-support picks the
+/// right JS shim from the element `VectorKind` in the descriptor.
+///
+/// `slice_to_array` is set per-fn or per-`extern "C"` block and applies to every
+/// slice-shaped argument of every fn it covers. Arguments that are not
+/// slice-shaped (the `this: &Foo` receiver of a method, a `Vec<T>`, any scalar)
+/// return `None` and take the default ABI path — there is no per-argument
+/// opt-out in Rust attribute syntax to require, so a silent no-op is the only
+/// sensible behaviour.
+///
+/// Neither `&mut [T]` nor a generic element type reaches here: the parser
+/// rejects both up front (see `check_slice_to_array_arg` in `parser.rs`).
+fn slice_to_array_rewrite(
+    wasm_bindgen: &syn::Path,
+    name: &Ident,
+    var: &TokenStream,
+    ty: &syn::Type,
+) -> Option<SliceToArrayRewrite> {
+    let SliceArg {
+        elem_ty, is_option, ..
+    } = detect_slice_or_option_slice(ty)?;
+
+    let abi = quote! { #wasm_bindgen::convert::WasmSlice };
+    let (abi_args, prim_names) = splat(wasm_bindgen, name, &abi);
+
+    let body = if is_option {
+        quote! {
+            match #var {
+                #wasm_bindgen::__rt::core::option::Option::Some(s) =>
+                    <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
+                        ::slice_into_abi(s),
+                #wasm_bindgen::__rt::core::option::Option::None =>
+                    <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
+                        ::slice_none(),
+            }
+        }
+    } else {
+        quote! {
+            <#elem_ty as #wasm_bindgen::convert::VectorRefIntoWasmAbi>
+                ::slice_into_abi(#var)
+        }
+    };
+    let conversion = quote! {
+        let #name: #wasm_bindgen::convert::WasmSlice = #body;
+        let (#(#prim_names),*) =
+            <#wasm_bindgen::convert::WasmSlice as #wasm_bindgen::convert::WasmAbi>
+                ::split(#name);
+    };
+
+    Some(SliceToArrayRewrite {
+        abi_args,
+        prim_names,
+        conversion,
+    })
+}
+
+/// Detects whether a type is a raw `&dyn Fn(...)` or `&mut dyn FnMut(...)` argument.
+///
+/// Returns `Some((is_mut, fn_trait_bounds))` where:
+/// - `is_mut` is `true` for `&mut dyn FnMut`, `false` for `&dyn Fn`
+/// - `fn_trait_bounds` are the `TypeParamBound`s from the `dyn` trait object (e.g. `FnMut(A)->R`)
+///
+/// This is used by the import function codegen to auto-inject `MaybeUnwindSafe`
+/// bounds for closure arguments, ensuring unwind safety when `panic = "unwind"`.
 fn detect_raw_fn_trait_obj(
     ty: &syn::Type,
 ) -> Option<(

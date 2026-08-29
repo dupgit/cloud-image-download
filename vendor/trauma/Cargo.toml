@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "trauma"
-version = "2.4.0"
+version = "3.0.0"
 build = false
 autolib = false
 autobins = false
@@ -34,7 +34,8 @@ license = "MIT"
 repository = "https://github.com/rgreinho/trauma"
 
 [features]
-default = ["reqwest/default-tls"]
+default = ["rustls"]
+default-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls"]
 
 [lib]
@@ -48,6 +49,10 @@ path = "examples/simple.rs"
 [[example]]
 name = "with-authentication"
 path = "examples/with-authentication.rs"
+
+[[example]]
+name = "with-not-resumable"
+path = "examples/with-not-resumable.rs"
 
 [[example]]
 name = "with-path-as-filename"
@@ -69,6 +74,9 @@ path = "examples/with-resume.rs"
 name = "with-style"
 path = "examples/with-style.rs"
 
+[dependencies.bon]
+version = "3.9.3"
+
 [dependencies.form_urlencoded]
 version = "1.2.2"
 
@@ -79,11 +87,10 @@ version = "0.3.32"
 version = "0.18.0"
 
 [dependencies.reqwest]
-version = "0.13.2"
+version = "0.13.4"
 features = [
     "charset",
     "http2",
-    "rustls",
     "system-proxy",
     "stream",
     "socks",
@@ -91,20 +98,20 @@ features = [
 default-features = false
 
 [dependencies.reqwest-middleware]
-version = "0.5.1"
+version = "0.5.2"
 
 [dependencies.reqwest-retry]
 version = "0.9.1"
 
 [dependencies.reqwest-tracing]
-version = "0.7.0"
+version = "0.7.1"
 features = ["opentelemetry_0_22"]
 
 [dependencies.thiserror]
 version = "2.0.18"
 
 [dependencies.tokio]
-version = "1.49.0"
+version = "1.52.3"
 features = [
     "macros",
     "rt-multi-thread",
@@ -114,7 +121,7 @@ features = [
 version = "0.1.44"
 
 [dependencies.tracing-subscriber]
-version = "0.3.22"
+version = "0.3.23"
 
 [dev-dependencies.color-eyre]
 version = "0.6.5"
@@ -123,13 +130,13 @@ version = "0.6.5"
 version = "7.2.2"
 
 [dev-dependencies.console]
-version = "0.16.0"
+version = "0.16.3"
 
 [dev-dependencies.opentelemetry]
-version = "0.31.0"
+version = "0.32.0"
 
 [dev-dependencies.rand]
-version = "0.10.0"
+version = "0.10.1"
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"

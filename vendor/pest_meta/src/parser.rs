@@ -20,17 +20,10 @@ use pest::{Parser, Position, Span};
 use crate::ast::{Expr, Rule as AstRule, RuleType};
 use crate::validator;
 
-/// Note: `include!` adds here a code generated from build.rs file.
-/// In case feature `not-bootstrap-in-src` is:
-/// * OFF  -> include generated `grammar.rs` file from meta/src
-/// * ON   -> include generated `__pest_grammar.rs` file from target/build/...
+/// Generated from `grammar.pest` by `cargo bootstrap` (pest_bootstrap).
 #[allow(missing_docs, unused_qualifications)]
 mod grammar {
-    #[cfg(not(feature = "not-bootstrap-in-src"))]
     include!("grammar.rs");
-
-    #[cfg(feature = "not-bootstrap-in-src")]
-    include!(concat!(env!("OUT_DIR"), "/__pest_grammar.rs"));
 }
 
 /// Import included grammar (`PestParser` class globally for current module).
@@ -1130,6 +1123,41 @@ mod tests {
                     single_quote(0, 1),
                     inner_chr(1, 11),
                     single_quote(11, 12)
+                ])
+            ]
+        };
+    }
+
+    #[test]
+    fn character_unescaped_quote_is_rejected() {
+        // A single quote can only appear inside a character literal if it's
+        // escaped (as in '\''), just like a double quote must be escaped
+        // inside a string literal. Previously `inner_chr` matched `ANY`
+        // unconditionally, so `'''` was silently accepted as a character
+        // literal for `'`, even though every other tool (syntax highlighters,
+        // the playground, etc.) treats it as invalid.
+        fails_with! {
+            parser: PestParser,
+            input: "'''",
+            rule: Rule::character,
+            positives: vec![Rule::inner_chr],
+            negatives: vec![],
+            pos: 1
+        };
+    }
+
+    #[test]
+    fn character_escaped_quote_is_accepted() {
+        // The correct, unambiguous way to write a literal `'` still works.
+        parses_to! {
+            parser: PestParser,
+            input: "'\\''",
+            rule: Rule::character,
+            tokens: [
+                character(0, 4, [
+                    single_quote(0, 1),
+                    inner_chr(1, 3),
+                    single_quote(3, 4)
                 ])
             ]
         };

@@ -318,7 +318,7 @@ pub use crate::error_chain::*;
 mod report;
 #[cfg(feature = "alloc")]
 pub use report::CleanedErrorText;
-pub use report::{Report, __InternalExtractErrorType};
+pub use report::{__InternalExtractErrorType, Report};
 
 #[doc = include_str!("Snafu.md")]
 #[doc(alias(
@@ -541,7 +541,7 @@ macro_rules! whatever {
             $crate::FromString::without_source(
                 $crate::__format!($fmt$(, $($arg),*)*),
             )
-        });
+        })
     };
     ($source:expr, $fmt:literal$(, $($arg:expr),* $(,)?)*) => {
         match $source {
@@ -1521,7 +1521,6 @@ fn backtrace_collection_enabled() -> bool {
 ///
 /// ```rust
 /// # #[cfg(all(feature = "futures", feature = "internal-dev-dependencies"))] {
-/// # use futures_crate as futures;
 /// # use snafu::{prelude::*, Location, location};
 /// # let body = async {
 /// // Non-ideal: will report where `wrapped_error_future` is `.await`ed.

@@ -1,20 +1,22 @@
 //! Represents the download controller.
 
-use crate::download::{Download, Status, Summary};
+use crate::{
+    download::{Download, Status, Summary},
+    ResponseExt,
+};
+use bon::Builder;
 use futures::stream::{self, StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use reqwest::{
-    header::{HeaderMap, HeaderValue, IntoHeaderName, RANGE},
-    StatusCode,
-};
+use reqwest::header::{HeaderMap, RANGE};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use reqwest_tracing::TracingMiddleware;
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 use tracing::debug;
 
-pub struct TimeTrace;
+const DEFAULT_RETRIES: u32 = 3;
+const DEFAULT_CONCURRENT_DOWNLOADS: usize = 32;
 
 /// Represents the download controller.
 ///
@@ -22,30 +24,40 @@ pub struct TimeTrace;
 ///
 /// ```rust
 /// # fn main()  {
-/// use trauma::downloader::DownloaderBuilder;
+/// use trauma::downloader::Downloader;
 ///
-/// let d = DownloaderBuilder::new().build();
+/// let d = Downloader::builder().build();
 /// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct Downloader {
     /// Directory where to store the downloaded files.
+    #[builder(default = std::env::current_dir().unwrap_or_default(), into )]
     directory: PathBuf,
     /// Number of retries per downloaded file.
+    #[builder(default = DEFAULT_RETRIES)]
     retries: u32,
     /// Number of maximum concurrent downloads.
+    #[builder(default = DEFAULT_CONCURRENT_DOWNLOADS)]
     concurrent_downloads: usize,
     /// Downloader style options.
+    #[builder(default)]
     style_options: StyleOptions,
     /// Resume the download if necessary and possible.
+    #[builder(default = true)]
     resumable: bool,
     /// Custom HTTP headers.
     headers: Option<HeaderMap>,
 }
 
+impl Default for Downloader {
+    fn default() -> Self {
+        Downloader::builder().build()
+    }
+}
+
 impl Downloader {
-    const DEFAULT_RETRIES: u32 = 3;
-    const DEFAULT_CONCURRENT_DOWNLOADS: usize = 32;
+    const ALREADY_DOWNLOADED: &str = "the file was already fully downloaded";
 
     /// Starts the downloads.
     pub async fn download(&self, downloads: &[Download]) -> Vec<Summary> {
@@ -62,7 +74,7 @@ impl Downloader {
     }
 
     /// Starts the downloads.
-    pub async fn download_inner(
+    async fn download_inner(
         &self,
         downloads: &[Download],
         proxy: Option<reqwest::Proxy>,
@@ -77,8 +89,9 @@ impl Downloader {
         if let Some(headers) = &self.headers {
             inner_client_builder = inner_client_builder.default_headers(headers.clone());
         }
-
-        let inner_client = inner_client_builder.build().unwrap();
+        let inner_client = inner_client_builder
+            .build()
+            .expect("the inner client to build");
 
         let client = ClientBuilder::new(inner_client)
             // Trace HTTP requests. See the tracing crate to make use of these traces.
@@ -88,9 +101,9 @@ impl Downloader {
             .build();
 
         // Prepare the progress bar.
-        let multi = match self.style_options.clone().is_enabled() {
-            true => Arc::new(MultiProgress::new()),
-            false => Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::hidden())),
+        let multi = match self.style_options.is_hidden() {
+            true => Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::hidden())),
+            false => Arc::new(MultiProgress::new()),
         };
         let main = Arc::new(
             multi.add(
@@ -129,58 +142,63 @@ impl Downloader {
         main: Arc<ProgressBar>,
     ) -> Summary {
         // Create a download summary.
-        let mut size_on_disk: u64 = 0;
-        let mut can_resume = false;
-        let output = self.directory.join(&download.filename);
-        let mut summary = Summary::new(
-            download.clone(),
-            StatusCode::BAD_REQUEST,
-            size_on_disk,
-            can_resume,
-        );
-        let file_exist = output.exists();
+        let summary = Summary::builder().download(download.clone());
 
-        // If resumable is turned on...
-        if self.resumable {
-            can_resume = match download.is_resumable(client).await {
-                Ok(r) => r,
-                Err(e) => {
-                    return summary.fail(e);
-                }
-            };
-
-            // Check if there is a file on disk already.
-            if file_exist {
-                debug!("A file with the same name already exists at the destination.");
-                // If so, check file length to know where to restart the download from.
-                size_on_disk = match output.metadata() {
-                    Ok(m) => m.len(),
-                    Err(e) => {
-                        return summary.fail(e);
-                    }
-                };
-            }
-
-            // Update the summary accordingly.
-            summary.set_resumable(can_resume);
-        }
-
-        // Retrieve the download size from the header if possible.
-        let content_length = match download.content_length(client).await {
-            Ok(l) => l,
+        // Retrieve download metadata.
+        let response = match download.head(client).await {
+            Ok(r) => r,
             Err(e) => {
-                if can_resume && file_exist {
-                    return summary.fail(e);
-                }
-                debug!("Error retrieving content length {e}");
-                None
+                return summary.status(Status::Fail(e.to_string())).build();
             }
         };
 
-        // If resumable is turned on...
-        // Request the file.
-        debug!("Fetching {}", &download.url);
-        let mut req = client.get(download.url.clone());
+        // Try to build the output path.
+        let Some(filename) = download.infer_filename(&response) else {
+            return summary
+                .status(Status::Fail(
+                    "Cannot extract the filename. Verify the URL and/or provide an override."
+                        .to_string(),
+                ))
+                .build();
+        };
+        let output = self.directory.join(&filename);
+        debug!("Filename: {filename}");
+
+        // Check if there is a file on disk already.
+        let size_on_disk: u64 = match tokio::fs::metadata(&output).await {
+            Ok(m) => {
+                debug!("A file with the same name already exists at the destination.");
+                // If so, check file length to know where to restart the download from.
+                m.len()
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(e) => {
+                return summary.status(Status::Fail(e.to_string())).build();
+            }
+        };
+
+        // Determine whether the download is resumable or not.
+        let can_resume = self.resumable && Download::is_resumable(&response);
+
+        // Update the summary accordingly.
+        let summary = summary.resumable(can_resume);
+
+        // Only appends to the file when resumable is set and we can resume.
+        let can_append = self.resumable && can_resume;
+
+        // Check whether or not we need to download the file.
+        let content_length_value = response.content_length_header().unwrap_or_default();
+        if size_on_disk > 0 && size_on_disk == content_length_value {
+            return summary
+                .status(Status::Skipped(Self::ALREADY_DOWNLOADED.into()))
+                .build();
+        }
+
+        // Build the GET request.
+        debug!("Fetching {}", &download.url_as_str());
+        let mut req = client.get(download.url_as_str());
+
+        // If resumable is turned on, request the remaining bytes.
         if self.resumable && can_resume {
             req = req.header(RANGE, format!("bytes={size_on_disk}-"));
         }
@@ -194,72 +212,76 @@ impl Downloader {
         let res = match req.send().await {
             Ok(res) => res,
             Err(e) => {
-                return summary.fail(e);
+                return summary.status(Status::Fail(e.to_string())).build();
             }
         };
-
-        // Check whether or not we need to download the file.
-        if let Some(content_length) = content_length {
-            if content_length == size_on_disk {
-                return summary.with_status(Status::Skipped(
-                    "the file was already fully downloaded".into(),
-                ));
-            }
-        }
 
         // Check the status for errors.
         match res.error_for_status_ref() {
             Ok(_res) => (),
-            Err(e) => return summary.fail(e),
+            Err(e) => return summary.status(Status::Fail(e.to_string())).build(),
         };
+
+        // Update the size with the value from the response headers from the
+        // GET request, if possible.
+        let size = res.content_length_header().unwrap_or_default();
 
         // Update the summary with the collected details.
-        let size = content_length.unwrap_or_default() + size_on_disk;
-        let status = res.status();
-        summary = Summary::new(download.clone(), status, size, can_resume);
+        let summary = summary.statuscode(res.status());
 
         // If there is nothing else to download for this file, we can return.
-        if size_on_disk > 0 && size == size_on_disk {
-            return summary.with_status(Status::Skipped(
-                "the file was already fully downloaded".into(),
-            ));
+        if size_on_disk > 0 && size_on_disk == size {
+            return summary
+                .size(size)
+                .status(Status::Skipped(Self::ALREADY_DOWNLOADED.into()))
+                .build();
         }
 
-        // Create the progress bar.
+        // Create the child progress bar.
         // If the download is being resumed, the progress bar position is
         // updated to start where the download stopped before.
+        let child_opts = self.style_options.child.clone();
+
+        // Add the child progress bar to the main one.
         let pb = multi.add(
-            self.style_options
-                .child
-                .clone()
+            child_opts
                 .to_progress_bar(size)
-                .with_position(size_on_disk),
+                .with_position(size_on_disk)
+                .with_message(filename),
         );
 
-        // Prepare the destination directory/file.
+        // Prepare the destination directory.
         let output_dir = output.parent().unwrap_or(&output);
         debug!("Creating destination directory {:?}", output_dir);
-        match fs::create_dir_all(output_dir) {
-            Ok(_res) => (),
-            Err(e) => {
-                return summary.fail(e);
-            }
-        };
+        if let Err(e) = tokio::fs::create_dir_all(output_dir).await {
+            return summary
+                .size(size)
+                .status(Status::Fail(e.to_string()))
+                .build();
+        }
 
+        // Prepare the destination file.
         debug!("Creating destination file {:?}", &output);
         let mut file = match OpenOptions::new()
             .create(true)
             .write(true)
-            .append(can_resume)
+            .append(can_append)
+            .truncate(!can_append)
             .open(output)
             .await
         {
             Ok(file) => file,
             Err(e) => {
-                return summary.fail(e);
+                return summary
+                    .size(size)
+                    .status(Status::Fail(e.to_string()))
+                    .build();
             }
         };
 
+        // Prepare the final size.
+        // We will add the amount of bytes downloaded to the amount of bytes
+        // that are already on disk.
         let mut final_size = size_on_disk;
 
         // Download the file chunk by chunk.
@@ -270,7 +292,10 @@ impl Downloader {
             let mut chunk = match item {
                 Ok(chunk) => chunk,
                 Err(e) => {
-                    return summary.fail(e);
+                    return summary
+                        .size(final_size)
+                        .status(Status::Fail(e.to_string()))
+                        .build();
                 }
             };
             let chunk_size = chunk.len() as u64;
@@ -281,7 +306,10 @@ impl Downloader {
             match file.write_all_buf(&mut chunk).await {
                 Ok(_res) => (),
                 Err(e) => {
-                    return summary.fail(e);
+                    return summary
+                        .size(final_size)
+                        .status(Status::Fail(e.to_string()))
+                        .build();
                 }
             };
         }
@@ -296,159 +324,8 @@ impl Downloader {
         // Advance the main progress bar.
         main.inc(1);
 
-        // Create a new summary with the real download size
-        let summary = Summary::new(download.clone(), status, final_size, can_resume);
-        // Return the download summary.
-        summary.with_status(Status::Success)
-    }
-}
-
-/// A builder used to create a [`Downloader`].
-///
-/// ```rust
-/// # fn main()  {
-/// use trauma::downloader::DownloaderBuilder;
-///
-/// let d = DownloaderBuilder::new().retries(5).directory("downloads".into()).build();
-/// # }
-/// ```
-pub struct DownloaderBuilder(Downloader);
-
-impl DownloaderBuilder {
-    /// Creates a builder with the default options.
-    pub fn new() -> Self {
-        DownloaderBuilder::default()
-    }
-
-    /// Convenience function to hide the progress bars.
-    pub fn hidden() -> Self {
-        let d = DownloaderBuilder::default();
-        d.style_options(StyleOptions::new(
-            ProgressBarOpts::hidden(),
-            ProgressBarOpts::hidden(),
-        ))
-    }
-
-    /// Sets the directory where to store the [`Download`]s.
-    pub fn directory(mut self, directory: PathBuf) -> Self {
-        self.0.directory = directory;
-        self
-    }
-
-    /// Set the number of retries per [`Download`].
-    pub fn retries(mut self, retries: u32) -> Self {
-        self.0.retries = retries;
-        self
-    }
-
-    /// Set the number of concurrent [`Download`]s.
-    pub fn concurrent_downloads(mut self, concurrent_downloads: usize) -> Self {
-        self.0.concurrent_downloads = concurrent_downloads;
-        self
-    }
-
-    /// Set the downloader style options.
-    pub fn style_options(mut self, style_options: StyleOptions) -> Self {
-        self.0.style_options = style_options;
-        self
-    }
-
-    fn new_header(&self) -> HeaderMap {
-        match self.0.headers {
-            Some(ref h) => h.to_owned(),
-            _ => HeaderMap::new(),
-        }
-    }
-
-    /// Add the http headers.
-    ///
-    /// You need to pass in a `HeaderMap`, not a `HeaderName`.
-    /// `HeaderMap` is a set of http headers.
-    ///
-    /// You can call `.headers()` multiple times and all `HeaderMap` will be merged into a single one.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use reqwest::header::{self, HeaderValue, HeaderMap};
-    /// use trauma::downloader::DownloaderBuilder;
-    ///
-    /// let ua = HeaderValue::from_str("curl/7.87").expect("Invalid UA");
-    ///
-    /// let builder = DownloaderBuilder::new()
-    ///     .headers(HeaderMap::from_iter([(header::USER_AGENT, ua)]))
-    ///     .build();
-    /// ```
-    ///
-    /// See also [`header()`].
-    ///
-    /// [`header()`]: DownloaderBuilder::header
-    pub fn headers(mut self, headers: HeaderMap) -> Self {
-        let mut new = self.new_header();
-        new.extend(headers);
-
-        self.0.headers = Some(new);
-        self
-    }
-
-    /// Add the http header
-    ///
-    /// # Example
-    ///
-    /// You can use the `.header()` chain to add multiple headers
-    ///
-    /// ```
-    /// use reqwest::header::{self, HeaderValue};
-    /// use trauma::downloader::DownloaderBuilder;
-    ///
-    /// const FIREFOX_UA: &str =
-    /// "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0";
-    ///
-    /// let ua = HeaderValue::from_str(FIREFOX_UA).expect("Invalid UA");
-    /// let auth = HeaderValue::from_str("Basic aGk6MTIzNDU2Cg==").expect("Invalid auth");
-    ///
-    /// let builder = DownloaderBuilder::new()
-    ///     .header(header::USER_AGENT, ua)
-    ///     .header(header::AUTHORIZATION, auth)
-    ///     .build();
-    /// ```
-    ///
-    /// If you need to pass in a `HeaderMap`, instead of calling `.header()` multiple times.
-    /// See also [`headers()`].
-    ///
-    /// [`headers()`]: DownloaderBuilder::headers
-    pub fn header<K: IntoHeaderName>(mut self, name: K, value: HeaderValue) -> Self {
-        let mut new = self.new_header();
-
-        new.insert(name, value);
-
-        self.0.headers = Some(new);
-        self
-    }
-
-    /// Create the [`Downloader`] with the specified options.
-    pub fn build(self) -> Downloader {
-        Downloader {
-            directory: self.0.directory,
-            retries: self.0.retries,
-            concurrent_downloads: self.0.concurrent_downloads,
-            style_options: self.0.style_options,
-            resumable: self.0.resumable,
-            headers: self.0.headers,
-        }
-    }
-}
-
-impl Default for DownloaderBuilder {
-    fn default() -> Self {
-        Self(Downloader {
-            directory: std::env::current_dir().unwrap_or_default(),
-            retries: Downloader::DEFAULT_RETRIES,
-            concurrent_downloads: Downloader::DEFAULT_CONCURRENT_DOWNLOADS,
-            style_options: StyleOptions::default(),
-            resumable: true,
-            headers: None,
-        })
+        // Return a successful summary with the actual download size.
+        summary.size(final_size).status(Status::Success).build()
     }
 }
 
@@ -456,7 +333,7 @@ impl Default for DownloaderBuilder {
 ///
 /// By default, the main progress bar will stay on the screen upon completion,
 /// but the child ones will be cleared once complete.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct StyleOptions {
     /// Style options for the main progress bar.
     main: ProgressBarOpts,
@@ -466,22 +343,25 @@ pub struct StyleOptions {
 
 impl Default for StyleOptions {
     fn default() -> Self {
-        Self {
-            main: ProgressBarOpts {
-                template: Some(ProgressBarOpts::TEMPLATE_BAR_WITH_POSITION.into()),
-                progress_chars: Some(ProgressBarOpts::CHARS_FINE.into()),
-                enabled: true,
-                clear: false,
-            },
-            child: ProgressBarOpts::with_pip_style(),
-        }
+        Self::builder()
+            .main(
+                ProgressBarOpts::builder()
+                    .template(ProgressBarOpts::TEMPLATE_BAR_WITH_POSITION)
+                    .progress_chars(ProgressBarOpts::CHARS_FINE)
+                    .build(),
+            )
+            .child(ProgressBarOpts::with_pip_style())
+            .build()
     }
 }
 
 impl StyleOptions {
-    /// Create new [`Downloader`] [`StyleOptions`].
-    pub fn new(main: ProgressBarOpts, child: ProgressBarOpts) -> Self {
-        Self { main, child }
+    /// Convenience function to create a style hidding the progress bars.
+    pub fn hidden() -> Self {
+        Self::builder()
+            .main(ProgressBarOpts::hidden())
+            .child(ProgressBarOpts::hidden())
+            .build()
     }
 
     /// Set the options for the main progress bar.
@@ -494,14 +374,15 @@ impl StyleOptions {
         self.child = child;
     }
 
-    /// Return `false` if neither the main nor the child bar is enabled.
-    pub fn is_enabled(self) -> bool {
-        self.main.enabled || self.child.enabled
+    /// Check whether both progress bars are hidden.
+    pub fn is_hidden(&self) -> bool {
+        self.main.hidden && self.child.hidden
     }
 }
 
 /// Define the options for a progress bar.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
+#[builder(on(String, into))]
 pub struct ProgressBarOpts {
     /// Progress bar template string.
     template: Option<String>,
@@ -510,34 +391,31 @@ pub struct ProgressBarOpts {
     /// There must be at least 3 characters for the following states:
     /// "filled", "current", and "to do".
     progress_chars: Option<String>,
-    /// Enable or disable the progress bar.
-    enabled: bool,
+    /// Hide the progress bar.
+    #[builder(default,  with = || true)]
+    hidden: bool,
     /// Clear the progress bar once completed.
+    #[builder(default, with = || true)]
     clear: bool,
 }
 
 impl Default for ProgressBarOpts {
     fn default() -> Self {
-        Self {
-            template: None,
-            progress_chars: None,
-            enabled: true,
-            clear: true,
-        }
+        Self::builder().build()
     }
 }
 
 impl ProgressBarOpts {
     /// Template representing the bar and its position.
     ///
-    ///`███████████████████████████████████████ 11/12 (99%) eta 00:00:02`
+    ///`█████████████████████ 11/12 (99%) eta 00:00:02 archive.zip`
     pub const TEMPLATE_BAR_WITH_POSITION: &'static str =
-        "{bar:40.blue} {pos:>}/{len} ({percent}%) eta {eta_precise:.blue}";
+        "{bar:20.blue} {pos:>4}/{len:4} ({percent}%) eta {eta_precise:.blue} {msg}";
     /// Template which looks like the Python package installer pip.
     ///
-    /// `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 211.23 KiB/211.23 KiB 1008.31 KiB/s eta 0s`
+    /// `━━━━━╾──────────────    3.78 MiB/13.43 MiB    191.39 KiB/s eta 52s  archive.zip`
     pub const TEMPLATE_PIP: &'static str =
-        "{bar:40.green/black} {bytes:>11.green}/{total_bytes:<11.green} {bytes_per_sec:>13.red} eta {eta:.blue}";
+        "{bar:20.green/black} {bytes:>11.green}/{total_bytes:<11.green} {bytes_per_sec:>13.red} eta {eta:4.blue} {msg}";
     /// Use increasing quarter blocks as progress characters: `"█▛▌▖  "`.
     pub const CHARS_BLOCKY: &'static str = "█▛▌▖  ";
     /// Use fade-in blocks as progress characters: `"█▓▒░  "`.
@@ -550,21 +428,6 @@ impl ProgressBarOpts {
     pub const CHARS_ROUGH: &'static str = "█  ";
     /// Use increasing height blocks as progress characters: `"█▇▆▅▄▃▂▁  "`.
     pub const CHARS_VERTICAL: &'static str = "█▇▆▅▄▃▂▁  ";
-
-    /// Create a new [`ProgressBarOpts`].
-    pub fn new(
-        template: Option<String>,
-        progress_chars: Option<String>,
-        enabled: bool,
-        clear: bool,
-    ) -> Self {
-        Self {
-            template,
-            progress_chars,
-            enabled,
-            clear,
-        }
-    }
 
     /// Create a [`ProgressStyle`] based on the provided options.
     pub fn to_progress_style(self) -> ProgressStyle {
@@ -580,8 +443,8 @@ impl ProgressBarOpts {
 
     /// Create a [`ProgressBar`] based on the provided options.
     pub fn to_progress_bar(self, len: u64) -> ProgressBar {
-        // Return a hidden Progress bar if we disabled it.
-        if !self.enabled {
+        // Return a hidden Progress bar if we hid it.
+        if self.hidden {
             return ProgressBar::hidden();
         }
 
@@ -592,25 +455,16 @@ impl ProgressBarOpts {
 
     /// Create a new [`ProgressBarOpts`] which looks like Python pip.
     pub fn with_pip_style() -> Self {
-        Self {
-            template: Some(ProgressBarOpts::TEMPLATE_PIP.into()),
-            progress_chars: Some(ProgressBarOpts::CHARS_LINE.into()),
-            enabled: true,
-            clear: true,
-        }
-    }
-
-    /// Set to `true` to clear the progress bar upon completion.
-    pub fn set_clear(&mut self, clear: bool) {
-        self.clear = clear;
+        Self::builder()
+            .template(ProgressBarOpts::TEMPLATE_PIP)
+            .progress_chars(ProgressBarOpts::CHARS_LINE)
+            .clear()
+            .build()
     }
 
     /// Create a new [`ProgressBarOpts`] which hides the progress bars.
     pub fn hidden() -> Self {
-        Self {
-            enabled: false,
-            ..ProgressBarOpts::default()
-        }
+        Self::builder().hidden().build()
     }
 }
 
@@ -620,11 +474,15 @@ mod test {
 
     #[test]
     fn test_builder_defaults() {
-        let d = DownloaderBuilder::new().build();
-        assert_eq!(d.retries, Downloader::DEFAULT_RETRIES);
-        assert_eq!(
-            d.concurrent_downloads,
-            Downloader::DEFAULT_CONCURRENT_DOWNLOADS
-        );
+        let d = Downloader::builder().build();
+        assert_eq!(d.retries, DEFAULT_RETRIES);
+        assert_eq!(d.concurrent_downloads, DEFAULT_CONCURRENT_DOWNLOADS);
+        assert!(d.resumable);
+    }
+
+    #[test]
+    fn test_builder_resumable_toggle() {
+        let d = Downloader::builder().resumable(false).build();
+        assert!(!d.resumable);
     }
 }

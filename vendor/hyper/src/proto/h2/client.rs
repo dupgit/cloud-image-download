@@ -77,6 +77,7 @@ pub(crate) struct Config {
     pub(crate) max_local_error_reset_streams: Option<usize>,
     pub(crate) header_table_size: Option<u32>,
     pub(crate) max_concurrent_streams: Option<u32>,
+    pub(crate) reset_stream_duration: Option<Duration>,
 }
 
 impl Default for Config {
@@ -97,6 +98,7 @@ impl Default for Config {
             max_local_error_reset_streams: Some(1024),
             header_table_size: None,
             max_concurrent_streams: None,
+            reset_stream_duration: None,
         }
     }
 }
@@ -125,6 +127,9 @@ fn new_builder(config: &Config) -> Builder {
     }
     if let Some(max) = config.max_concurrent_streams {
         builder.max_concurrent_streams(max);
+    }
+    if let Some(dur) = config.reset_stream_duration {
+        builder.reset_stream_duration(dur);
     }
     builder
 }
@@ -505,7 +510,7 @@ where
                 return Poll::Ready(());
             }
             Poll::Pending => (),
-        };
+        }
         Poll::Pending
     }
 }
@@ -590,7 +595,7 @@ pin_project! {
 }
 
 impl<B: Body + 'static, E> ResponseFutMap<B, E> {
-    /// Signal the pipe_task to reset the stream (e.g. on client cancellation).
+    /// Signal the `pipe_task` to reset the stream (e.g. on client cancellation).
     pub(crate) fn cancel(self: Pin<&mut Self>) {
         if let Some(cancel_tx) = self.project().cancel_tx.take() {
             let _ = cancel_tx.send(());
@@ -683,7 +688,7 @@ where
                         Poll::Ready(Err(crate::Error::new_h2(err)))
                     };
                 }
-            };
+            }
 
             // If we were waiting on pending open
             // continue where we left off.
@@ -701,7 +706,7 @@ where
                     }
                     let (head, body) = req.into_parts();
                     let mut req = ::http::Request::from_parts(head, ());
-                    super::strip_connection_headers(req.headers_mut(), true);
+                    super::strip_connection_headers(req.headers_mut(), super::MessageKind::Request);
                     if let Some(len) = body.size_hint().exact() {
                         if len != 0 || headers::method_has_defined_payload_semantics(req.method()) {
                             headers::set_content_length_if_missing(req.headers_mut(), len);
@@ -767,7 +772,6 @@ where
                         }
                     }
                     self.poll_pipe(f, cx);
-                    continue;
                 }
 
                 Poll::Ready(None) => {

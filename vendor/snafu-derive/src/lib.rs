@@ -290,8 +290,50 @@ fn impl_snafu_macro(ty: syn::DeriveInput) -> TokenStream {
     }
 }
 
+const SELF_TYPE: &str = "Self";
+
+struct ExpandSelfVisitor {
+    self_ty: syn::TypePath,
+}
+
+impl syn::visit_mut::VisitMut for ExpandSelfVisitor {
+    fn visit_type_path_mut(&mut self, node: &mut syn::TypePath) {
+        // Terminate on `Self` nodes.
+        if node.qself.is_none() && node.path.is_ident(SELF_TYPE) {
+            *node = self.self_ty.clone();
+            return;
+        }
+        // Continue recursive visiting.
+        syn::visit_mut::visit_type_path_mut(self, node);
+    }
+}
+
+/// Returns a `DeriveInput` with all occurrences of `Self` replaced
+/// with its name.
+///
+/// We use pieces of the original code to create context selector
+/// types and implementations. If `Self` is copied verbatim, it will
+/// change its meaning from the error type the user provided to the
+/// context selector. Instead, we eagerly resolve `Self` to the name
+/// of the original type.
+fn expand_self(mut input: syn::DeriveInput) -> syn::DeriveInput {
+    let mut v = ExpandSelfVisitor {
+        self_ty: syn::TypePath {
+            qself: None,
+            // We don't need to worry about fully qualifying the original type
+            // name because we either refer to it from the same module, or from
+            // a child module that imports everything from the parent module.
+            path: input.ident.clone().into(),
+        },
+    };
+    syn::visit_mut::visit_derive_input_mut(&mut v, &mut input);
+    input
+}
+
 fn parse_snafu_information(ty: syn::DeriveInput) -> syn::Result<SnafuInfo> {
     use syn::Data;
+
+    let ty = expand_self(ty);
 
     let syn::DeriveInput {
         ident,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12
+
+* Add `schemars` support.
+
+## 1.11.1
+
+* Fix accidental OOM when deserializing hostile Borsh input.
+
 ## 1.11
 
 * switched from `serde` dep to `serde_core` dep, which should allow more
