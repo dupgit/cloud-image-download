@@ -4,6 +4,7 @@ use crate::website::WSImageList;
 use crate::{CID_USER_AGENT, CONCURRENT_REQUESTS};
 use clap_verbosity_flag::Verbosity;
 use colored::Colorize;
+use http::header::HeaderMap;
 use log::{error, info, warn};
 use reqwest::Url;
 use reqwest::header::{HeaderValue, USER_AGENT};
@@ -12,10 +13,9 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task;
-use trauma::download::Status;
 use trauma::{
-    download::{Download, Summary},
-    downloader::{Downloader, DownloaderBuilder},
+    download::{Download, Status, Summary},
+    downloader::{Downloader, StyleOptions},
 };
 
 /// Creates a directory if it does not exists. Returns Ok unless `create_dir_all()` fails.
@@ -109,7 +109,13 @@ pub async fn download_images(
                         match Url::parse(&cloud_image.url.url) {
                             Ok(url) => {
                                 info!("Will try to download '{}' to {filename}", cloud_image.url.url);
-                                download_image_list.push(Download::new(&url, &filename));
+                                download_image_list.push(
+                                    Download::builder()
+                                        .url(url)
+                                        .expect("Url '{url}' is known to be good")
+                                        .filename_override(&filename)
+                                        .build(),
+                                );
                             }
                             Err(e) => {
                                 error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url.url);
@@ -121,14 +127,13 @@ pub async fn download_images(
                 Err(e) => {
                     warn!(
                         "Error '{e}' while creating destination {} directory",
-                        &ws_image.website.destination.display()
+                        ws_image.website.destination.display()
                     );
                 }
             }
         }
     }
 
-    let downloader: Downloader;
     let retry = 3;
     let user_agent =
         HeaderValue::from_str(CID_USER_AGENT).expect("Converting CID_USER_AGENT to HeaderValue should not fail");
@@ -140,16 +145,23 @@ pub async fn download_images(
         CONCURRENT_REQUESTS
     };
 
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, user_agent);
+
     // Prepares downloading
-    if verbose.is_silent() {
+    let downloader: Downloader = if verbose.is_silent() {
         // Without any progress bars (needs -q verbosity option)
-        downloader =
-            DownloaderBuilder::hidden().concurrent_downloads(max).header(USER_AGENT, user_agent).retries(retry).build();
+        let style_options = StyleOptions::hidden();
+        Downloader::builder()
+            .concurrent_downloads(max)
+            .headers(headers)
+            .retries(retry)
+            .style_options(style_options)
+            .build()
     } else {
         // With progress bars (no -q or one or more -v verbosity options)
-        downloader =
-            DownloaderBuilder::new().concurrent_downloads(max).header(USER_AGENT, user_agent).retries(retry).build();
-    }
+        Downloader::builder().concurrent_downloads(max).headers(headers).retries(retry).build()
+    };
 
     // Downloads effectively
     downloader.download(&download_image_list).await
@@ -163,29 +175,23 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
         // Prepares file list to be checked
         for summary in downloaded_summary {
             let download = summary.download();
+            let filename = match download.filename_override() {
+                Some(filename) => filename,
+                None => &String::new(),
+            };
             match summary.status() {
                 Status::Success => {
-                    println!("{} Successfully downloaded {}", "🗸".green(), download.filename);
+                    println!("{} Successfully downloaded {}", "🗸".green(), filename);
                 }
                 Status::Fail(e) => {
-                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url, download.filename);
+                    println!("{} Error '{e}' while downloading {} to {}", "𐄂".red(), download.url(), filename);
                 }
                 Status::Skipped(e) => {
                     // Probably already downloaded
-                    println!(
-                        "{} Skipped {} to be downloaded from {}: '{e}' ",
-                        "🗸".green(),
-                        download.filename,
-                        download.url
-                    );
+                    println!("{} Skipped {} to be downloaded from {}: '{e}' ", "🗸".green(), filename, download.url());
                 }
                 Status::NotStarted => {
-                    println!(
-                        "{} Downloading {} to {} has not been started",
-                        "𐄂".red(),
-                        download.url,
-                        download.filename
-                    );
+                    println!("{} Downloading {} to {} has not been started", "𐄂".red(), download.url(), filename);
                 }
             }
         }
@@ -208,7 +214,11 @@ pub fn image_has_been_downloaded(
         if let Some(filename) = get_filename_destination(cloud_image, destination, normalize) {
             match Url::parse(&cloud_image.url.url) {
                 Ok(url) => {
-                    if download.filename == filename && download.url == url {
+                    let download_filename = match download.filename_override() {
+                        Some(filename) => filename,
+                        None => &String::new(),
+                    };
+                    if download_filename == &filename && download.url() == url {
                         match summary.status() {
                             Status::Success => {
                                 info!("Keeping image {filename} from {url}");
