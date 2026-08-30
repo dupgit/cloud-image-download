@@ -88,39 +88,24 @@ impl DbImageHistory {
     /// sql cannot be converted to a C-compatible string or if the underlying
     /// `SQLite` call fails.
     pub fn is_image_in_db(&self, cloud_image: Option<&CloudImage>) -> Result<bool, Box<dyn Error>> {
-        if let Some(cloud_image) = cloud_image {
-            let image_name = &cloud_image.name;
-            let checksum = cloud_image.checksum.to_string();
-            let date = cloud_image.date.format("%Y-%m-%d %H:%M:%S").to_string();
+        let Some(cloud_image) = cloud_image else {
+            return Ok(false);
+        };
 
-            let mut stmt = self
-                .conn
-                .prepare("SELECT name, checksum, date FROM cid_images WHERE name=?1 AND checksum=?2 AND date=?3")?;
-            debug!(
-                "SELECT name, checksum, date FROM cid_images WHERE name={image_name} AND checksum={checksum} and date={date}"
-            );
-            match stmt.query(params![image_name, checksum, date]) {
-                Ok(mut rows) => {
-                    while let Some(row) = rows.next()? {
-                        match (row.get::<usize, String>(0), row.get::<usize, String>(1), row.get::<usize, String>(2)) {
-                            (Ok(name), Ok(sum), Ok(d)) => {
-                                return Ok(image_name == &name && checksum == sum && date == d);
-                            }
-                            (Err(e), Ok(_), Ok(_)) | (Ok(_), Err(e), Ok(_)) | (Ok(_), Ok(_), Err(e)) => {
-                                warn!("Error while getting parameter: {e}");
-                            }
-                            (Err(e), Err(f), Ok(_)) | (Err(e), Ok(_), Err(f)) | (Ok(_), Err(e), Err(f)) => {
-                                warn!("Error while getting parameters: {e} and {f}");
-                            }
-                            (Err(e), Err(f), Err(g)) => warn!("Error while getting parameters: {e}, {f} and {g}"),
-                        }
-                    }
-                }
-                Err(e) => warn!("Error while executing the query: {e}"),
-            }
-        }
+        let image_name = &cloud_image.name;
+        let checksum = cloud_image.checksum.to_string();
+        let date = cloud_image.date.format("%Y-%m-%d %H:%M:%S").to_string();
 
-        Ok(false)
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, checksum, date FROM cid_images WHERE name=?1 AND checksum=?2 AND date=?3")?;
+
+        debug!(
+            "SELECT name, checksum, date FROM cid_images WHERE name={image_name} AND checksum={checksum} and date={date}"
+        );
+
+        let exists = stmt.exists(params![cloud_image.name, checksum, date])?;
+        Ok(exists)
     }
 
     /// The image has been downloaded and verified correctly so
