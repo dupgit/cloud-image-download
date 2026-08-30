@@ -133,3 +133,90 @@ impl DbImageHistory {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checksums::CheckSums;
+    use crate::website::Url;
+    use chrono::NaiveDateTime;
+    use rusqlite::Connection;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE cid_images (name TEXT, checksum TEXT, date TEXT)", []).unwrap();
+        conn
+    }
+
+    fn dummy_url() -> Url {
+        Url::default()
+    }
+
+    fn _dummy_real_url() -> Url {
+        Url::new(
+            "http://cloud.centos.org/centos".to_string(),
+            Some("10-stream".to_string()),
+            Some("x86_64/images".to_string()),
+        )
+    }
+
+    #[test]
+    fn none_input_returns_false() {
+        let db = DbImageHistory {
+            conn: setup_db(),
+        };
+        assert!(!db.is_image_in_db(None).unwrap());
+    }
+
+    #[test]
+    fn test_db_matching_row_returns_true() {
+        let conn = setup_db();
+        let checksum = CheckSums::Sha256("9bc2838008fc212eb9b7c7fdf6ea26f572afdeeaa254fa973ef5cd528b87adcf".into());
+        let date = NaiveDateTime::parse_from_str("2026-08-27 03:03:00", "%Y-%m-%d %H:%M:%S").unwrap();
+
+        conn.execute(
+            "INSERT INTO cid_images (name, checksum, date) VALUES (?1, ?2, ?3)",
+            params!["foo.qcow2", checksum.to_string(), "2026-08-27 03:03:00"],
+        )
+        .unwrap();
+
+        let db = DbImageHistory {
+            conn,
+        };
+        let img = CloudImage::new(dummy_url(), checksum, "foo.qcow2".to_string(), date);
+        assert!(db.is_image_in_db(Some(&img)).unwrap());
+    }
+
+    #[test]
+    fn test_db_no_matching_row_returns_false() {
+        let db = DbImageHistory {
+            conn: setup_db(),
+        };
+        let checksum = CheckSums::Sha256("9bc2838008fc212eb9b7c7fdf6ea26f572afdeeaa254fa973ef5cd528b87adcf".into());
+        let date = NaiveDateTime::parse_from_str("2026-08-30 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let img = CloudImage::new(dummy_url(), checksum, "foo.qcow2".to_string(), date);
+        assert!(!db.is_image_in_db(Some(&img)).unwrap());
+    }
+
+    #[test]
+    fn test_db_checksum_mismatch_returns_false() {
+        let conn = setup_db();
+        conn.execute(
+            "INSERT INTO cid_images (name, checksum, date) VALUES (?1, ?2, ?3)",
+            params![
+                "foo.qcow2",
+                "9cff5cbfd35c0c9070619c83ce9cad65d4eab845c9b83fb72c1b9209453d085b",
+                "2026-08-27 03:03:00"
+            ],
+        )
+        .unwrap();
+
+        let db = DbImageHistory {
+            conn,
+        };
+        let checksum = CheckSums::Sha256("9bc2838008fc212eb9b7c7fdf6ea26f572afdeeaa254fa973ef5cd528b87adcf".into());
+        let date = NaiveDateTime::parse_from_str("2026-08-27 03:03:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let img = CloudImage::new(dummy_url(), checksum, "foo.qcow2".to_string(), date);
+        assert!(!db.is_image_in_db(Some(&img)).unwrap());
+    }
+}
