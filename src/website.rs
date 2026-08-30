@@ -1,5 +1,5 @@
 use crate::CID_USER_AGENT;
-use crate::checksums::{CheckSums, are_all_checksums_in_one_file};
+use crate::checksums::{CheckSums, ChecksumSource};
 use crate::cloud_image::CloudImage;
 use crate::image_history::DbImageHistory;
 use futures::{StreamExt, stream};
@@ -35,7 +35,7 @@ pub struct WSImageList {
 
 /// cloud-image-download Url type to get all the
 /// components of an Url from the configuration file
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Url {
     pub url: String,
     pub version: Option<String>,
@@ -49,6 +49,15 @@ impl Url {
             url,
             version,
             after_version,
+        }
+    }
+
+    #[must_use]
+    pub fn clone_with_new_url(&self, new_url: String) -> Self {
+        Url {
+            url: new_url,
+            version: self.version.clone(),
+            after_version: self.after_version.clone(),
         }
     }
 }
@@ -202,17 +211,14 @@ impl WebSite {
     /// May return an `HttpDirError` if getting the `HttpDirectory` for
     /// this url fails
     ///
-    /// @todo: simplify
     async fn get_latest_image_to_download_from_url(
         &self,
         url: &Url,
         client: &reqwest::Client,
         db: &DbImageHistory,
     ) -> Result<Option<CloudImage>, HttpDirError> {
-        let mut option_cloud_image: Option<CloudImage> = None;
-
         // Getting all files whose name matches the regex self.image_name_filter and
-        // that does not matches *any* of the cimage_name_cleanse regex vector entry
+        // that does not match *any* of the image_name_cleanse regex vector entries.
         let url_httpdir = HttpDirectory::new(&url.url, self.timeout).await?;
         let http_image_list = url_httpdir.files().filter_by_name(&self.image_name_filter)?;
         debug!(
@@ -224,85 +230,52 @@ impl WebSite {
         );
         let http_image_list = self.clean_httpdir_from_image_name_cleanse_regex(http_image_list);
 
-        // Keeping only the newest entry from that list (sorted in descending order)
-        if let Some(image) = http_image_list.sort_by_date(false).first()
-            && let Some(image_name) = image.name()
-            && let Some(date) = image.date()
-        {
-            // Trying to find if we have a file that contains all checksums for
-            // the files to be downloaded
-            let one_file = url_httpdir.files().filtering(|e| {
-                are_all_checksums_in_one_file(e.name().expect(
-                    ".files() filter should return only files with names and thus .name() should never be None",
-                ))
-            });
-            let one_file_count = one_file.len();
-            debug!("Checksum guess: all in one file: {one_file_count}");
-            // We choose to download only one file if possible: we test onefile
-            // at first for this
+        // Keeping only the newest entry from that list (sorted in descending order).
+        let sorted_images = http_image_list.sort_by_date(false);
+        let Some(image) = sorted_images.first() else {
+            return Ok(None);
+        };
+        let Some(image_name) = image.name() else {
+            return Ok(None);
+        };
+        let Some(date) = image.date() else {
+            return Ok(None);
+        };
 
-            if one_file_count == 1 {
-                // We only have one file with all checksums so get it:
-                if let Some(checksum_entry) = one_file.first() {
-                    // Download the checksum file with filename (url/filename)
-                    // retrieving the image name's checksum from that file.
-                    if let Some(filename) = checksum_entry.name() {
-                        // downloading the checksum file
-                        let checksums = get_body_from_url(&format!("{}/{filename}", url.url), client).await;
-                        trace!("checksums: {checksums:?}");
-                        // Finds the image_name in the checksum list and get it's checksum if any
-                        let checksum =
-                            CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksums, filename);
-                        let new_url = Url {
-                            url: format!("{}/{image_name}", url.url),
-                            version: url.version.clone(),
-                            after_version: url.after_version.clone(),
-                        };
-                        option_cloud_image = Some(CloudImage::new(new_url, checksum, image_name.to_string(), date));
-                    }
-                }
-            } else {
-                // We know that ".SHA256SUM" is a correct Regex so filter_by_name should never
-                // return an Error here
-                let everyfile = url_httpdir
-                    .files()
-                    .filter_by_name(".SHA256SUM")
-                    .expect(".files() filter should return only files with names and thus .name() should never be None")
-                    .len();
-                if everyfile >= 1 {
-                    // Downloading a checksum file that contains only the checksums of the image file
-                    let checksum_filename = format!("{}.SHA256SUM", url.url);
-                    let checksum_body = get_body_from_url(&checksum_filename, client).await;
-                    let checksum =
-                        CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url.url);
-                    let new_url = Url {
-                        url: url.url.clone(),
-                        version: url.version.clone(),
-                        after_version: url.after_version.clone(),
-                    };
-                    option_cloud_image = Some(CloudImage::new(new_url, checksum, image_name.to_string(), date));
-                } else {
-                    let new_url = Url {
-                        url: format!("{}/{image_name}", url.url),
-                        version: url.version.clone(),
-                        after_version: url.after_version.clone(),
-                    };
-                    option_cloud_image = Some(CloudImage::new(new_url, CheckSums::None, image_name.to_string(), date));
-                }
+        let cloud_image = match ChecksumSource::determine_checksum_source(&url_httpdir) {
+            ChecksumSource::Combined {
+                checksum_filename,
+            } => {
+                // Downloading the checksum file with filename (url/filename) and
+                // retrieving the image name's checksum from that file.
+                let checksums = get_body_from_url(&format!("{}/{checksum_filename}", url.url), client).await;
+                trace!("checksums: {checksums:?}");
+                let checksum =
+                    CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksums, &checksum_filename);
+                let new_url = url.clone_with_new_url(format!("{}/{image_name}", url.url));
+                CloudImage::new(new_url, checksum, image_name.to_string(), date)
             }
+            ChecksumSource::PerImage => {
+                // Downloading a checksum file that contains only the checksum of this image file.
+                let checksum_filename = format!("{}.SHA256SUM", url.url);
+                let checksum_body = get_body_from_url(&checksum_filename, client).await;
+                let checksum =
+                    CheckSums::get_image_checksum_from_checksums_buffer(image_name, &checksum_body, &url.url);
+                CloudImage::new(url.clone(), checksum, image_name.to_string(), date)
+            }
+            ChecksumSource::None => {
+                let new_url = url.clone_with_new_url(format!("{}/{image_name}", url.url));
+                CloudImage::new(new_url, CheckSums::None, image_name.to_string(), date)
+            }
+        };
+
+        if cloud_image.is_in_db(db) {
+            warn!("Image {} is already in database", cloud_image.url.url);
+            return Ok(None);
         }
 
-        if let Some(cloud_image) = option_cloud_image {
-            if cloud_image.is_in_db(db) {
-                warn!("Image {} is already in database", cloud_image.url.url);
-                Ok(None)
-            } else {
-                info!("Image {} is not already in database", cloud_image.url.url);
-                Ok(Some(cloud_image))
-            }
-        } else {
-            Ok(None)
-        }
+        info!("Image {} is not already in database", cloud_image.url.url);
+        Ok(Some(cloud_image))
     }
 }
 

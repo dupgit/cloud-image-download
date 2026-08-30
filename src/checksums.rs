@@ -1,4 +1,5 @@
 use base16ct::lower;
+use httpdirectory::httpdirectory::HttpDirectory;
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use sha2::{Digest, Sha256, Sha512};
@@ -19,6 +20,58 @@ pub enum CheckSums {
 }
 
 const HASH_BUFFER_SIZE: usize = 16_777_216;
+
+pub enum ChecksumSource {
+    /// A single file contains the checksums for all images.
+    Combined {
+        checksum_filename: String,
+    },
+
+    /// Each image has its own checksum file (`{image}.SHA256SUM`).
+    PerImage,
+
+    /// No usable checksum file was found.
+    None,
+}
+
+impl ChecksumSource {
+    /// Determines where lies the checksums : all in one file or one checksum file
+    /// per image file or none if neither
+    ///
+    /// # Panics
+    /// This function will panic if suddenly `.SHA256SUM` is not recognize as
+    /// a valid regex anymore.
+    #[must_use]
+    pub fn determine_checksum_source(url_httpdir: &HttpDirectory) -> ChecksumSource {
+        // Trying to find if we have a single file that contains all checksums
+        // for the files to be downloaded.
+        let one_file = url_httpdir.files().filtering(|e| e.name().is_some_and(are_all_checksums_in_one_file));
+
+        if one_file.len() == 1 {
+            match one_file.first().and_then(|e| e.name()) {
+                Some(name) => {
+                    return ChecksumSource::Combined {
+                        checksum_filename: name.to_string(),
+                    };
+                }
+                None => warn!(
+                    "Found exactly one combined-checksum file candidate but it has no name; \
+                     falling back to per-image checksum detection"
+                ),
+            }
+        }
+
+        // ".SHA256SUM" is a fixed, valid regex: filter_by_name cannot fail here.
+        let per_image_checksum_file_count =
+            url_httpdir.files().filter_by_name(".SHA256SUM").expect(".SHA256SUM is a known-valid regex").len();
+
+        if per_image_checksum_file_count >= 1 {
+            ChecksumSource::PerImage
+        } else {
+            ChecksumSource::None
+        }
+    }
+}
 
 /// Generic hash verification helper
 ///
@@ -162,7 +215,7 @@ pub fn are_all_checksums_in_one_file(inner: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+mod verify_file_tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -176,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_none_checksum() {
+    fn verify_file_none_checksum() {
         let file = create_temp_file(b"test content");
         let result = CheckSums::None.verify_file(file.path().to_str().unwrap());
 
@@ -185,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_sha256_valid() {
+    fn verify_file_sha256_valid() {
         let content = b"Hello, World!";
         let file = create_temp_file(content);
 
@@ -200,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_sha256_invalid() {
+    fn verify_file_sha256_invalid() {
         let content = b"Hello, World!";
         let file = create_temp_file(content);
 
@@ -215,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_sha512_valid() {
+    fn verify_file_sha512_valid() {
         let content = b"Hello, World!";
         let file = create_temp_file(content);
 
@@ -230,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_sha512_invalid() {
+    fn verify_file_sha512_invalid() {
         let content = b"Hello, World!";
         let file = create_temp_file(content);
 
@@ -245,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_nonexistent() {
+    fn verify_file_nonexistent() {
         let checksum = CheckSums::Sha256("dummy_hash".to_string());
         let result = checksum.verify_file("/nonexistent/file/path.txt");
 
@@ -253,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_empty_file() {
+    fn verify_file_empty_file() {
         let file = create_temp_file(b"");
 
         // SHA256 hash of empty string
@@ -267,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_file_large_content() {
+    fn verify_file_large_content() {
         // Create a file larger than buffer size (16MB + some extra)
         let large_content = vec![b'A'; 17_000_000];
         let file = create_temp_file(&large_content);
@@ -283,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_with_hasher_directly() {
+    fn verify_with_hasher_directly() {
         let content = b"Test content";
         let file = create_temp_file(content);
 
@@ -293,5 +346,100 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some(true));
+    }
+}
+
+#[cfg(test)]
+mod checksum_source_tests {
+    use super::*;
+    use httpdirectory::httpdirectory::HttpDirectory;
+    use httpdirectory::httpdirectoryentry::HttpDirectoryEntry;
+
+    fn prepare_httpdir(entries: Vec<HttpDirectoryEntry>) -> HttpDirectory {
+        HttpDirectory::from_entries(entries)
+    }
+
+    #[test]
+    fn combined_checksum_file_detected() {
+        let httpdir = prepare_httpdir(vec![
+            HttpDirectoryEntry::new("debian-12.qcow2", "2026-08-21 17:03", "500M", "debian-12.qcow2"),
+            HttpDirectoryEntry::new("SHA256SUMS", "2026-08-21 17:03", "1K", "SHA256SUMS"),
+        ]);
+
+        match ChecksumSource::determine_checksum_source(&httpdir) {
+            ChecksumSource::Combined {
+                checksum_filename,
+            } => {
+                assert_eq!(checksum_filename, "SHA256SUMS");
+            }
+            _ => panic!("expected ChecksumSource::Combined"),
+        }
+    }
+
+    #[test]
+    fn per_image_checksum_file_detected() {
+        let httpdir = prepare_httpdir(vec![
+            HttpDirectoryEntry::new(
+                "jammy-server-cloudimg-amd64.qcow2",
+                "2026-08-29 11:19",
+                "600M",
+                "jammy-server-cloudimg-amd64.qcow2",
+            ),
+            HttpDirectoryEntry::new(
+                "jammy-server-cloudimg-amd64.qcow2.SHA256SUM",
+                "2026-08-29 11:19",
+                "100",
+                "jammy-server-cloudimg-amd64.qcow2.SHA256SUM",
+            ),
+        ]);
+
+        assert!(matches!(ChecksumSource::determine_checksum_source(&httpdir), ChecksumSource::PerImage));
+    }
+
+    #[test]
+    fn no_checksum_file_found() {
+        let httpdir = prepare_httpdir(vec![HttpDirectoryEntry::new(
+            "jammy-server-cloudimg-amd64.qcow2",
+            "2026-08-29 11:19",
+            "600M",
+            "jammy-server-cloudimg-amd64.qcow2",
+        )]);
+
+        assert!(matches!(ChecksumSource::determine_checksum_source(&httpdir), ChecksumSource::None));
+    }
+}
+
+#[cfg(test)]
+mod checksum_pattern_tests {
+    use super::*;
+
+    #[test]
+    fn fedora_style_suffix_matches() {
+        assert!(are_all_checksums_in_one_file("Fedora-Cloud-44-1.7-x86_64-CHECKSUM"));
+    }
+
+    #[test]
+    fn centos_style_exact_match() {
+        assert!(are_all_checksums_in_one_file("CHECKSUM"));
+    }
+
+    #[test]
+    fn ubuntu_style_exact_match() {
+        assert!(are_all_checksums_in_one_file("SHA256SUMS"));
+    }
+
+    #[test]
+    fn debian_style_exact_match() {
+        assert!(are_all_checksums_in_one_file("SHA512SUMS"));
+    }
+
+    #[test]
+    fn unrelated_filename_does_not_match() {
+        assert!(!are_all_checksums_in_one_file("debian-12-genericcloud-amd64.qcow2"));
+    }
+
+    #[test]
+    fn per_image_checksum_file_does_not_match_combined_pattern() {
+        assert!(!are_all_checksums_in_one_file("jammy-server-cloudimg-amd64.img.SHA256SUM"));
     }
 }
