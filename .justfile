@@ -14,10 +14,14 @@ alias p := publish
 
 # Installs all cargo tools to build a release or test coverage
 install-dev-tools:
-    cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli cargo-nextest git-cliff
+    cargo install cargo-release cargo-sbom cargo-tarpaulin typos-cli cargo-nextest git-cliff cargo-msrv cargo-llvm-cov cargo-crap
+
+msrv:
+    # Verifying that the MSRV is still Ok.
+    cargo msrv verify
 
 # Bumps {patch} (major, minor or patch) version number and does a release
-bump patch: check-typos
+bump patch: check-typos msrv
     # Ensures that the source code is correctly formatted -> it should not modify anything
     cargo fmt
 
@@ -43,11 +47,16 @@ bump patch: check-typos
     cargo test --release
     cargo doc --no-deps
 
+    # Getting coverage information with cargo-llvm-cov and saving it for later use
+    # with cargo-crap: `just crap`
+    cargo llvm-cov --lcov --output-path lcov.info
+    cargo crap --lcov lcov.info --path src/ --format json --output baseline.json
+
     # Generetaing a Software Bills of Materials in SPDX format (sorting will reduce the diff size and allow one to figure out what has really changed)
     cargo sbom | jq --sort-keys | jq '.files = (.files| sort_by(.SPDXID))' | jq '.packages = (.packages| sort_by(.SPDXID))' | jq '.relationships = (.relationships| sort_by(.spdxElementId, .relatedSpdxElement))'>{{ name }}.sbom.spdx.json
 
     # Creating the release
-    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json vendor
+    git add Cargo.toml Cargo.lock {{ name }}.sbom.spdx.json vendor baseline.json
     cargo release commit --no-confirm --execute
     cargo release tag --no-confirm --execute
 
@@ -76,6 +85,14 @@ publish: git-publish rust-publish
 coverage:
     cargo tarpaulin --frozen -o Html --include-files src/*.rs src/bin/*.rs
     open tarpaulin-report.html
+
+# Runs cargo-crap to get the CRAP score of each functions
+crap:
+    # Running coverage report with llvm-cov
+    cargo llvm-cov --lcov --output-path lcov.info
+
+    # Running crap with coverage information
+    cargo crap --lcov lcov.info --path src/ --baseline baseline.json --fail-regression
 
 # Check for typos in source tree, README.md, test_data  and .justfile
 check-typos:

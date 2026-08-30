@@ -8,6 +8,7 @@ repository = "https://github.com/dupgit/cloud-image-download"
 license = "MIT OR Apache-2.0"
 keywords = ["cloud", "image", "download", "qcow2", "qemu"]
 categories = ["command-line-utilities"]
+rust-version = "1.88"
 
 [dependencies]
 base16ct = { version = "1.0.0", features = ["alloc"] }
