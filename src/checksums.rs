@@ -143,7 +143,7 @@ impl fmt::Display for CheckSums {
         match &self {
             CheckSums::None => writeln!(f),
             CheckSums::Sha256(checksum) | CheckSums::Sha512(checksum) => {
-                writeln!(f, "{checksum}")
+                write!(f, "{checksum}")
             }
         }
     }
