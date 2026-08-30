@@ -6,7 +6,7 @@ use clap_verbosity_flag::Verbosity;
 use colored::Colorize;
 use http::header::HeaderMap;
 use log::{error, info, warn};
-use reqwest::Url;
+use reqwest::Url as ReqwestUrl;
 use reqwest::header::{HeaderValue, USER_AGENT};
 use std::error::Error;
 use std::fs::create_dir_all;
@@ -106,7 +106,7 @@ pub async fn download_images(
                         &ws_image.website.destination,
                         &ws_image.website.normalize,
                     ) {
-                        match Url::parse(&cloud_image.url.url) {
+                        match ReqwestUrl::parse(&cloud_image.url.url) {
                             Ok(url) => {
                                 info!("Will try to download '{}' to {filename}", cloud_image.url.url);
                                 download_image_list.push(
@@ -203,40 +203,46 @@ pub fn display_download_status_summary(downloaded_summary: &Vec<Summary>, verbos
 /// process
 #[must_use]
 pub fn image_has_been_downloaded(
-    downloaded_summary: &Vec<Summary>,
+    downloaded_summary: &[Summary],
     cloud_image: &CloudImage,
     destination: &Path,
     verify_skipped: bool,
     normalize: &Option<String>,
 ) -> bool {
+    let Some(filename) = get_filename_destination(cloud_image, destination, normalize) else {
+        return false;
+    };
+
+    let url = match ReqwestUrl::parse(&cloud_image.url.url) {
+        Ok(url) => url,
+        Err(e) => {
+            error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url.url);
+            return false;
+        }
+    };
+
     for summary in downloaded_summary {
         let download = summary.download();
-        if let Some(filename) = get_filename_destination(cloud_image, destination, normalize) {
-            match Url::parse(&cloud_image.url.url) {
-                Ok(url) => {
-                    let download_filename = match download.filename_override() {
-                        Some(filename) => filename,
-                        None => &String::new(),
-                    };
-                    if download_filename == &filename && download.url() == url {
-                        match summary.status() {
-                            Status::Success => {
-                                info!("Keeping image {filename} from {url}");
-                                return true;
-                            }
-                            Status::Fail(_) | Status::NotStarted => {
-                                return false;
-                            }
-                            Status::Skipped(_) => {
-                                return verify_skipped;
-                            }
-                        }
-                    }
+
+        let Some(download_filename) = download.filename_override() else {
+            warn!(
+                "Download for '{filename}' (image '{}', url '{}') has no filename_override — \
+                 this should never happen since every Download in this crate is built \
+                 with one; skipping this summary entry",
+                cloud_image.name, cloud_image.url.url
+            );
+            continue;
+        };
+
+        if download_filename == &filename && download.url() == url {
+            return match summary.status() {
+                Status::Success => {
+                    info!("Keeping image {filename} from {url}");
+                    true
                 }
-                Err(e) => {
-                    error!("Can not transform '{}' into reqwest Url type: {e}", cloud_image.url.url);
-                }
-            }
+                Status::Fail(_) | Status::NotStarted => false,
+                Status::Skipped(_) => verify_skipped,
+            };
         }
     }
     false
@@ -247,7 +253,7 @@ pub fn image_has_been_downloaded(
 pub async fn verify_downloaded_file(
     all_ws_image_lists: Vec<WSImageList>,
     db: Arc<DbImageHistory>,
-    downloaded_summary: &Vec<Summary>,
+    downloaded_summary: &[Summary],
     verify_skipped: bool,
 ) {
     let mut join_handle_list = Vec::new();
@@ -285,5 +291,143 @@ pub async fn verify_downloaded_file(
             }
             Err(e) => error!("Error in task: {e}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checksums::CheckSums;
+    use crate::website::Url;
+    use chrono::NaiveDateTime;
+    use trauma::download::{Download, Status, Summary};
+
+    fn dummy_real_url() -> Url {
+        Url::new(
+            "http://cloud.centos.org/centos".to_string(),
+            Some("10-stream".to_string()),
+            Some("x86_64/images".to_string()),
+        )
+    }
+
+    fn dummy_cloud_image() -> CloudImage {
+        CloudImage::new(
+            dummy_real_url(),
+            CheckSums::Sha256("abc123".into()),
+            "foo.qcow2".to_string(),
+            NaiveDateTime::parse_from_str("2026-08-30 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
+        )
+    }
+
+    fn make_download_with_override(url: &str, filename_override: &str) -> Download {
+        Download::builder().url(url).unwrap().filename_override(filename_override).build()
+    }
+
+    fn make_download_without_override(url: &str) -> Download {
+        Download::builder().url(url).unwrap().build()
+    }
+
+    #[test]
+    fn test_empty_summary_list_returns_false() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        assert!(!image_has_been_downloaded(&vec![], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_matching_summary_with_success_returns_true() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        let filename = get_filename_destination(&cloud_image, destination, &None).unwrap();
+
+        let download = make_download_with_override(&cloud_image.url.url, &filename);
+        let summary = Summary::builder().download(download).status(Status::Success).build();
+
+        assert!(image_has_been_downloaded(&vec![summary], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_matching_summary_with_fail_returns_false() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        let filename = get_filename_destination(&cloud_image, destination, &None).unwrap();
+
+        let download = make_download_with_override(&cloud_image.url.url, &filename);
+        let summary = Summary::builder().download(download).status(Status::Fail("network error".to_string())).build();
+
+        assert!(!image_has_been_downloaded(&vec![summary], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_matching_summary_with_not_started_returns_false() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        let filename = get_filename_destination(&cloud_image, destination, &None).unwrap();
+
+        let download = make_download_with_override(&cloud_image.url.url, &filename);
+        let summary = Summary::builder().download(download).status(Status::NotStarted).build();
+
+        assert!(!image_has_been_downloaded(&vec![summary], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_matching_summary_skipped_follows_verify_skipped_flag() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        let filename = get_filename_destination(&cloud_image, destination, &None).unwrap();
+
+        let download_true = make_download_with_override(&cloud_image.url.url, &filename);
+        let summary_true =
+            Summary::builder().download(download_true).status(Status::Skipped("already exists".to_string())).build();
+        assert!(image_has_been_downloaded(&vec![summary_true], &cloud_image, destination, true, &None));
+
+        let download_false = make_download_with_override(&cloud_image.url.url, &filename);
+        let summary_false =
+            Summary::builder().download(download_false).status(Status::Skipped("already exists".to_string())).build();
+        assert!(!image_has_been_downloaded(&vec![summary_false], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_missing_filename_override_is_skipped_defensively() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+
+        let download = make_download_without_override(&cloud_image.url.url);
+        let summary = Summary::builder().download(download).status(Status::Success).build();
+
+        assert!(!image_has_been_downloaded(&vec![summary], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_invalid_cloud_image_url_returns_false() {
+        let mut cloud_image = dummy_cloud_image();
+        cloud_image.url.url = "not a valid url".to_string();
+        let destination = Path::new("/tmp/downloads");
+
+        let download = make_download_without_override("https://example.com/foo.qcow2");
+        let summary = Summary::builder().download(download).status(Status::Success).build();
+
+        assert!(!image_has_been_downloaded(&vec![summary], &cloud_image, destination, false, &None));
+    }
+
+    #[test]
+    fn test_iterates_past_non_matching_summaries() {
+        let cloud_image = dummy_cloud_image();
+        let destination = Path::new("/tmp/downloads");
+        let filename = get_filename_destination(&cloud_image, destination, &None).unwrap();
+
+        let non_matching = make_download_with_override(&cloud_image.url.url, "wrong-name.qcow2");
+        let non_matching_summary = Summary::builder().download(non_matching).status(Status::Success).build();
+
+        let matching = make_download_with_override(&cloud_image.url.url, &filename);
+        let matching_summary = Summary::builder().download(matching).status(Status::Success).build();
+
+        assert!(image_has_been_downloaded(
+            &vec![non_matching_summary, matching_summary],
+            &cloud_image,
+            destination,
+            false,
+            &None
+        ));
     }
 }

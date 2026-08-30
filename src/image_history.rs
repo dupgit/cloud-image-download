@@ -152,14 +152,6 @@ mod tests {
         Url::default()
     }
 
-    fn _dummy_real_url() -> Url {
-        Url::new(
-            "http://cloud.centos.org/centos".to_string(),
-            Some("10-stream".to_string()),
-            Some("x86_64/images".to_string()),
-        )
-    }
-
     #[test]
     fn none_input_returns_false() {
         let db = DbImageHistory {
