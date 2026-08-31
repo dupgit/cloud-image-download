@@ -256,6 +256,8 @@ impl WebSite {
                 CloudImage::new(new_url, checksum, image_name.to_string(), date)
             }
             ChecksumSource::PerImage => {
+                // @todo: some assumption here is made that a checksum made for each
+                //        file is a SHA256. May be we can add a checksum type to PerImage ?
                 // Downloading a checksum file that contains only the checksum of this image file.
                 let checksum_filename = format!("{}.SHA256SUM", url.url);
                 let checksum_body = get_body_from_url(&checksum_filename, client).await;

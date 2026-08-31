@@ -61,6 +61,9 @@ impl ChecksumSource {
             }
         }
 
+        // @todo: some assumption here is made that a checksum made for each
+        //        file is a SHA256. May be we can add a filter like the one
+        //        are_all_checksums_in_one_file to get SHA512SUM also ?
         // ".SHA256SUM" is a fixed, valid regex: filter_by_name cannot fail here.
         let per_image_checksum_file_count =
             url_httpdir.files().filter_by_name(".SHA256SUM").expect(".SHA256SUM is a known-valid regex").len();
@@ -108,25 +111,33 @@ fn verify_with_hasher<D: Digest>(
     Ok(Some(lower::encode_string(&digest) == expected_hash))
 }
 
+/// Returns the value that matched the regex (ie: the hash itself). This value
+/// is normalized to lowercase (to ease comparisons)
+fn get_checksum_from_line_with_regex(line: &str, size: u8) -> Option<String> {
+    // Boundaries `(?:^|[^a-f0-9])` and `(?:[^a-f0-9]|$)` ensure the captured
+    // run is exactly `size` hex chars — not a prefix/suffix of a longer
+    // consecutive hex run.
+    let regex = format!(r"(?:^|[^a-f0-9])([a-f0-9]{{{size}}})(?:[^a-f0-9]|$)");
+    let re = Regex::new(&regex).expect("Something went wrong because '{regex}' is a valid regex");
+    match re.captures(&line.to_ascii_lowercase()) {
+        Some(value) => Some(value[1].to_string()),
+        None => None,
+    }
+}
+
 impl CheckSums {
     /// Builds a `CheckSums` structure with the checksum found in
-    /// the line
+    /// the line guessing its type from the filename or the line content
     fn build_checksums_from_line(line: &str, filename: &str) -> CheckSums {
         if filename.contains("SHA512SUMS") || line.contains("SHA512") {
-            let re = Regex::new(r".*([a-f0-9]{128}+).*")
-                .expect("Something went wrong because '.*([a-f0-9]{128}+).*' is a valid regex");
-            let chksum: String = match re.captures(line) {
-                Some(value) => value[1].to_string(),
-                None => return CheckSums::None,
+            let Some(chksum) = get_checksum_from_line_with_regex(line, 128) else {
+                return CheckSums::None;
             };
             info!("found sha512 checksum '{chksum}'");
             CheckSums::Sha512(chksum)
         } else if filename.contains("SHA256SUMS") || line.contains("SHA256") {
-            let re = Regex::new(r".*([a-f0-9]{64}+).*")
-                .expect("Something went wrong because '.*([a-f0-9]{64}+).*' is a valid regex");
-            let chksum: String = match re.captures(line) {
-                Some(value) => value[1].to_string(),
-                None => return CheckSums::None,
+            let Some(chksum) = get_checksum_from_line_with_regex(line, 64) else {
+                return CheckSums::None;
             };
             info!("found sha256 checksum '{chksum}'");
             CheckSums::Sha256(chksum)
@@ -441,5 +452,134 @@ mod checksum_pattern_tests {
     #[test]
     fn per_image_checksum_file_does_not_match_combined_pattern() {
         assert!(!are_all_checksums_in_one_file("jammy-server-cloudimg-amd64.img.SHA256SUM"));
+    }
+}
+
+#[cfg(test)]
+mod checksum_extractor_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_sha256_checksum_from_plain_line() {
+        let hash = "9d9595c5d94fb65b824f56e9999527dba9542481580d69feb89056aabaa0aa87";
+        let line = format!("{hash}  archive.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), Some(hash.to_string()));
+    }
+
+    #[test]
+    fn extracts_sha512_checksum_from_plain_line() {
+        let hash = "a".repeat(128);
+        let line = format!("{hash}  archive.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 128), Some(hash));
+    }
+
+    #[test]
+    fn returns_none_when_hex_string_too_short() {
+        // Only 63 hex chars: must not match a size-64 pattern
+        let line = "9d9595c5d94fb65b824f56e9999527dba9542481580d69feb89056aabaa0aa8 file";
+        assert_eq!(get_checksum_from_line_with_regex(line, 64), None);
+    }
+
+    #[test]
+    fn extracts_sha256_checksum_on_uppercase_64_char_hex() {
+        let hash = "9D9595C5D94FB65B824F56E9999527DBA9542481580D69FEB89056AABAA0AA87";
+        let line = format!("{hash}  file.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), Some(hash.to_string().to_ascii_lowercase()));
+    }
+
+    #[test]
+    fn extracts_sha256_checksum_on_mixedcase_64_char_hex() {
+        let hash = "9D9595c5d94fb65b824F56E9999527dba9542481580d69feb89056aabAA0AA87";
+        let line = format!("{hash}  file.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), Some(hash.to_string().to_ascii_lowercase()));
+    }
+
+    #[test]
+    fn returns_none_on_empty_line() {
+        assert_eq!(get_checksum_from_line_with_regex("", 64), None);
+    }
+
+    #[test]
+    fn rejects_hex_run_longer_than_requested_size() {
+        let hash = "a".repeat(128); // 2 * 64, no separator
+        let line = format!("{hash}  file.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), None);
+    }
+
+    #[test]
+    fn rejects_hex_run_one_char_longer_than_size() {
+        let wrong_hash = "a".repeat(65);
+        let line = format!("{wrong_hash}  file.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), None);
+    }
+
+    #[test]
+    fn still_extracts_exact_size_hex_run_with_delimiters() {
+        let hash = "a".repeat(64);
+        let line = format!("{hash}  file.iso");
+        assert_eq!(get_checksum_from_line_with_regex(&line, 64), Some(hash));
+    }
+
+    #[test]
+    fn detects_sha512_from_filename() {
+        let hash = "b".repeat(128);
+        let line = format!("{hash}  archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "SHA512SUMS");
+        assert_eq!(result, CheckSums::Sha512(hash));
+    }
+
+    #[test]
+    fn detects_sha512_from_line_content_regardless_of_filename() {
+        let hash = "c".repeat(128);
+        let line = format!("SHA512 {hash} archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "checksums.txt");
+        assert_eq!(result, CheckSums::Sha512(hash));
+    }
+
+    #[test]
+    fn detects_sha256_from_filename() {
+        let hash = "d".repeat(64);
+        let line = format!("{hash}  archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "SHA256SUMS");
+        assert_eq!(result, CheckSums::Sha256(hash));
+    }
+
+    #[test]
+    fn detects_sha256_from_line_content_regardless_of_filename() {
+        let hash = "e".repeat(64);
+        let line = format!("SHA256 {hash} archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "checksums.txt");
+        assert_eq!(result, CheckSums::Sha256(hash));
+    }
+
+    #[test]
+    fn returns_none_when_no_shatype_hint_present() {
+        let hash = "f".repeat(64);
+        let line = format!("{hash}  archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "checksums.txt");
+        assert_eq!(result, CheckSums::None);
+    }
+
+    #[test]
+    fn returns_none_when_type_detected_but_hash_missing() {
+        // Filename signals SHA256SUMS but the line has no valid hex payload.
+        let line = "not a checksum line";
+        let result = CheckSums::build_checksums_from_line(line, "SHA256SUMS");
+        assert_eq!(result, CheckSums::None);
+
+        // Filename signals SHA512SUMS but the line has no valid hex payload.
+        let result = CheckSums::build_checksums_from_line(line, "SHA512SUMS");
+        assert_eq!(result, CheckSums::None);
+    }
+
+    #[test]
+    fn sha512_takes_priority_when_line_mentions_both_filenames_and_types() {
+        // Filename says SHA256SUMS, but the line content explicitly says
+        // SHA512 — current logic checks SHA512 conditions first, so it wins.
+        // Pin this precedence so a refactor doesn't flip it silently.
+        let hash = "1".repeat(128);
+        let line = format!("SHA512 ({hash}) archive.tar.gz");
+        let result = CheckSums::build_checksums_from_line(&line, "SHA256SUMS");
+        assert_eq!(result, CheckSums::Sha512(hash));
     }
 }
