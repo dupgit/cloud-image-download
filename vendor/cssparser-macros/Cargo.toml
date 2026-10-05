@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "cssparser-macros"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Simon Sapin <simon.sapin@exyr.org>"]
 build = false
 autolib = false
@@ -25,6 +25,7 @@ documentation = "https://docs.rs/cssparser-macros/"
 readme = false
 license = "MPL-2.0"
 repository = "https://github.com/servo/rust-cssparser"
+resolver = "3"
 
 [lib]
 name = "cssparser_macros"
@@ -35,7 +36,7 @@ proc-macro = true
 version = "1.0.29"
 
 [dependencies.syn]
-version = "2"
+version = ">=2,<4"
 features = [
     "full",
     "extra-traits",

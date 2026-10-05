@@ -87,16 +87,17 @@ impl HttpDirectory {
         debug!("cd is going to {url}");
         let now = Instant::now();
         let response = self.request.get(&url).await?;
+        let real_url = response.url().to_string();
         let http_request = now.elapsed();
 
         let now = Instant::now();
-        let entries = get_entries_from_body(&response.text().await.with_url(&self.url)?);
+        let entries = get_entries_from_body(&response.text().await.with_url(&url)?);
         let get_entries = now.elapsed();
 
         let timings = Timings::new(http_request, get_entries);
         self.entries = entries;
         self.timings = Arc::new(timings);
-        self.url = Arc::new(url);
+        self.url = Arc::new(real_url);
         Ok(self)
     }
 
@@ -230,8 +231,8 @@ impl HttpDirectory {
     /// Returns the String that represents the url of
     /// that `HttpDirectory`
     #[must_use]
-    pub fn get_url(&self) -> Arc<String> {
-        self.url.clone()
+    pub fn get_url(&self) -> &str {
+        self.url.as_str()
     }
 
     /// Returns the process time that the HTTP request in itself
@@ -253,6 +254,16 @@ impl HttpDirectory {
     #[must_use]
     pub fn total_time(&self) -> Duration {
         self.timings.get_entries + self.timings.http_request
+    }
+
+    /// Returns a default HttpDirectory but with entries populated
+    /// by `entries` parameter - this is meant for tests only
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn from_entries(entries: Vec<HttpDirectoryEntry>) -> Self {
+        HttpDirectory {
+            entries,
+            ..Default::default()
+        }
     }
 }
 
@@ -335,19 +346,18 @@ mod tests {
     // This is an helper function used to prepare some `HttpDirectory`
     // structure that will be used in tests
     fn prepare_httpdir() -> HttpDirectory {
-        let mut httpdir = HttpDirectory::default();
-
-        httpdir.entries.push(HttpDirectoryEntry::new("dir1", "2025-01-26 12:54", "-", "dir1/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("test2", "2025-02-16 13:37", "-", "test2/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("debian3", "2025-03-01 07:11", "-", "debian3/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("entry4", "2025-01-02 12:32", "-", "entry4/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("file1", "1987-10-09 04:37", "123", "file1/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("files2", "2023-01-01 00:00", "2345", "files2/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("entry3", "2025-07-17 23:59", "67K", "entry3/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("debian4", "2024-12-08 08:22", "123M", "debian4/"));
-        httpdir.entries.push(HttpDirectoryEntry::new("parent directory", "2025-01-26 12:54", "-", "../"));
-
-        httpdir
+        let entries = vec![
+            HttpDirectoryEntry::new("dir1", "2025-01-26 12:54", "-", "dir1/"),
+            HttpDirectoryEntry::new("test2", "2025-02-16 13:37", "-", "test2/"),
+            HttpDirectoryEntry::new("debian3", "2025-03-01 07:11", "-", "debian3/"),
+            HttpDirectoryEntry::new("entry4", "2025-01-02 12:32", "-", "entry4/"),
+            HttpDirectoryEntry::new("file1", "1987-10-09 04:37", "123", "file1/"),
+            HttpDirectoryEntry::new("files2", "2023-01-01 00:00", "2345", "files2/"),
+            HttpDirectoryEntry::new("entry3", "2025-07-17 23:59", "67K", "entry3/"),
+            HttpDirectoryEntry::new("debian4", "2024-12-08 08:22", "123M", "debian4/"),
+            HttpDirectoryEntry::new("parent directory", "2025-01-26 12:54", "-", "../"),
+        ];
+        HttpDirectory::from_entries(entries)
     }
 
     #[test]
@@ -675,9 +685,8 @@ DIR          -  2025-01-02 12:32  entry4
 
     #[test]
     fn test_stats_count() {
-        let httpdirectoryentry = HttpDirectoryEntry::new("name", "2025-05-31 16:58", "-", "name/");
-        let mut httpdirectory = HttpDirectory::default();
-        httpdirectory.entries = vec![httpdirectoryentry];
+        let entries = vec![HttpDirectoryEntry::new("name", "2025-05-31 16:58", "-", "name/")];
+        let mut httpdirectory = HttpDirectory::from_entries(entries);
         let stats = httpdirectory.stats();
 
         assert_eq!(stats.parent_dir, 0);
@@ -712,9 +721,8 @@ DIR          -  2025-01-02 12:32  entry4
 
     #[test]
     fn test_stats_output() {
-        let httpdirectoryentry = HttpDirectoryEntry::new("name", "2025-05-31 16:58", "3.1K", "name/");
-        let mut httpdirectory = HttpDirectory::default();
-        httpdirectory.entries = vec![httpdirectoryentry];
+        let entries = vec![HttpDirectoryEntry::new("name", "2025-05-31 16:58", "3.1K", "name/")];
+        let httpdirectory = HttpDirectory::from_entries(entries);
         let stats = httpdirectory.stats();
         let output = r##"Parent directory: 0
 Directories: 0
@@ -729,9 +737,8 @@ Entries without any date: 0
 
     #[test]
     fn test_stats_count_no_date() {
-        let httpdirectoryentry = HttpDirectoryEntry::new("name", "", "-", "name/");
-        let mut httpdirectory = HttpDirectory::default();
-        httpdirectory.entries = vec![httpdirectoryentry];
+        let entries = vec![HttpDirectoryEntry::new("name", "", "-", "name/")];
+        let mut httpdirectory = HttpDirectory::from_entries(entries);
         let mut stats = httpdirectory.stats();
 
         assert_eq!(stats.parent_dir, 0);

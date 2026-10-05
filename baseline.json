@@ -1,30 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/minikin/cargo-crap/main/schemas/report-v1.json",
-  "version": "0.4.3",
+  "version": "0.6.1",
   "entries": [
-    {
-      "file": "src/website.rs",
-      "function": "WebSite::get_latest_image_to_download_from_url",
-      "line": 206,
-      "cyclomatic": 12.0,
-      "coverage": 0.0,
-      "crap": 156.0
-    },
     {
       "file": "src/download.rs",
       "function": "download_images",
       "line": 92,
       "cyclomatic": 10.0,
       "coverage": 0.0,
-      "crap": 110.0
-    },
-    {
-      "file": "src/checksums.rs",
-      "function": "CheckSums::build_checksums_from_line",
-      "line": 61,
-      "cyclomatic": 9.0,
-      "coverage": 0.0,
-      "crap": 90.0
+      "crap": 110.0,
+      "uncovered": [
+        {
+          "start": 92,
+          "end": 168
+        }
+      ]
     },
     {
       "file": "src/download.rs",
@@ -32,7 +22,13 @@
       "line": 172,
       "cyclomatic": 9.0,
       "coverage": 0.0,
-      "crap": 90.0
+      "crap": 90.0,
+      "uncovered": [
+        {
+          "start": 172,
+          "end": 199
+        }
+      ]
     },
     {
       "file": "src/download.rs",
@@ -40,39 +36,83 @@
       "line": 253,
       "cyclomatic": 9.0,
       "coverage": 0.0,
-      "crap": 90.0
+      "crap": 90.0,
+      "uncovered": [
+        {
+          "start": 253,
+          "end": 295
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "WebSite::check_for_directories_with_dates_or_version_numbers",
-      "line": 130,
+      "line": 139,
       "cyclomatic": 8.0,
       "coverage": 0.0,
-      "crap": 72.0
+      "crap": 72.0,
+      "uncovered": [
+        {
+          "start": 139,
+          "end": 185
+        }
+      ]
     },
     {
       "file": "src/checksums.rs",
       "function": "CheckSums::get_image_checksum_from_checksums_buffer",
-      "line": 93,
+      "line": 157,
       "cyclomatic": 7.0,
       "coverage": 0.0,
-      "crap": 56.0
+      "crap": 56.0,
+      "uncovered": [
+        {
+          "start": 157,
+          "end": 178
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "get_body_from_url",
-      "line": 59,
+      "line": 68,
       "cyclomatic": 7.0,
       "coverage": 0.0,
-      "crap": 56.0
+      "crap": 56.0,
+      "uncovered": [
+        {
+          "start": 68,
+          "end": 88
+        }
+      ]
+    },
+    {
+      "file": "src/website.rs",
+      "function": "WebSite::get_latest_image_to_download_from_url",
+      "line": 214,
+      "cyclomatic": 7.0,
+      "coverage": 0.0,
+      "crap": 56.0,
+      "uncovered": [
+        {
+          "start": 214,
+          "end": 281
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "WebSite::generate_url_list",
-      "line": 97,
+      "line": 106,
       "cyclomatic": 5.0,
       "coverage": 0.0,
-      "crap": 30.0
+      "crap": 30.0,
+      "uncovered": [
+        {
+          "start": 106,
+          "end": 133
+        }
+      ]
     },
     {
       "file": "src/cloud_image.rs",
@@ -80,7 +120,13 @@
       "line": 37,
       "cyclomatic": 5.0,
       "coverage": 0.0,
-      "crap": 30.0
+      "crap": 30.0,
+      "uncovered": [
+        {
+          "start": 37,
+          "end": 62
+        }
+      ]
     },
     {
       "file": "src/image_history.rs",
@@ -88,7 +134,13 @@
       "line": 23,
       "cyclomatic": 5.0,
       "coverage": 0.0,
-      "crap": 30.0
+      "crap": 30.0,
+      "uncovered": [
+        {
+          "start": 23,
+          "end": 54
+        }
+      ]
     },
     {
       "file": "src/image_history.rs",
@@ -96,23 +148,27 @@
       "line": 59,
       "cyclomatic": 5.0,
       "coverage": 0.0,
-      "crap": 30.0
-    },
-    {
-      "file": "src/checksums.rs",
-      "function": "are_all_checksums_in_one_file",
-      "line": 156,
-      "cyclomatic": 4.0,
-      "coverage": 0.0,
-      "crap": 20.0
+      "crap": 30.0,
+      "uncovered": [
+        {
+          "start": 59,
+          "end": 80
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "WebSite::clean_httpdir_from_image_name_cleanse_regex",
-      "line": 181,
+      "line": 190,
       "cyclomatic": 4.0,
       "coverage": 0.0,
-      "crap": 20.0
+      "crap": 20.0,
+      "uncovered": [
+        {
+          "start": 190,
+          "end": 203
+        }
+      ]
     },
     {
       "file": "src/image_history.rs",
@@ -120,7 +176,13 @@
       "line": 114,
       "cyclomatic": 4.0,
       "coverage": 0.0,
-      "crap": 20.0
+      "crap": 20.0,
+      "uncovered": [
+        {
+          "start": 114,
+          "end": 134
+        }
+      ]
     },
     {
       "file": "src/bin/cid.rs",
@@ -128,7 +190,13 @@
       "line": 35,
       "cyclomatic": 3.0,
       "coverage": 0.0,
-      "crap": 12.0
+      "crap": 12.0,
+      "uncovered": [
+        {
+          "start": 35,
+          "end": 79
+        }
+      ]
     },
     {
       "file": "src/download.rs",
@@ -136,23 +204,41 @@
       "line": 27,
       "cyclomatic": 3.0,
       "coverage": 0.0,
-      "crap": 12.0
+      "crap": 12.0,
+      "uncovered": [
+        {
+          "start": 27,
+          "end": 32
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "vec_ws_image_lists_is_empty",
-      "line": 368,
+      "line": 343,
       "cyclomatic": 3.0,
       "coverage": 0.0,
-      "crap": 12.0
+      "crap": 12.0,
+      "uncovered": [
+        {
+          "start": 343,
+          "end": 349
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "url_with_latest_directory_name",
-      "line": 378,
+      "line": 353,
       "cyclomatic": 3.0,
       "coverage": 0.0,
-      "crap": 12.0
+      "crap": 12.0,
+      "uncovered": [
+        {
+          "start": 353,
+          "end": 367
+        }
+      ]
     },
     {
       "file": "src/cloud_image.rs",
@@ -160,7 +246,13 @@
       "line": 72,
       "cyclomatic": 3.0,
       "coverage": 0.0,
-      "crap": 12.0
+      "crap": 12.0,
+      "uncovered": [
+        {
+          "start": 72,
+          "end": 79
+        }
+      ]
     },
     {
       "file": "src/settings.rs",
@@ -168,7 +260,21 @@
       "line": 20,
       "cyclomatic": 8.0,
       "coverage": 62.5,
-      "crap": 11.375
+      "crap": 11.375,
+      "uncovered": [
+        {
+          "start": 23,
+          "end": 25
+        },
+        {
+          "start": 35,
+          "end": 37
+        },
+        {
+          "start": 43,
+          "end": 45
+        }
+      ]
     },
     {
       "file": "src/download.rs",
@@ -176,7 +282,25 @@
       "line": 41,
       "cyclomatic": 8.0,
       "coverage": 64.28571428571429,
-      "crap": 10.91545189504373
+      "crap": 10.91545189504373,
+      "uncovered": [
+        {
+          "start": 50,
+          "end": 50
+        },
+        {
+          "start": 54,
+          "end": 54
+        },
+        {
+          "start": 60,
+          "end": 65
+        },
+        {
+          "start": 73,
+          "end": 74
+        }
+      ]
     },
     {
       "file": "src/download.rs",
@@ -184,7 +308,13 @@
       "line": 205,
       "cyclomatic": 9.0,
       "coverage": 96.42857142857143,
-      "crap": 9.003689868804665
+      "crap": 9.003689868804665,
+      "uncovered": [
+        {
+          "start": 213,
+          "end": 213
+        }
+      ]
     },
     {
       "file": "src/bin/cid.rs",
@@ -192,28 +322,76 @@
       "line": 17,
       "cyclomatic": 2.0,
       "coverage": 0.0,
-      "crap": 6.0
+      "crap": 6.0,
+      "uncovered": [
+        {
+          "start": 17,
+          "end": 23
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "sanitize_string",
-      "line": 81,
+      "line": 90,
       "cyclomatic": 2.0,
       "coverage": 0.0,
-      "crap": 6.0
+      "crap": 6.0,
+      "uncovered": [
+        {
+          "start": 90,
+          "end": 96
+        }
+      ]
     },
     {
       "file": "src/checksums.rs",
       "function": "verify_with_hasher",
-      "line": 30,
+      "line": 86,
       "cyclomatic": 5.0,
       "coverage": 90.47619047619048,
-      "crap": 5.021595939963287
+      "crap": 5.021595939963287,
+      "uncovered": [
+        {
+          "start": 101,
+          "end": 102
+        }
+      ]
+    },
+    {
+      "file": "src/checksums.rs",
+      "function": "ChecksumSource::determine_checksum_source",
+      "line": 45,
+      "cyclomatic": 5.0,
+      "coverage": 93.75,
+      "crap": 5.006103515625,
+      "uncovered": [
+        {
+          "start": 57,
+          "end": 57
+        }
+      ]
+    },
+    {
+      "file": "src/checksums.rs",
+      "function": "CheckSums::build_checksums_from_line",
+      "line": 131,
+      "cyclomatic": 5.0,
+      "coverage": 100.0,
+      "crap": 5.0
     },
     {
       "file": "src/checksums.rs",
       "function": "CheckSums::verify_file",
-      "line": 123,
+      "line": 187,
+      "cyclomatic": 4.0,
+      "coverage": 100.0,
+      "crap": 4.0
+    },
+    {
+      "file": "src/checksums.rs",
+      "function": "are_all_checksums_in_one_file",
+      "line": 220,
       "cyclomatic": 4.0,
       "coverage": 100.0,
       "crap": 4.0
@@ -221,10 +399,24 @@
     {
       "file": "src/checksums.rs",
       "function": "CheckSums::fmt",
-      "line": 142,
+      "line": 206,
       "cyclomatic": 3.0,
       "coverage": 83.33333333333334,
-      "crap": 3.0416666666666665
+      "crap": 3.0416666666666665,
+      "uncovered": [
+        {
+          "start": 208,
+          "end": 208
+        }
+      ]
+    },
+    {
+      "file": "src/checksums.rs",
+      "function": "get_checksum_from_line_with_regex",
+      "line": 116,
+      "cyclomatic": 3.0,
+      "coverage": 100.0,
+      "crap": 3.0
     },
     {
       "file": "src/image_history.rs",
@@ -240,7 +432,13 @@
       "line": 26,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 26,
+          "end": 33
+        }
+      ]
     },
     {
       "file": "src/bin/cid.rs",
@@ -248,7 +446,13 @@
       "line": 82,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 82,
+          "end": 98
+        }
+      ]
     },
     {
       "file": "src/cli.rs",
@@ -256,23 +460,55 @@
       "line": 34,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 34,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "file": "src/website.rs",
+      "function": "Url::clone_with_new_url",
+      "line": 56,
+      "cyclomatic": 1.0,
+      "coverage": 0.0,
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 56,
+          "end": 62
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "WSImageList::get_images_list",
-      "line": 314,
+      "line": 289,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 289,
+          "end": 332
+        }
+      ]
     },
     {
       "file": "src/website.rs",
       "function": "WSImageList::is_empty",
-      "line": 360,
+      "line": 335,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 335,
+          "end": 337
+        }
+      ]
     },
     {
       "file": "src/cloud_image.rs",
@@ -280,7 +516,13 @@
       "line": 64,
       "cyclomatic": 1.0,
       "coverage": 0.0,
-      "crap": 2.0
+      "crap": 2.0,
+      "uncovered": [
+        {
+          "start": 64,
+          "end": 68
+        }
+      ]
     },
     {
       "file": "src/website.rs",

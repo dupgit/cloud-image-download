@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.88.0"
 name = "bon-macros"
-version = "3.10.0"
+version = "3.10.2"
 build = false
 autolib = false
 autobins = false
@@ -113,7 +113,6 @@ invalid_upcast_comparisons = "warn"
 iter_not_returning_iterator = "warn"
 iter_on_empty_collections = "warn"
 iter_with_drain = "warn"
-large_futures = "allow"
 large_include_file = "warn"
 linkedlist = "warn"
 lossy_float_literal = "warn"

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "bon"
-version = "3.10.0"
+version = "3.10.2"
 dependencies = [
  "bon-macros",
  "expect-test",
@@ -15,9 +15,9 @@ dependencies = [
 
 [[package]]
 name = "bon-macros"
-version = "3.10.0"
+version = "3.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4654961ad0494e4774c5c60b4cb4cd0ae9b9d92d039d901638b1dba97ebebf5"
+checksum = "2706da6c749998cc555d04184909608956a69ad3f8ab1a076fbc867b4a3c3ce5"
 dependencies = [
  "darling",
  "ident_case",

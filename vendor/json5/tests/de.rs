@@ -1,780 +1,778 @@
-use serde::de;
-use serde_derive::Deserialize;
-
 use std::collections::HashMap;
-use std::fmt;
 
-mod common;
+use json5::{Error, ErrorCode, Position, from_str};
 
-use crate::common::{
-    deserializes_to, deserializes_to_nan_f32, deserializes_to_nan_f64, deserializes_with_error,
-    make_error,
-};
+use ErrorCode::*;
+use serde_bytes::ByteBuf;
+use serde_derive::Deserialize;
+use serde_json::json;
 
-/// Defines a struct `A` with a `de::Deserializer` implementation that returns an error. Works for
-/// visitors that accept a single value.
-macro_rules! error_struct {
-    ($type:ty, $visit_fn:ident, $deserialize_fn:ident) => {
-        #[derive(Debug, PartialEq)]
-        struct A;
-        impl<'de> de::Deserialize<'de> for A {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: de::Deserializer<'de>,
-            {
-                struct Visitor;
-                impl<'de> de::Visitor<'de> for Visitor {
-                    type Value = A;
-                    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        f.write_str("...")
-                    }
-                    fn $visit_fn<E>(self, _v: $type) -> Result<Self::Value, E>
-                    where
-                        E: de::Error,
-                    {
-                        Err(de::Error::custom("oops"))
-                    }
-                }
-                deserializer.$deserialize_fn(Visitor)
-            }
-        }
-    };
+fn err(code: ErrorCode) -> Error {
+    Error::new(code)
 }
 
-#[test]
-fn deserializes_bool() {
-    deserializes_to("true", true);
-    deserializes_to("false", false);
-
-    error_struct!(bool, visit_bool, deserialize_bool);
-    deserializes_with_error::<A>("\n true", make_error("oops", 2, 2));
+fn err_at(line: usize, column: usize, code: ErrorCode) -> Error {
+    Error::new_at(Position { line, column }, code)
 }
 
-#[test]
-fn deserializes_i8() {
-    let x: i8 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
-    deserializes_to("-42", -x);
-    deserializes_to("-42.", -x);
-    deserializes_to("-42.0", -x);
-    deserializes_to("-42e0", -x);
-    deserializes_to("-4.2e1", -x);
-    deserializes_to("-.42e2", -x);
-    deserializes_to("-0.42e2", -x);
-
-    error_struct!(i8, visit_i8, deserialize_i8);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
+fn custom_err_at(line: usize, column: usize, msg: &str) -> Error {
+    Error::custom_at(Position { line, column }, msg)
 }
 
+// https://262.ecma-international.org/5.1/#sec-7.8.1
 #[test]
-fn deserializes_u8() {
-    let x: u8 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
+fn parse_null() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Unit;
 
-    error_struct!(u8, visit_u8, deserialize_u8);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
+    assert_eq!(from_str("null"), Ok(()));
+    assert_eq!(from_str("null"), Ok(Unit));
+    assert_eq!(from_str::<()>("false"), Err(err_at(0, 0, ExpectedNull)));
+    assert_eq!(from_str::<()>("nil"), Err(err_at(0, 1, ExpectedNull)));
+    assert_eq!(from_str::<()>("0"), Err(err_at(0, 0, ExpectedNull)));
+    assert_eq!(from_str::<()>("n"), Err(err(EofParsingNull)));
 }
 
+// https://262.ecma-international.org/5.1/#sec-7.8.2
 #[test]
-fn deserializes_i16() {
-    let x: i16 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
-    deserializes_to("-42", -x);
-    deserializes_to("-42.", -x);
-    deserializes_to("-42.0", -x);
-    deserializes_to("-42e0", -x);
-    deserializes_to("-4.2e1", -x);
-    deserializes_to("-.42e2", -x);
-    deserializes_to("-0.42e2", -x);
+fn parse_bool() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Newtype(bool);
 
-    error_struct!(i16, visit_i16, deserialize_i16);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
+    assert_eq!(from_str("true"), Ok(true));
+    assert_eq!(from_str("false"), Ok(false));
+    assert_eq!(from_str("true"), Ok(Newtype(true)));
+    assert_eq!(from_str::<bool>("null"), Err(err_at(0, 0, ExpectedBool)));
+    assert_eq!(from_str::<bool>("yes"), Err(err_at(0, 0, ExpectedBool)));
+    assert_eq!(from_str::<bool>("0"), Err(err_at(0, 0, ExpectedBool)));
+    assert_eq!(from_str::<bool>("t"), Err(err(EofParsingBool)));
 }
 
+// https://spec.json5.org/#numbers
 #[test]
-fn deserializes_u16() {
-    let x: u16 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
+fn parse_number() {
+    assert_eq!(from_str("0"), Ok(0));
+    assert!(from_str::<f64>("-0.").is_ok_and(|f| f == 0. && f.is_sign_negative()));
+    assert_eq!(from_str("123"), Ok(123i8));
+    assert_eq!(from_str("123"), Ok(123u8));
+    assert_eq!(from_str("123"), Ok(123i16));
+    assert_eq!(from_str("123"), Ok(123u16));
+    assert_eq!(from_str("123"), Ok(123i32));
+    assert_eq!(from_str("123"), Ok(123u32));
+    assert_eq!(from_str("123"), Ok(123i64));
+    assert_eq!(from_str("123"), Ok(123u64));
+    assert_eq!(from_str("123"), Ok(123i128));
+    assert_eq!(from_str("123"), Ok(123u128));
+    assert_eq!(from_str("-123"), Ok(-123));
+    assert_eq!(from_str("123.456"), Ok(123.456f32));
+    assert_eq!(from_str("123.456"), Ok(123.456f64));
+    assert_eq!(from_str("123.0"), Ok(123.));
+    assert_eq!(from_str("123."), Ok(123.));
+    assert_eq!(from_str(".456"), Ok(0.456));
+    assert_eq!(from_str("0.456"), Ok(0.456));
+    assert_eq!(from_str("123e-456"), Ok(123e-456));
+    assert_eq!(from_str("123E-456"), Ok(123e-456));
+    assert_eq!(from_str("18446744073709551615"), Ok(u64::MAX));
+    assert_eq!(from_str("Infinity"), Ok(f64::INFINITY));
+    assert_eq!(from_str("-Infinity"), Ok(-f64::INFINITY));
+    assert!(from_str::<f64>("NaN").is_ok_and(|f| f.is_nan() && f.is_sign_positive()));
+    assert!(from_str::<f64>("-NaN").is_ok_and(|f| f.is_nan() && f.is_sign_negative()));
+    assert_eq!(from_str("0xdecaf"), Ok(0xdecaf));
+    assert_eq!(from_str("-0xC0FFEE"), Ok(-0xC0FFEE));
+    assert_eq!(from_str("0x7FFFFFFFFFFFFFFF"), Ok(i64::MAX));
+    assert_eq!(from_str("-0x8000000000000000"), Ok(i64::MIN));
+    assert_eq!(from_str("0x0"), Ok(0));
+    assert_eq!(
+        from_str("340282366920938463463374607431768211455"),
+        Ok(u128::MAX)
+    );
+    assert_eq!(
+        from_str("-170141183460469231731687303715884105728"),
+        Ok(i128::MIN)
+    );
+    assert_eq!(
+        from_str("0xffffffffffffffffffffffffffffffff"),
+        Ok(u128::MAX)
+    );
+    assert_eq!(
+        from_str("-0x80000000000000000000000000000000"),
+        Ok(i128::MIN)
+    );
 
-    error_struct!(u16, visit_u16, deserialize_u16);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_i32() {
-    let x: i32 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
-    deserializes_to("-42", -x);
-    deserializes_to("-42.", -x);
-    deserializes_to("-42.0", -x);
-    deserializes_to("-42e0", -x);
-    deserializes_to("-4.2e1", -x);
-    deserializes_to("-.42e2", -x);
-    deserializes_to("-0.42e2", -x);
-
-    error_struct!(i32, visit_i32, deserialize_i32);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_u32() {
-    let x: u32 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
-
-    error_struct!(u32, visit_u32, deserialize_u32);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_i64() {
-    let x: i64 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
-    deserializes_to("-42", -x);
-    deserializes_to("-42.", -x);
-    deserializes_to("-42.0", -x);
-    deserializes_to("-42e0", -x);
-    deserializes_to("-4.2e1", -x);
-    deserializes_to("-.42e2", -x);
-    deserializes_to("-0.42e2", -x);
-
-    error_struct!(i64, visit_i64, deserialize_i64);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-    let over_i64 = format!("\n {}0", i64::max_value());
-    deserializes_with_error::<serde_json::Value>(
-        over_i64.as_str(),
-        make_error("error parsing integer", 2, 2),
+    assert_eq!(from_str::<u32>("0x"), Err(err(EofParsingNumber)));
+    assert_eq!(from_str::<u32>("0x!"), Err(err_at(0, 2, ExpectedNumber)));
+    assert_eq!(from_str::<f64>("inf"), Err(err_at(0, 0, ExpectedNumber)));
+    assert_eq!(
+        from_str::<u64>("0x10000000000000000"), // u64::MAX + 1
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: integer `18446744073709551616` as u128, expected u64"
+        ))
+    );
+    assert_eq!(
+        from_str::<u32>("007"),
+        Err(err_at(0, 0, ErrorCode::LeadingZero))
+    );
+    assert_eq!(
+        from_str::<u64>("18446744073709551616"), // u64::MAX + 1
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: integer `18446744073709551616` as u128, expected u64"
+        ))
+    );
+    assert_eq!(
+        from_str::<i64>("0x8000000000000000"), // i64::MAX + 1
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid value: integer `9223372036854775808`, expected i64"
+        ))
+    );
+    assert_eq!(
+        from_str::<i64>("-0x8000000000000001"), // i64::MIN - 1
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: integer `-9223372036854775809` as i128, expected i64"
+        ))
+    );
+    assert_eq!(
+        from_str::<i64>("340282366920938463463374607431768211456"), // u128::MAX + 1
+        Err(custom_err_at(
+            0,
+            0,
+            "number too large to fit in target type"
+        ))
+    );
+    assert_eq!(
+        from_str::<i64>("-170141183460469231731687303715884105729"), // i128::MIN - 1
+        Err(custom_err_at(
+            0,
+            0,
+            "number too small to fit in target type"
+        ))
+    );
+    assert_eq!(
+        from_str::<u128>("0x100000000000000000000000000000000"), // u128::MAX + 1
+        Err(err_at(0, 34, OverflowParsingNumber))
+    );
+    assert_eq!(
+        from_str::<i128>("-0x80000000000000000000000000000001"), // i128::MIN - 1
+        Err(custom_err_at(
+            0,
+            0,
+            "out of range integral type conversion attempted"
+        ))
     );
 }
 
+// https://spec.json5.org/#strings
 #[test]
-fn deserializes_u64() {
-    let x: u64 = 42;
-    deserializes_to("0x2A", x);
-    deserializes_to("0x2a", x);
-    deserializes_to("0X2A", x);
-    deserializes_to("0X2a", x);
-    deserializes_to("0x00002A", x);
-    deserializes_to("42", x);
-    deserializes_to("42.", x);
-    deserializes_to("42.0", x);
-    deserializes_to("42e0", x);
-    deserializes_to("4.2e1", x);
-    deserializes_to(".42e2", x);
-    deserializes_to("0.42e2", x);
+fn parse_string() {
+    assert_eq!(from_str(r#""can borrow""#), Ok("can borrow"));
+    assert_eq!(from_str(r#"'"quotes"'"#), Ok(r#""quotes""#));
+    assert_eq!(from_str(r#""'quotes'""#), Ok("'quotes'"));
+    assert_eq!(from_str(r#"'你好!'"#), Ok("你好!"));
+    assert_eq!(from_str("'\u{2028}\u{2029}'"), Ok("\u{2028}\u{2029}"));
+    assert_eq!(from_str(r#"'a'"#), Ok('a'));
+    assert_eq!(from_str(r#"'好'"#), Ok('好'));
+    assert_eq!(from_str(r#""two\nlines""#), Ok("two\nlines".to_owned()));
+    assert_eq!(from_str("'one \\\nline'"), Ok("one line".to_owned()));
+    assert_eq!(from_str("'one \\\r\nline'"), Ok("one line".to_owned()));
+    assert_eq!(from_str(r#""zero: '\0'""#), Ok("zero: '\0'".to_owned()));
+    assert_eq!(from_str(r#"'\u4f60\u597d\x21'"#), Ok("你好!".to_owned()));
+    // Example 2 from https://spec.json5.org/#escapes, UTF-16 surrogate pair.
+    assert_eq!(from_str(r"'\uD83C\uDFBC'"), Ok("🎼".to_owned()));
+    assert_eq!(from_str(r#""\uD83D\uDE00""#), Ok("😀".to_owned()));
 
-    deserializes_to("Infinity", std::f32::INFINITY);
-    deserializes_to("-Infinity", std::f32::NEG_INFINITY);
-    deserializes_to_nan_f32("NaN");
+    assert_eq!(
+        from_str::<char>(r#"'ab'"#),
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid value: string \"ab\", expected a character"
+        ))
+    );
+    assert_eq!(
+        from_str::<String>("'one\ntwo'"),
+        Err(err_at(0, 4, LineTerminatorInString))
+    );
+    assert_eq!(
+        from_str::<String>(r#"'\01'"#),
+        Err(err_at(0, 1, InvalidEscapeSequence))
+    );
+    assert_eq!(
+        from_str::<String>(r#"'\42'"#),
+        Err(err_at(0, 1, InvalidEscapeSequence))
+    );
+    assert_eq!(
+        from_str::<String>(r#"'\ubar'"#),
+        Err(err_at(0, 1, InvalidEscapeSequence))
+    );
+    assert_eq!(
+        from_str::<String>("false"),
+        Err(err_at(0, 0, ExpectedString))
+    );
+    assert_eq!(from_str::<String>("'..."), Err(err(EofParsingString)));
+    assert_eq!(
+        from_str::<&str>(r#""two\nlines""#),
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: string \"two\\nlines\", expected a borrowed string",
+        )),
+    );
+    assert_eq!(
+        from_str::<char>("'ab'"),
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid value: string \"ab\", expected a character"
+        ))
+    );
 
-    error_struct!(u64, visit_u64, deserialize_u64);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_f32() {
-    let x: f32 = 42.42;
-    deserializes_to("42.42", x);
-    deserializes_to("42.42e0", x);
-    deserializes_to("4.242e1", x);
-    deserializes_to(".4242e2", x);
-    deserializes_to("0.4242e2", x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42e0", -x);
-    deserializes_to("-4.242e1", -x);
-    deserializes_to("-.4242e2", -x);
-    deserializes_to("-0.4242e2", -x);
-
-    deserializes_to("Infinity", std::f32::INFINITY);
-    deserializes_to("-Infinity", std::f32::NEG_INFINITY);
-    deserializes_to_nan_f32("NaN");
-    deserializes_to_nan_f32("-NaN");
-
-    error_struct!(f32, visit_f32, deserialize_f32);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_f64() {
-    let x: f64 = 42.42;
-    deserializes_to("42.42", x);
-    deserializes_to("42.42e0", x);
-    deserializes_to("4.242e1", x);
-    deserializes_to(".4242e2", x);
-    deserializes_to("0.4242e2", x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42", -x);
-    deserializes_to("-42.42e0", -x);
-    deserializes_to("-4.242e1", -x);
-    deserializes_to("-.4242e2", -x);
-    deserializes_to("-0.4242e2", -x);
-
-    deserializes_to("Infinity", std::f64::INFINITY);
-    deserializes_to("-Infinity", std::f64::NEG_INFINITY);
-    deserializes_to_nan_f64("NaN");
-    deserializes_to_nan_f64("-NaN");
-
-    error_struct!(f64, visit_f64, deserialize_f64);
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-    deserializes_with_error::<f64>(
-        "\n 1e309",
-        make_error("error parsing number: too large", 2, 2),
+    // UTF-16 surrogate pair error cases
+    // High surrogate without low surrogate
+    assert_eq!(
+        from_str::<String>(r#""\uD83D""#),
+        Err(err_at(0, 7, InvalidEscapeSequence))
+    );
+    // High surrogate followed by non-escape character
+    assert_eq!(
+        from_str::<String>(r#""\uD83Dx""#),
+        Err(err_at(0, 7, InvalidEscapeSequence))
+    );
+    // High surrogate followed by invalid escape sequence
+    assert_eq!(
+        from_str::<String>(r#""\uD83D\x41""#),
+        Err(err_at(0, 8, InvalidEscapeSequence))
+    );
+    // High surrogate followed by non-unicode escape
+    assert_eq!(
+        from_str::<String>(r#""\uD83D\n""#),
+        Err(err_at(0, 8, InvalidEscapeSequence))
+    );
+    // High surrogate followed by invalid low surrogate (out of range)
+    assert_eq!(
+        from_str::<String>(r#""\uD83D\uD800""#),
+        Err(custom_err_at(0, 1, "unpaired surrogate found: d83d"))
+    );
+    // High surrogate followed by value outside surrogate range
+    assert_eq!(
+        from_str::<String>(r#""\uD83D\u0041""#),
+        Err(custom_err_at(0, 1, "unpaired surrogate found: d83d"))
+    );
+    // Low surrogate appearing alone (not after high surrogate)
+    assert_eq!(
+        from_str::<String>(r#""\uDE00""#),
+        Err(err_at(0, 7, InvalidEscapeSequence))
+    );
+    // Multiple high surrogates without low surrogates
+    assert_eq!(
+        from_str::<String>(r#""\uD83D\uD83D""#),
+        Err(custom_err_at(0, 1, "unpaired surrogate found: d83d"))
     );
 }
 
+// https://spec.json5.org/#arrays
 #[test]
-fn deserializes_char() {
-    deserializes_to("'x'", 'x');
-    deserializes_to("\"자\"", '자');
-    deserializes_to(r#""\"""#, '"');
-    deserializes_to(r#""\r""#, '\r');
-    deserializes_to(r#""\n""#, '\n');
-    deserializes_to(r#""\t""#, '\t');
-    deserializes_to(r#""\\""#, '\\');
-    deserializes_to(r#""\/""#, '/');
-    deserializes_to(r#""\b""#, '\u{0008}');
-    deserializes_to(r#""\f""#, '\u{000c}');
+fn parse_array() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct TupleStruct(char, i32, bool);
 
-    // `deserialize_char` calls `visit_str`
-    error_struct!(&str, visit_str, deserialize_char);
-    deserializes_with_error::<A>("\n 'x'", make_error("oops", 2, 2));
-}
-
-#[test]
-#[ignore] // TODO currently unsupported
-fn deserializes_str() {
-    deserializes_to("'Hello!'", "Hello!");
-    deserializes_to("\"안녕하세요\"", "안녕하세요");
-    deserializes_to(r#""\uD83C\uDDEF\uD83C\uDDF5""#, "\u{1F1EF}\u{1F1F5}");
-}
-
-#[test]
-fn deserializes_string() {
-    deserializes_to("'Hello!'", "Hello!".to_owned());
-    deserializes_to("\"안녕하세요\"", "안녕하세요".to_owned());
-    deserializes_to(
-        r#""\uD83C\uDDEF\uD83C\uDDF5""#,
-        "\u{1F1EF}\u{1F1F5}".to_owned(),
+    assert_eq!(from_str::<Vec<()>>("[]"), Ok(vec![]));
+    assert_eq!(from_str("[null]"), Ok(vec![()]));
+    assert_eq!(from_str("[1, 2, 3]"), Ok(vec![1, 2, 3]));
+    assert_eq!(from_str("['a', 4, 'three']"), Ok(('a', 4, "three")));
+    assert_eq!(from_str("['b', 5, false]"), Ok(TupleStruct('b', 5, false)));
+    assert_eq!(
+        from_str("[[1, 2], [3, 4]]"),
+        Ok(vec![vec![1, 2], vec![3, 4]])
     );
-
-    error_struct!(&str, visit_str, deserialize_string);
-    deserializes_with_error::<A>("\n 'Hello!'", make_error("oops", 2, 2));
-}
-
-#[test]
-#[ignore] // TODO currently unsupported
-fn deserializes_bytes() {}
-
-#[test]
-#[ignore] // TODO currently unsupported
-fn deserializes_byte_buf() {}
-
-#[test]
-fn deserializes_option() {
-    deserializes_to::<Option<i32>>("null", None);
-    deserializes_to("42", Some(42));
-    deserializes_to("42", Some(Some(42)));
-}
-
-#[test]
-fn deserializes_option_error() {
-    #[derive(Debug, PartialEq)]
-    struct A;
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_some<D>(self, _deserializer: D) -> Result<Self::Value, D::Error>
-                where
-                    D: de::Deserializer<'de>,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_option(Visitor)
-        }
-    }
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_unit() {
-    deserializes_to("null", ());
-
-    #[derive(Deserialize, Debug, PartialEq)]
-    struct A;
-    deserializes_to("null", A);
-}
-
-#[test]
-fn deserializes_unit_error() {
-    #[derive(Debug, PartialEq)]
-    struct A;
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_unit<E>(self) -> Result<Self::Value, E>
-                where
-                    E: de::Error,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_unit(Visitor)
-        }
-    }
-    deserializes_with_error::<A>("\n null", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_newtype_struct() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct A(i32);
-
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct B(f64);
-
-    deserializes_to("42", A(42));
-    deserializes_to("42", B(42.));
-}
-
-#[test]
-fn deserializes_newtype_struct_error() {
-    #[derive(Debug, PartialEq)]
-    struct A;
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_newtype_struct<D>(self, _deserializer: D) -> Result<Self::Value, D::Error>
-                where
-                    D: de::Deserializer<'de>,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_newtype_struct("A", Visitor)
-        }
-    }
-    deserializes_with_error::<A>("\n 42", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_seq() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    #[serde(untagged)]
-    enum Val {
-        Number(f64),
-        Bool(bool),
-        String(String),
-    }
-
-    deserializes_to("[1, 2, 3]", vec![1, 2, 3]);
-    deserializes_to(
-        "[42, true, 'hello']",
-        vec![
-            Val::Number(42.),
-            Val::Bool(true),
-            Val::String("hello".to_owned()),
-        ],
-    );
-}
-
-#[test]
-fn deserializes_seq_size_hint() {
-    #[derive(Debug, PartialEq)]
-    struct Size(usize);
-    impl<'de> de::Deserialize<'de> for Size {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = Size;
-
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-
-                fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::SeqAccess<'de>,
-                {
-                    Ok(Size(seq.size_hint().unwrap()))
-                }
-            }
-            deserializer.deserialize_seq(Visitor)
-        }
-    }
-
-    deserializes_to("[]", Size(0));
-    deserializes_to("[42, true, 'hello']", Size(3));
-    deserializes_to("[42, true, [1, 2]]", Size(3));
-}
-
-#[test]
-fn deserializes_seq_error() {
-    #[derive(Debug, PartialEq)]
-    struct A;
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_seq<A>(self, _a: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::SeqAccess<'de>,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_seq(Visitor)
-        }
-    }
-    deserializes_with_error::<A>("\n [ true ]", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_tuple() {
-    deserializes_to("[1, 2, 3]", (1, 2, 3));
-}
-
-#[test]
-fn deserializes_tuple_struct() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct A(i32, f64);
-
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct B(f64, i32);
-
-    deserializes_to("[1, 2]", A(1, 2.));
-    deserializes_to("[1, 2]", B(1., 2));
-}
-
-#[test]
-fn deserializes_tuple_error() {
-    #[derive(Debug, PartialEq)]
-    struct A;
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_seq<A>(self, _a: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::SeqAccess<'de>,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_tuple(2, Visitor)
-        }
-    }
-    deserializes_with_error::<A>("\n [1, 2]", make_error("oops", 2, 2));
-
-    #[derive(Deserialize, Debug, PartialEq)]
-    struct B(i32, f64);
-    deserializes_with_error::<B>(
-        "\n [1]",
-        make_error(
-            "invalid length 1, expected tuple struct B with 2 elements",
-            2,
-            2,
+    assert_eq!(
+        from_str(
+            "
+            [
+                'a',
+                'b',
+                'c', // Trailing comma!
+            ]
+            "
         ),
+        Ok(vec!['a', 'b', 'c'])
+    );
+
+    assert_eq!(
+        from_str::<Vec<i32>>("null"),
+        Err(err_at(0, 0, ExpectedOpeningBracket))
+    );
+    assert_eq!(
+        from_str::<(i32, i32)>("[1, 2, 3]"),
+        Err(err_at(0, 7, ExpectedClosingBracket))
+    );
+    assert_eq!(
+        from_str::<Vec<i32>>("[1, 2"),
+        Err(err_at(0, 0, EofParsingArray))
+    );
+    assert_eq!(
+        from_str::<Vec<i32>>("[1 2]"),
+        Err(err_at(0, 3, ExpectedComma))
+    );
+    assert_eq!(
+        from_str::<Vec<i32>>("[ , ]"),
+        Err(err_at(0, 2, ExpectedNumber))
     );
 }
 
+// https://spec.json5.org/#objects
 #[test]
-fn deserializes_map() {
-    let mut m = HashMap::new();
-    m.insert("a".to_owned(), 1);
-    m.insert("b".to_owned(), 2);
-    m.insert("c".to_owned(), 3);
-
-    deserializes_to("{ a: 1, 'b': 2, \"c\": 3 }", m);
-}
-
-#[test]
-fn deserializes_map_size_hint() {
-    #[derive(Debug, PartialEq)]
-    struct Size(usize);
-
-    impl<'de> de::Deserialize<'de> for Size {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = Size;
-
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-
-                fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::MapAccess<'de>,
-                {
-                    Ok(Size(map.size_hint().unwrap()))
-                }
-            }
-            deserializer.deserialize_map(Visitor)
-        }
-    }
-
-    deserializes_to("{}", Size(0));
-    deserializes_to("{ a: 1, 'b': 2, \"c\": 3 }", Size(3));
-    deserializes_to("{ a: 1, 'b': 2, \"c\": [1, 2] }", Size(3));
-}
-
-#[test]
-fn deserializes_map_error() {
-    #[derive(Debug, PartialEq)]
-    struct A {}
-    impl<'de> de::Deserialize<'de> for A {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: de::Deserializer<'de>,
-        {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = A;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("...")
-                }
-                fn visit_map<A>(self, _a: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::MapAccess<'de>,
-                {
-                    Err(de::Error::custom("oops"))
-                }
-            }
-            deserializer.deserialize_map(Visitor)
-        }
-    }
-
-    deserializes_with_error::<A>("\n { 'a': true }", make_error("oops", 2, 2));
-}
-
-#[test]
-fn deserializes_struct() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct S {
-        a: i32,
-        b: i32,
-        c: i32,
-    }
-
-    deserializes_to("{ a: 1, 'b': 2, \"c\": 3 }", S { a: 1, b: 2, c: 3 });
-}
-
-#[test]
-fn deserializes_struct_error() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct S {
-        a: i32,
-        b: i32,
-        c: i32,
-    }
-    deserializes_with_error::<S>("\n { a: 1, 'b': 2 }", make_error("missing field `c`", 2, 2));
-}
-
-#[test]
-fn deserializes_enum() {
-    #[derive(Deserialize, PartialEq, Debug)]
+fn parse_object() {
+    #[derive(Debug, PartialEq, Eq, Hash, Deserialize)]
     enum E {
         A,
-        B(i32),
-        C(i32, i32),
-        D { a: i32, b: i32 },
-        E {},
-        F(),
+        B,
+        C(()),
     }
 
-    deserializes_to("'A'", E::A);
-    deserializes_to("{ B: 2 }", E::B(2));
-    deserializes_to("{ C: [3, 5] }", E::C(3, 5));
-    deserializes_to("{ D: { a: 7, b: 11 } }", E::D { a: 7, b: 11 });
-    deserializes_to("{ E: {} }", E::E {});
-    deserializes_to("{ F: [] }", E::F());
-}
-
-#[test]
-fn deserializes_enum_error() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    enum E {
-        A {},
-        B(),
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Example<'a> {
+        #[serde(borrow)]
+        image: Image<'a>,
     }
 
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct S {
-        e: E,
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Image<'a> {
+        width: usize,
+        height: usize,
+        aspect_ratio: &'a str,
     }
 
-    deserializes_with_error::<S>("{ e: 'A' }", make_error("expected an object", 1, 6));
-    deserializes_with_error::<S>("{ e: 'B' }", make_error("expected an array", 1, 6));
-    deserializes_with_error::<E>(
-        "\n 'C'",
-        make_error("unknown variant `C`, expected `A` or `B`", 2, 2),
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Person {
+        name: String,
+        age: u32,
+    }
+
+    assert_eq!(
+        from_str::<HashMap<&str, usize>>(
+            "
+            // An empty object
+            {}
+            "
+        ),
+        Ok(HashMap::new())
+    );
+    assert_eq!(
+        from_str(
+            "
+            // An object with two properties
+            // and a trailing comma
+            {
+                width: 1920,
+                height: 1080,
+            }
+            "
+        ),
+        Ok(HashMap::from([("width", 1920), ("height", 1080)]))
+    );
+    assert_eq!(
+        from_str(
+            "
+            // Objects can be nested
+            {
+                image: {
+                    width: 1920,
+                    height: 1080,
+                    'aspect-ratio': '16:9',
+                }
+            }
+            "
+        ),
+        Ok(Example {
+            image: Image {
+                width: 1920,
+                height: 1080,
+                aspect_ratio: "16:9",
+            }
+        })
+    );
+    assert_eq!(
+        from_str(
+            "
+            // An array of objects
+            [
+                { name: 'Joe', age: 27 },
+                { name: 'Jane', age: 32 },
+            ]
+            "
+        ),
+        Ok(vec![
+            Person {
+                name: "Joe".to_owned(),
+                age: 27
+            },
+            Person {
+                name: "Jane".to_owned(),
+                age: 32
+            }
+        ])
+    );
+    assert_eq!(
+        from_str(r#"{ _123 : 42 }"#),
+        Ok(HashMap::from([("_123", 42)]))
+    );
+    assert_eq!(
+        from_str(r#"{ \u4f60\u597d: 42 }"#),
+        Ok(HashMap::from([("你好".to_owned(), 42)]))
+    );
+    assert_eq!(
+        from_str("{ '0': 'zero', '1': 'one' }"),
+        Ok(HashMap::from([(0, "zero"), (1, "one")]))
+    );
+    assert_eq!(
+        from_str("{ true: 'yes', false: 'no' }"),
+        Ok(HashMap::from([(true, "yes"), (false, "no")]))
+    );
+    assert_eq!(
+        from_str(r#"{ null: "not sure why you'd want this" }"#),
+        Ok(HashMap::from([((), "not sure why you'd want this")]))
+    );
+    assert_eq!(
+        from_str("{ a: 0, b: 1 }"),
+        Ok(HashMap::from([(Some('a'), 0), (Some('b'), 1)]))
+    );
+    assert_eq!(
+        from_str("{ A: 0, B: 1 }"),
+        Ok(HashMap::from([(E::A, 0), (E::B, 1)]))
+    );
+
+    assert_eq!(
+        from_str::<HashMap<String, u32>>(r#"{ foo\nbar: 42 }"#),
+        Err(err_at(0, 6, InvalidEscapeSequence))
+    );
+    assert_eq!(
+        from_str::<HashMap<String, u32>>(r#"{ \u4f60\u597d\u0021: 42 }"#),
+        Err(err_at(0, 14, ExpectedIdentifier))
+    );
+    assert_eq!(
+        from_str::<HashMap<String, u32>>(r#"{ 123: 42 }"#),
+        Err(err_at(0, 2, ExpectedIdentifier))
+    );
+    assert_eq!(
+        from_str::<Person>("{ name 'Joe', age 27 }"),
+        Err(err_at(0, 7, ExpectedColon))
+    );
+    assert_eq!(
+        from_str::<Person>("{ name: 'Joe' age: 27 }"),
+        Err(err_at(0, 14, ExpectedComma))
+    );
+    assert_eq!(
+        from_str::<Person>("{ name: 'Joe', age: 27"),
+        Err(err_at(0, 0, EofParsingObject))
+    );
+    assert_eq!(
+        from_str::<Person>("[ name: 'Joe', age: 27 ]"),
+        Err(err_at(0, 0, ExpectedOpeningBrace))
+    );
+    assert_eq!(
+        from_str::<HashMap<E, i32>>("{ A: 0, B: 1, C: 2 }"),
+        Err(custom_err_at(
+            0,
+            14,
+            "invalid type: unit variant, expected newtype variant"
+        ))
+    );
+    assert_eq!(
+        from_str::<HashMap<E, i32>>("{ A: 0, B: 1, { C: null }: 2 }"),
+        Err(err_at(0, 14, ExpectedIdentifier))
+    );
+    assert_eq!(
+        from_str::<HashMap<E, i32>>("{ A: 0, B: 1, D: 2 }"),
+        Err(custom_err_at(
+            0,
+            14,
+            "unknown variant `D`, expected one of `A`, `B`, `C`"
+        ))
     );
 }
 
 #[test]
-fn deserializes_ignored() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct S {
+fn deserialize_option() {
+    assert_eq!(from_str::<Option<bool>>("null"), Ok(None));
+    assert_eq!(from_str::<Option<bool>>("true"), Ok(Some(true)));
+}
+
+// Examples from https://serde.rs/json.html
+#[test]
+fn deserialize_structs_and_enums() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct W {
         a: i32,
         b: i32,
     }
 
-    deserializes_to("{ a: 1, ignored: 42, b: 2 }", S { a: 1, b: 2 });
-}
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct X(i32, i32);
 
-#[test]
-fn deserializes_json_values() {
-    // As int if json uses int type.
-    deserializes_to("0x2a", serde_json::json!(42));
-    deserializes_to("0x2A", serde_json::json!(42));
-    deserializes_to("0X2A", serde_json::json!(42));
-    deserializes_to("42", serde_json::json!(42));
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Y(i32);
 
-    // As float if json calls for explicit float type.
-    deserializes_to("42.", serde_json::json!(42.));
-    deserializes_to("42e0", serde_json::json!(42.));
-    deserializes_to("4e2", serde_json::json!(400.));
-    deserializes_to("4e2", serde_json::json!(4e2));
-}
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Z;
 
-#[test]
-fn deserializes_parse_error() {
-    let parse_err_str = r#" --> 1:2
-  |
-1 | {
-  |  ^---
-  |
-  = expected identifier or string"#;
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct A;
-    deserializes_with_error::<A>("{", make_error(parse_err_str, 1, 2));
+    #[derive(Debug, PartialEq, Deserialize)]
+    enum E {
+        W { a: i32, b: i32 },
+        X(i32, i32),
+        Y(i32),
+        Z,
+    }
 
-    deserializes_with_error::<bool>(
-        "\n 42",
-        make_error("invalid type: integer `42`, expected a boolean", 2, 2),
+    assert_eq!(from_str("{ a: 0, b: 0 }"), Ok(W { a: 0, b: 0 }));
+    assert_eq!(from_str("[0, 0]"), Ok(X(0, 0)));
+    assert_eq!(from_str("0"), Ok(Y(0)));
+    assert_eq!(from_str("null"), Ok(Z));
+    assert_eq!(from_str("{ W: { a: 0, b: 0 } }"), Ok(E::W { a: 0, b: 0 }));
+    assert_eq!(from_str("{ X: [0, 0] }"), Ok(E::X(0, 0)));
+    assert_eq!(from_str("{ Y: 0 }"), Ok(E::Y(0)));
+    assert_eq!(from_str("'Z'"), Ok(E::Z));
+
+    assert_eq!(
+        from_str::<E>("'A'"),
+        Err(custom_err_at(
+            0,
+            0,
+            "unknown variant `A`, expected one of `W`, `X`, `Y`, `Z`"
+        ))
     );
+    assert_eq!(
+        from_str::<E>("'W'"),
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: unit variant, expected struct variant"
+        ))
+    );
+    assert_eq!(
+        from_str::<E>("{ W: 0 }"),
+        Err(err_at(0, 5, ExpectedOpeningBrace))
+    );
+}
+
+#[test]
+fn comments() {
+    assert_eq!(
+        from_str(
+            "
+            // Single line comment
+            /* Multi
+               line
+               comment */
+            null
+            "
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn bytes() {
+    assert_eq!(from_str("'4a534f4e35'"), Ok(ByteBuf::from("JSON5")));
+    assert_eq!(from_str("'4A534F4E35'"), Ok(ByteBuf::from("JSON5")));
+    assert_eq!(from_str("'4A534F4E35'"), Ok(ByteBuf::from("JSON5")));
+    assert_eq!(
+        from_str("{ '4a534f4e35': true }"),
+        Ok(HashMap::from([(ByteBuf::from("JSON5"), true)])),
+    );
+    assert_eq!(
+        from_str("{ '4A534F4E35': true }"),
+        Ok(HashMap::from([(ByteBuf::from("JSON5"), true)])),
+    );
+
+    assert_eq!(
+        from_str::<ByteBuf>("'4a534f4e3'"),
+        Err(err_at(0, 0, InvalidBytes))
+    );
+    assert_eq!(
+        from_str::<HashMap<ByteBuf, bool>>("{ '4a534f4e3g': true }"),
+        Err(err_at(0, 2, InvalidBytes))
+    );
+    assert_eq!(
+        from_str::<&[u8]>("'4a534f4e35'"),
+        Err(custom_err_at(
+            0,
+            0,
+            "invalid type: byte array, expected a borrowed byte array"
+        ))
+    );
+}
+
+#[test]
+fn trailing_characters() {
+    assert_eq!(
+        from_str::<bool>("true false"),
+        Err(err_at(0, 5, ErrorCode::TrailingCharacters))
+    );
+}
+
+// "Kitchen-sink example" from https://json5.org/
+#[test]
+fn json5_org_example() {
+    assert_eq!(
+        from_str(
+            r#"
+            {
+                // comments
+                unquoted: 'and you can quote me on that',
+                singleQuotes: 'I can use "double quotes" here',
+                lineBreaks: "Look, Mom! \
+No \\n's!",
+                hexadecimal: 0xdecaf,
+                leadingDecimalPoint: .8675309, andTrailing: 8675309.,
+                positiveSign: +1,
+                trailingComma: 'in objects', andIn: ['arrays',],
+                "backwardsCompatible": "with JSON",
+            }
+            "#
+        ),
+        Ok(json!({
+            "unquoted": "and you can quote me on that",
+            "singleQuotes": "I can use \"double quotes\" here",
+            "lineBreaks": "Look, Mom! No \\n's!",
+            "hexadecimal": 0xdecaf,
+            "leadingDecimalPoint": 0.8675309,
+            "andTrailing": 8675309.0,
+            "positiveSign": 1,
+            "trailingComma": "in objects",
+            "andIn": ["arrays"],
+            "backwardsCompatible": "with JSON",
+        }))
+    )
+}
+
+// Example from
+// https://github.com/chromium/chromium/blob/d1987ba98386e8a455c0b983650dfd9687d14636/third_party/blink/renderer/platform/runtime_enabled_features.json5.
+// Suggested as a "more real-world example" on https://json5.org/.
+#[test]
+fn chromium_example() {
+    // Just pull out the first value as a sanity check.
+    assert_eq!(
+        from_str::<serde_json::Value>(include_str!("chromium_example.json5"))
+            .map(|config| config["parameters"]["status"]["valid_values"][0].clone()),
+        Ok(serde_json::Value::String("stable".to_owned()))
+    );
+}
+
+#[test]
+// https://serde.rs/enum-representations.html
+fn enum_representations() {
+    // https://serde.rs/enum-representations.html#externally-tagged
+    {
+        #[derive(PartialEq, Debug, Deserialize)]
+        enum Message {
+            #[serde(rename = "req")]
+            Request { id: String, method: String },
+            #[serde(rename = "res")]
+            Response { id: String, result: () },
+        }
+
+        assert_eq!(
+            from_str("{ req: { id: \"0\", method: \"post\" } }"),
+            Ok(Message::Request {
+                id: "0".to_owned(),
+                method: "post".to_owned()
+            }),
+        );
+        assert_eq!(
+            from_str("{ res: { id: \"0\", result: null, } }"),
+            Ok(Message::Response {
+                id: "0".to_owned(),
+                result: (),
+            }),
+        );
+    }
+
+    // https://serde.rs/enum-representations.html#internally-tagged
+    {
+        #[derive(PartialEq, Debug, Deserialize)]
+        #[serde(tag = "type")]
+        enum Message {
+            #[serde(rename = "req")]
+            Request { id: String, method: String },
+            #[serde(rename = "res")]
+            Response { id: String, result: () },
+        }
+
+        assert_eq!(
+            from_str("{ type: \"req\", id: \"0\", method: \"post\" }"),
+            Ok(Message::Request {
+                id: "0".to_owned(),
+                method: "post".to_owned()
+            }),
+        );
+        assert_eq!(
+            from_str("{ type: \"res\", id: \"0\", result: null }"),
+            Ok(Message::Response {
+                id: "0".to_owned(),
+                result: (),
+            }),
+        );
+    }
+
+    // https://serde.rs/enum-representations.html#adjacently-tagged
+    {
+        #[derive(PartialEq, Debug, Deserialize)]
+        #[serde(tag = "type", content = "value")]
+        enum Message {
+            #[serde(rename = "req")]
+            Request { id: String, method: String },
+            #[serde(rename = "res")]
+            Response { id: String, result: () },
+        }
+
+        assert_eq!(
+            from_str("{ type: \"req\", value: { id: \"0\", method: \"post\" } }"),
+            Ok(Message::Request {
+                id: "0".to_owned(),
+                method: "post".to_owned()
+            }),
+        );
+        assert_eq!(
+            from_str("{ type: \"res\", value: { id: \"0\", result: null } }"),
+            Ok(Message::Response {
+                id: "0".to_owned(),
+                result: (),
+            }),
+        );
+    }
+
+    // https://serde.rs/enum-representations.html#untagged
+    {
+        #[derive(PartialEq, Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Message {
+            #[serde(rename = "req")]
+            Request { id: String, method: String },
+            #[serde(rename = "res")]
+            Response { id: String, result: () },
+        }
+
+        assert_eq!(
+            from_str("{ id: \"0\", method: \"post\" }"),
+            Ok(Message::Request {
+                id: "0".to_owned(),
+                method: "post".to_owned()
+            }),
+        );
+        assert_eq!(
+            from_str("{ id: \"0\", result: null }"),
+            Ok(Message::Response {
+                id: "0".to_owned(),
+                result: (),
+            }),
+        );
+    }
 }

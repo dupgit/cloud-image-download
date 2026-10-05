@@ -1,3 +1,23 @@
+# 1.2.4
+
+* Fix FreeBSD build with libc v0.2.190.
+  (https://github.com/tokio-rs/mio/pull/2016).
+* Fix named pipe use-after-free when I/O fails right after submit
+  (https://github.com/tokio-rs/mio/pull/2014).
+* Fix non-blocking socket creation on Haiku
+  (https://github.com/tokio-rs/mio/pull/2015).
+
+# 1.2.3
+
+* Running under Wine should work again
+  (https://github.com/tokio-rs/mio/pull/1974).
+* Fixed an issue with the UDS listener not reregistering readiness correctly
+  when using the `poll(2)` implementation
+  (https://github.com/tokio-rs/mio/pull/1998).
+* NetBSD, OpenBSD and DragonflyBSD are switched to using `EVFILT_USER` based
+  `Waker`, one that was already used on FreeBSD and macOS
+  (https://github.com/tokio-rs/mio/pull/1993).
+
 # 1.2.2
 
 * Add support for Solaris using event ports

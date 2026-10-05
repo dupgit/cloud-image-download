@@ -1,90 +1,241 @@
-use pest::Span;
-use serde::{de, ser};
-use std::fmt::{self, Display};
+use std::fmt::{Display, Formatter};
 
-use crate::de::Rule;
-
-/// Alias for a `Result` with error type `json5::Error`
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// One-based line and column at which the error was detected.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Location {
-    /// The one-based line number of the error.
-    pub line: usize,
-    /// The one-based column number of the error.
-    pub column: usize,
+/// An error serializing or deserializing JSON5.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Error {
+    inner: Box<ErrorInner>,
 }
 
-impl From<&Span<'_>> for Location {
-    fn from(s: &Span<'_>) -> Self {
-        let (line, column) = s.start_pos().line_col();
-        Self { line, column }
+impl Error {
+    #[must_use]
+    pub fn code(&self) -> Option<ErrorCode> {
+        match self.inner.content {
+            ErrorContent::Code(code) => Some(code),
+            ErrorContent::Custom(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn position(&self) -> Option<Position> {
+        self.inner.position
     }
 }
 
-/// A bare bones error type which currently just collapses all the underlying errors in to a single
-/// string... This is fine for displaying to the user, but not very useful otherwise. Work to be
-/// done here.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Error {
-    /// Just shove everything in a single variant for now.
-    Message {
-        /// The error message.
-        msg: String,
-        /// The location of the error, if applicable.
-        location: Option<Location>,
-    },
+#[derive(Debug, PartialEq, Clone)]
+struct ErrorInner {
+    content: ErrorContent,
+    position: Option<Position>,
 }
 
-impl From<pest::error::Error<Rule>> for Error {
-    fn from(err: pest::error::Error<Rule>) -> Self {
-        let (line, column) = match err.line_col {
-            pest::error::LineColLocation::Pos((l, c)) => (l, c),
-            pest::error::LineColLocation::Span((l, c), (_, _)) => (l, c),
-        };
-        Error::Message {
-            msg: err.to_string(),
-            location: Some(Location { line, column }),
+#[derive(Debug, PartialEq, Clone)]
+enum ErrorContent {
+    Code(ErrorCode),
+    Custom(String),
+}
+
+/// A code identifying an error originating within this crate.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ErrorCode {
+    EofParsingArray,
+    EofParsingBool,
+    EofParsingComment,
+    EofParsingEscapeSequence,
+    EofParsingIdentifier,
+    EofParsingNull,
+    EofParsingNumber,
+    EofParsingObject,
+    EofParsingString,
+    EofParsingValue,
+
+    ExpectedBool,
+    ExpectedClosingBrace,
+    ExpectedClosingBracket,
+    ExpectedColon,
+    ExpectedComma,
+    ExpectedComment,
+    ExpectedIdentifier,
+    ExpectedNull,
+    ExpectedNumber,
+    ExpectedOpeningBrace,
+    ExpectedOpeningBracket,
+    ExpectedString,
+    ExpectedStringOrObject,
+    ExpectedValue,
+
+    InvalidBytes,
+    InvalidEscapeSequence,
+    InvalidKey,
+    LeadingZero,
+    LineTerminatorInString,
+    OverflowParsingNumber,
+    TrailingCharacters,
+}
+
+impl Display for ErrorCode {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            ErrorCode::EofParsingArray => write!(f, "EOF parsing array"),
+            ErrorCode::EofParsingBool => write!(f, "EOF parsing bool"),
+            ErrorCode::EofParsingComment => write!(f, "EOF parsing comment"),
+            ErrorCode::EofParsingEscapeSequence => write!(f, "EOF parsing escape sequence"),
+            ErrorCode::EofParsingIdentifier => write!(f, "EOF parsing identifier"),
+            ErrorCode::EofParsingNull => write!(f, "EOF parsing null"),
+            ErrorCode::EofParsingNumber => write!(f, "EOF parsing number"),
+            ErrorCode::EofParsingObject => write!(f, "EOF parsing object"),
+            ErrorCode::EofParsingString => write!(f, "EOF parsing string"),
+            ErrorCode::EofParsingValue => write!(f, "EOF parsing value"),
+
+            ErrorCode::ExpectedBool => write!(f, "expected bool"),
+            ErrorCode::ExpectedClosingBrace => write!(f, "expected closing brace"),
+            ErrorCode::ExpectedClosingBracket => write!(f, "expected closing bracket"),
+            ErrorCode::ExpectedColon => write!(f, "expected colon"),
+            ErrorCode::ExpectedComma => write!(f, "expected comma"),
+            ErrorCode::ExpectedComment => write!(f, "expected comment"),
+            ErrorCode::ExpectedIdentifier => write!(f, "expected identifier"),
+            ErrorCode::ExpectedNull => write!(f, "expected null"),
+            ErrorCode::ExpectedNumber => write!(f, "expected number"),
+            ErrorCode::ExpectedOpeningBrace => write!(f, "expected opening brace"),
+            ErrorCode::ExpectedOpeningBracket => write!(f, "expected opening bracket"),
+            ErrorCode::ExpectedString => write!(f, "expected string"),
+            ErrorCode::ExpectedStringOrObject => write!(f, "expected string or object"),
+            ErrorCode::ExpectedValue => write!(f, "expected value"),
+
+            ErrorCode::InvalidBytes => write!(f, "invalid bytes"),
+            ErrorCode::InvalidEscapeSequence => write!(f, "invalid escape sequence"),
+            ErrorCode::InvalidKey => write!(f, "invalid key"),
+            ErrorCode::LeadingZero => write!(f, "leading zero"),
+            ErrorCode::LineTerminatorInString => write!(f, "line terminator in string"),
+            ErrorCode::OverflowParsingNumber => write!(f, "overflow parsing number"),
+            ErrorCode::TrailingCharacters => write!(f, "trailing characters"),
         }
     }
 }
 
-impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message {
-            msg: msg.to_string(),
-            location: None,
-        }
-    }
-}
-
-impl de::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message {
-            msg: msg.to_string(),
-            location: None,
+impl Display for ErrorContent {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            ErrorContent::Code(code) => write!(f, "{code}"),
+            ErrorContent::Custom(msg) => write!(f, "{msg}"),
         }
     }
 }
 
 impl Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Message { ref msg, .. } => write!(formatter, "{}", msg),
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        if let Some(position) = self.inner.position {
+            write!(f, "{} at {}", self.inner.content, position)
+        } else {
+            write!(f, "{}", self.inner.content)
         }
+    }
+}
+
+impl Error {
+    #[must_use]
+    pub fn new(code: ErrorCode) -> Self {
+        Self {
+            inner: Box::new(ErrorInner {
+                content: ErrorContent::Code(code),
+                position: None,
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn new_at(position: Position, code: ErrorCode) -> Self {
+        Self {
+            inner: Box::new(ErrorInner {
+                content: ErrorContent::Code(code),
+                position: Some(position),
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn custom<T: Display>(msg: T) -> Self {
+        Self {
+            inner: Box::new(ErrorInner {
+                content: ErrorContent::Custom(msg.to_string()),
+                position: None,
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn custom_at<T: Display>(position: Position, msg: T) -> Self {
+        Self {
+            inner: Box::new(ErrorInner {
+                content: ErrorContent::Custom(msg.to_string()),
+                position: Some(position),
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn with_position(mut self, position: Position) -> Self {
+        if self.inner.position.is_none() {
+            self.inner.position = Some(position);
+        }
+        self
+    }
+}
+
+impl serde::de::Error for Error {
+    fn custom<T: Display>(msg: T) -> Self {
+        Self::custom(msg)
+    }
+}
+
+impl serde::ser::Error for Error {
+    fn custom<T: Display>(msg: T) -> Self {
+        Self::custom(msg)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::custom(err)
     }
 }
 
 impl std::error::Error for Error {}
 
-/// Adds location information from `span`, if `res` is an error.
-pub fn set_location<T>(res: &mut Result<T>, span: &Span<'_>) {
-    if let Err(ref mut e) = res {
-        let Error::Message { location, .. } = e;
-        if location.is_none() {
-            let (line, column) = span.start_pos().line_col();
-            *location = Some(Location { line, column });
+/// The line and column that an error occured.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Position {
+    /// The first line is line 0.
+    pub line: usize,
+    /// The first column is column 0.
+    pub column: usize,
+}
+
+impl Position {
+    #[must_use]
+    pub fn from_offset(offset: usize, input: &str) -> Self {
+        let mut res = Self { line: 0, column: 0 };
+        let mut chars = input[..offset].chars().peekable();
+        while let Some(c) = chars.next() {
+            if crate::char::is_json5_line_terminator(c) {
+                // "The character sequence <CR><LF> is commonly used as a line terminator. It
+                // should be considered a single character for the purpose of reporting line
+                // numbers." – https://262.ecma-international.org/5.1/#sec-7.3
+                if c == '\u{000D}' && chars.peek() == Some(&'\u{000A}') {
+                    chars.next();
+                }
+                res.line += 1;
+                res.column = 0;
+            } else {
+                res.column += 1;
+            }
         }
+        res
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "line {} column {}", self.line + 1, self.column + 1)
     }
 }
