@@ -164,14 +164,13 @@ impl<'de> Deserializer<'de> {
                     }
                 }
             }
-            '*' => {
-                while let Some((_, c)) = self.next() {
-                    if c == '*' && self.peek().is_some_and(|(_, c)| c == '/') {
-                        self.next();
-                        break;
-                    }
+            '*' => loop {
+                let (_, c) = self.next_or(ErrorCode::EofParsingComment)?;
+                if c == '*' && self.peek().is_some_and(|(_, c)| c == '/') {
+                    self.next();
+                    break;
                 }
-            }
+            },
             _ => {
                 return Err(self.err_at(offset, ErrorCode::ExpectedComment));
             }
@@ -312,7 +311,7 @@ impl<'de> Deserializer<'de> {
                 .and_then(|n| {
                     n.checked_add(u128::from(c.to_digit(16).expect("c is ascii hexdigit")))
                 })
-                .ok_or(self.err_at(offset, ErrorCode::OverflowParsingNumber))?;
+                .ok_or_else(|| self.err_at(offset, ErrorCode::OverflowParsingNumber))?;
         }
 
         if neg {
@@ -394,7 +393,7 @@ impl<'de> Deserializer<'de> {
                 Ok(Some('\u{0000}'))
             }
 
-            '1'..'9' => Err(self.err_at(offset, ErrorCode::InvalidEscapeSequence)),
+            '1'..='9' => Err(self.err_at(offset, ErrorCode::InvalidEscapeSequence)),
 
             'x' => Ok(Some(self.parse_hex_escape_sequence(offset)?)),
 

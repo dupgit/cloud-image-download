@@ -17,8 +17,10 @@ use std::{
 };
 
 use crate::{
-    build_env::BuildEnv, logger::Logger, utilities::cargo_env_var_os, BuildMessageKind, Error,
-    ErrorKind, Object,
+    build_env::{BuildEnv, EnvVars},
+    logger::Logger,
+    utilities::cargo_env_var_os,
+    BuildMessageKind, Error, ErrorKind, Object,
 };
 
 #[derive(Clone, Debug)]
@@ -191,99 +193,104 @@ impl StderrForwarder {
         }
     }
 
+    #[cfg(feature = "parallel")]
+    pub(crate) fn stderr(&self) -> Option<&ChildStderr> {
+        self.inner.as_ref().map(|inner| &inner.0)
+    }
+
     /// Forward the stderr of `cmd` that is available.
     pub(crate) fn forward_available(&mut self, cmd: &Command) -> bool {
-        if let Some((stderr, buffer)) = self.inner.as_mut() {
-            loop {
-                // For non-blocking we check to see if there is data available, so we should try to
-                // read at least that much. For blocking, always read at least the minimum amount.
-                #[cfg(not(feature = "parallel"))]
-                let to_reserve = MIN_BUFFER_CAPACITY;
-                #[cfg(feature = "parallel")]
-                let to_reserve = if self.is_non_blocking && !self.bytes_available_failed {
-                    match crate::parallel::stderr::bytes_available(stderr) {
-                        #[cfg(windows)]
-                        Ok(0) => break false,
-                        #[cfg(unix)]
-                        Ok(0) => {
-                            // On Unix, depending on the implementation, we may sometimes get 0 in a
-                            // loop (either there is data available or the pipe is broken), so
-                            // continue with the non-blocking read anyway.
-                            MIN_BUFFER_CAPACITY
-                        }
-                        #[cfg(windows)]
-                        Err(_) => {
-                            // On Windows, if we get an error then the pipe is broken, so flush
-                            // the buffer and bail.
-                            if self.bytes_buffered > 0 {
-                                self.cargo_output
-                                    .forward_stderr_line(&buffer[..self.bytes_buffered], cmd);
-                            }
-                            self.inner = None;
-                            break true;
-                        }
-                        #[cfg(unix)]
-                        Err(_) => {
-                            // On Unix, depending on the implementation, we may get spurious
-                            // errors so make a note not to use bytes_available again and try
-                            // the non-blocking read anyway.
-                            self.bytes_available_failed = true;
-                            MIN_BUFFER_CAPACITY
-                        }
-                        #[cfg(target_family = "wasm")]
-                        Err(_) => panic!("bytes_available should always succeed on wasm"),
-                        Ok(bytes_available) => MIN_BUFFER_CAPACITY.max(bytes_available),
-                    }
-                } else {
-                    MIN_BUFFER_CAPACITY
-                };
-                if self.bytes_buffered + to_reserve > buffer.len() {
-                    buffer.resize(self.bytes_buffered + to_reserve, 0);
-                }
+        let Some((stderr, buffer)) = self.inner.as_mut() else {
+            return true;
+        };
 
-                match stderr.read(&mut buffer[self.bytes_buffered..]) {
-                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                        // No data currently, yield back.
-                        break false;
+        loop {
+            // For non-blocking we check to see if there is data available, so we should try to
+            // read at least that much. For blocking, always read at least the minimum amount.
+            #[cfg(not(feature = "parallel"))]
+            let to_reserve = MIN_BUFFER_CAPACITY;
+            #[cfg(feature = "parallel")]
+            let to_reserve = if self.is_non_blocking && !self.bytes_available_failed {
+                match crate::parallel::stderr::bytes_available(stderr) {
+                    #[cfg(windows)]
+                    Ok(0) => break false,
+                    #[cfg(unix)]
+                    Ok(0) => {
+                        // On Unix, depending on the implementation, we may sometimes get 0 in a
+                        // loop (either there is data available or the pipe is broken), so
+                        // continue with the non-blocking read anyway.
+                        MIN_BUFFER_CAPACITY
                     }
-                    Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {
-                        // Interrupted, try again.
-                        continue;
-                    }
-                    Ok(bytes_read) if bytes_read != 0 => {
-                        self.bytes_buffered += bytes_read;
-                        let mut consumed = 0;
-                        for line in buffer[..self.bytes_buffered].split_inclusive(|&b| b == b'\n') {
-                            // Only forward complete lines, leave the rest in the buffer.
-                            if let Some((b'\n', line)) = line.split_last() {
-                                consumed += line.len() + 1;
-                                self.cargo_output.forward_stderr_line(line, cmd);
-                            }
-                        }
-                        if consumed > 0 && consumed < self.bytes_buffered {
-                            // Remove the consumed bytes from buffer
-                            buffer.copy_within(consumed.., 0);
-                        }
-                        self.bytes_buffered -= consumed;
-                    }
-                    res => {
-                        // End of stream: flush remaining data and bail.
+                    #[cfg(windows)]
+                    Err(_) => {
+                        // On Windows, if we get an error then the pipe is broken, so flush
+                        // the buffer and bail.
                         if self.bytes_buffered > 0 {
                             self.cargo_output
                                 .forward_stderr_line(&buffer[..self.bytes_buffered], cmd);
                         }
-                        if let Err(err) = res {
-                            self.cargo_output.print_warning(&format_args!(
-                                "Failed to read from child stderr: {err}"
-                            ));
-                        }
-                        self.inner.take();
+                        self.inner = None;
                         break true;
                     }
+                    #[cfg(unix)]
+                    Err(_) => {
+                        // On Unix, depending on the implementation, we may get spurious
+                        // errors so make a note not to use bytes_available again and try
+                        // the non-blocking read anyway.
+                        self.bytes_available_failed = true;
+                        MIN_BUFFER_CAPACITY
+                    }
+                    #[cfg(target_family = "wasm")]
+                    Err(_) => panic!("bytes_available should always succeed on wasm"),
+                    Ok(bytes_available) => MIN_BUFFER_CAPACITY.max(bytes_available),
+                }
+            } else {
+                MIN_BUFFER_CAPACITY
+            };
+            if self.bytes_buffered + to_reserve > buffer.len() {
+                buffer.resize(self.bytes_buffered + to_reserve, 0);
+            }
+
+            match stderr.read(&mut buffer[self.bytes_buffered..]) {
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    // No data currently, yield back.
+                    break false;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {
+                    // Interrupted, try again.
+                    continue;
+                }
+                Ok(bytes_read) if bytes_read != 0 => {
+                    self.bytes_buffered += bytes_read;
+                    let mut consumed = 0;
+                    for line in buffer[..self.bytes_buffered].split_inclusive(|&b| b == b'\n') {
+                        // Only forward complete lines, leave the rest in the buffer.
+                        if let Some((b'\n', line)) = line.split_last() {
+                            consumed += line.len() + 1;
+                            self.cargo_output.forward_stderr_line(line, cmd);
+                        }
+                    }
+                    if consumed > 0 && consumed < self.bytes_buffered {
+                        // Remove the consumed bytes from buffer
+                        buffer.copy_within(consumed.., 0);
+                    }
+                    self.bytes_buffered -= consumed;
+                }
+                res => {
+                    // End of stream: flush remaining data and bail.
+                    if self.bytes_buffered > 0 {
+                        self.cargo_output
+                            .forward_stderr_line(&buffer[..self.bytes_buffered], cmd);
+                    }
+                    if let Err(err) = res {
+                        self.cargo_output.print_warning(&format_args!(
+                            "Failed to read from child stderr: {err}"
+                        ));
+                    }
+                    self.inner.take();
+                    break true;
                 }
             }
-        } else {
-            true
         }
     }
 
@@ -432,6 +439,8 @@ enum ProbeKind {
     FlagSupportCheck,
     /// Working out whether an Android NDK ships `llvm-ar` under that name.
     ArDetection,
+    /// Working out which C++ standard library a compiler uses.
+    CppStdlibDetection,
 }
 
 impl ProbeKind {
@@ -441,6 +450,18 @@ impl ProbeKind {
             Self::FamilyDetection => "CC_SHIM_OUT_FILES_FOR_FAMILY_DETECTION",
             Self::FlagSupportCheck => "CC_SHIM_OUT_FILES_FOR_FLAG_SUPPORT_CHECK",
             Self::ArDetection => "CC_SHIM_OUT_FILES_FOR_AR_DETECTION",
+            Self::CppStdlibDetection => "CC_SHIM_OUT_FILES_FOR_CPP_STDLIB_DETECTION",
+        }
+    }
+
+    /// The test-only variable holding what the shim should print when this
+    /// class preprocesses a file.
+    const fn stdout_var(self) -> &'static str {
+        match self {
+            Self::FamilyDetection => "CC_SHIM_STDOUT_FOR_FAMILY_DETECTION",
+            Self::FlagSupportCheck => "CC_SHIM_STDOUT_FOR_FLAG_SUPPORT_CHECK",
+            Self::ArDetection => "CC_SHIM_STDOUT_FOR_AR_DETECTION",
+            Self::CppStdlibDetection => "CC_SHIM_STDOUT_FOR_CPP_STDLIB_DETECTION",
         }
     }
 }
@@ -461,27 +482,27 @@ impl ProbeKind {
 /// `CC_SHIM_OUT_FILES` and otherwise clears it, and clears `CC_SHIM_OUT_DIR`
 /// either way, instead of copying `Build::env` over blindly. A probe a test did
 /// not ask about then records nothing at all, rather than taking an `out{i}`
-/// slot and shifting the invocations the test is asserting on. They are
-/// test-only, like `CC_SHIM_OUT_DIR`, and so are documented in
+/// slot and shifting the invocations the test is asserting on. The
+/// `CC_SHIM_STDOUT_FOR_*` variables are renamed to `CC_SHIM_STDOUT` the same
+/// way, so a test can answer one class of probe without changing the others.
+/// They are test-only, like `CC_SHIM_OUT_DIR`, and so are documented in
 /// `src/bin/cc-shim.rs` rather than in the table of public variables in
 /// `src/lib.rs`.
-fn set_probe_env<K, V>(cmd: &mut Command, env: &[(K, V)], kind: ProbeKind)
-where
-    K: AsRef<OsStr>,
-    V: AsRef<OsStr>,
-{
+fn set_probe_env(cmd: &mut Command, env: &EnvVars, kind: ProbeKind) {
     for (key, value) in env {
-        cmd.env(key.as_ref(), value.as_ref());
+        cmd.env(key, value);
     }
 
     cmd.env_remove("CC_SHIM_OUT_DIR");
-    match env
-        .iter()
-        .find(|(key, _)| key.as_ref() == OsStr::new(kind.out_files_var()))
-    {
-        Some((_, value)) => cmd.env("CC_SHIM_OUT_FILES", value.as_ref()),
-        None => cmd.env_remove("CC_SHIM_OUT_FILES"),
-    };
+    for (var, shim_var) in [
+        (kind.out_files_var(), "CC_SHIM_OUT_FILES"),
+        (kind.stdout_var(), "CC_SHIM_STDOUT"),
+    ] {
+        match env.iter().find(|(key, _)| &**key == OsStr::new(var)) {
+            Some((_, value)) => cmd.env(shim_var, value),
+            None => cmd.env_remove(shim_var),
+        };
+    }
 }
 
 pub(crate) fn run(cmd: &mut Command, cargo_output: &CargoOutput) -> Result<(), Error> {
@@ -664,13 +685,13 @@ pub(crate) trait CommandExt {
     fn set_family_detection_env(&mut self, env: &BuildEnv) -> &mut Self;
 
     /// Apply `Build::env` to an `is_flag_supported` probe.
-    fn set_flag_supported_env<K, V>(&mut self, env: &[(K, V)]) -> &mut Self
-    where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>;
+    fn set_flag_supported_env(&mut self, env: &EnvVars) -> &mut Self;
 
     /// Apply the `Build`'s environment to the Android `llvm-ar` probe.
     fn set_ar_detection_env(&mut self, env: &BuildEnv) -> &mut Self;
+
+    /// Apply a compiler's environment to its C++ standard library probe.
+    fn set_cpp_stdlib_detection_env(&mut self, env: &EnvVars) -> &mut Self;
 }
 
 impl CommandExt for Command {
@@ -680,11 +701,7 @@ impl CommandExt for Command {
         self
     }
 
-    fn set_flag_supported_env<K, V>(&mut self, env: &[(K, V)]) -> &mut Self
-    where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
-    {
+    fn set_flag_supported_env(&mut self, env: &EnvVars) -> &mut Self {
         set_probe_env(self, env, ProbeKind::FlagSupportCheck);
         self
     }
@@ -692,6 +709,11 @@ impl CommandExt for Command {
     fn set_ar_detection_env(&mut self, env: &BuildEnv) -> &mut Self {
         env.inherited().apply(self);
         set_probe_env(self, &env.explicit, ProbeKind::ArDetection);
+        self
+    }
+
+    fn set_cpp_stdlib_detection_env(&mut self, env: &EnvVars) -> &mut Self {
+        set_probe_env(self, env, ProbeKind::CppStdlibDetection);
         self
     }
 }
